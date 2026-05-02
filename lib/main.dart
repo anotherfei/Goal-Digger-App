@@ -1115,88 +1115,47 @@ class ResponsiveGoalShell extends StatelessWidget {
     Icons.pets_rounded,
   ];
 
+  static const selectedIcons = [
+    Icons.auto_awesome,
+    Icons.check_circle,
+    Icons.calendar_month,
+    Icons.groups,
+    Icons.pets,
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    final isMobile = width < 700;
-
-    if (isMobile) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Goal Digger'),
-          leading: Builder(
-            builder: (context) => IconButton(
-              tooltip: 'Open menu',
-              iconSize: 30,
-              onPressed: () => Scaffold.of(context).openDrawer(),
-              icon: const Icon(Icons.menu_rounded),
-            ),
-          ),
-          actions: [
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Chip(
-                avatar: const Icon(Icons.verified_user_rounded, size: 18),
-                label: Text(signedInWith),
-              ),
-            ),
-          ],
-        ),
-        drawer: Drawer(
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              DrawerHeader(
-                decoration: const BoxDecoration(color: Colors.blueAccent),
-                child: Text(
-                  'Menu',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.onPrimary),
-                ),
-              ),
-              for (var i = 0; i < labels.length; i++)
-                ListTile(
-                  leading: Icon(icons[i], size: 28),
-                  title: Text(labels[i]),
-                  selected: selectedIndex == i,
-                  onTap: () {
-                    Navigator.pop(context);
-                    onSelect(i);
-                  },
-                ),
-            ],
-          ),
-        ),
-        body: pages[selectedIndex],
-      );
-    }
-
     return Scaffold(
-      body: SafeArea(
-        child: Row(
-          children: [
-            NavigationRail(
-              selectedIndex: selectedIndex,
-              onDestinationSelected: onSelect,
-              labelType: NavigationRailLabelType.all,
-              minWidth: 92,
-              leading: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 18),
-                child: CircleAvatar(
-                  radius: 26,
-                  backgroundColor: gdPrimaryDark,
-                  child: const Icon(Icons.auto_awesome_rounded, color: Colors.white),
-                ),
-              ),
-              destinations: [
-                for (var i = 0; i < labels.length; i++)
-                  NavigationRailDestination(
-                    icon: Icon(icons[i]),
-                    label: Text(labels[i]),
-                  ),
-              ],
+      appBar: AppBar(
+        title: const Text('Goal Digger'),
+        automaticallyImplyLeading: false,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Chip(
+              avatar: const Icon(Icons.verified_user_rounded, size: 18),
+              label: Text(signedInWith),
             ),
-            const VerticalDivider(width: 1),
-            Expanded(child: pages[selectedIndex]),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        top: false,
+        child: pages[selectedIndex],
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: NavigationBar(
+          selectedIndex: selectedIndex,
+          onDestinationSelected: onSelect,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          destinations: [
+            for (var i = 0; i < labels.length; i++)
+              NavigationDestination(
+                icon: Icon(icons[i]),
+                selectedIcon: Icon(selectedIcons[i]),
+                label: labels[i],
+              ),
           ],
         ),
       ),
