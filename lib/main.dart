@@ -2221,7 +2221,7 @@ class ResponsiveGoalShell extends StatelessWidget {
   final bool hasActiveFocus;
   final String? focusLabel;
 
-  static const labels = ['Goals', 'Calendar', 'Home', 'Community', 'Pet'];
+  static const labels = ['Goals', 'Calendar', 'Home', 'Social', 'Pet'];
   static const icons = [Icons.flag_rounded, Icons.calendar_month_rounded, Icons.home_rounded, Icons.groups_rounded, Icons.pets_rounded];
 
   @override
@@ -2647,7 +2647,7 @@ class _CalendarPageState extends State<_CalendarPage> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 112),
         children: [
-          const PageHero(icon: Icons.calendar_month_rounded, title: 'Calendar', subtitle: 'View scheduled goal tasks and add flexible routines. Tasks are view-only here.', compact: true),
+          //const PageHero(icon: Icons.calendar_month_rounded, title: 'Calendar', subtitle: 'View scheduled goal tasks and add flexible routines. Tasks are view-only here.', compact: true),
           const SizedBox(height: 18),
           AppCard(
             child: Padding(
@@ -2974,11 +2974,11 @@ class _CommunityPageState extends State<_CommunityPage> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 112),
         children: [
-          const PageHero(
-            icon: Icons.groups_rounded,
-            title: 'Community',
-            subtitle: 'Manage accountability friends on the left tab and goal communities on the right tab.',
-          ),
+          // const PageHero(
+          //   icon: Icons.groups_rounded,
+          //   title: 'Social',
+          //   subtitle: 'Manage accountability friends on the left tab and goal communities on the right tab.',
+          // ),
           const SizedBox(height: 14),
           AppCard(
             color: gdCardLight,
@@ -3244,76 +3244,204 @@ class _CompanionPageState extends State<_CompanionPage> {
   @override
   Widget build(BuildContext context) {
     return PageScaffold(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 112),
+      child: Stack(
         children: [
-          Container(
-            padding: const EdgeInsets.all(28),
-            decoration: BoxDecoration(
-              color: const Color(0xFF071022),
-              borderRadius: BorderRadius.circular(34),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 28, offset: const Offset(0, 14))],
-            ),
-            child: Row(children: [
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('WALLET', style: TextStyle(color: Color(0xFF9CA3AF), letterSpacing: 5, fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 14),
-                  Text('${widget.coins}', style: const TextStyle(color: Colors.white, fontSize: 44, fontWeight: FontWeight.w900, letterSpacing: -1.5)),
-                  const Text('coins earned', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 17, fontWeight: FontWeight.w900)),
-                ]),
+          ListView(
+            padding: const EdgeInsets.fromLTRB(18, 72, 18, 112),
+            children: [
+              // PageHero(
+              //   icon: Icons.pets_rounded,
+              //   title: 'Pet companion',
+              //   subtitle: 'Care for your companion, unlock chest rewards, and keep the visual style calm and consistent.',
+              // ),
+              const SizedBox(height: 16),
+              AppCard(
+                color: const Color(0xFFEAF1FF),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: 8),
+                      const Center(
+                        child: Text(
+                          'PET PREVIEW',
+                          style: TextStyle(
+                            color: gdPrimary,
+                            letterSpacing: 3,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      Center(
+                        child: GestureDetector(
+                          onTap: widget.onPetInteract,
+                          child: Stack(
+                            alignment: Alignment.topRight,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(22),
+                                decoration: BoxDecoration(
+                                  color: gdCardLight,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: gdBorder),
+                                ),
+                                child: PetAvatar(pet: widget.pet, size: 142),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: gdSurface,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(color: gdBorder),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.05),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 6),
+                                    ),
+                                  ],
+                                ),
+                                child: Text(
+                                  widget.accessory,
+                                  style: const TextStyle(color: gdInk, fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: gdCardLight,
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(color: gdBorder),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.favorite_rounded, color: gdAccent, size: 20),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Happiness ${widget.happiness}%',
+                                    style: const TextStyle(color: gdInk, fontWeight: FontWeight.w900),
+                                  ),
+                                ),
+                                const Text(
+                                  'Tap to cheer up',
+                                  style: TextStyle(color: gdMuted, fontSize: 12, fontWeight: FontWeight.w800),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            LinearProgressIndicator(
+                              value: widget.happiness / 100,
+                              minHeight: 10,
+                              backgroundColor: gdPrimarySoft,
+                              color: gdPrimary,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(child: _SkinPill(label: 'Mint', selected: _selectedSkin == 'Mint', onTap: () => setState(() => _selectedSkin = 'Mint'))),
+                          const SizedBox(width: 10),
+                          Expanded(child: _SkinPill(label: 'Peach', selected: _selectedSkin == 'Peach', onTap: () => setState(() => _selectedSkin = 'Peach'))),
+                          const SizedBox(width: 10),
+                          Expanded(child: _SkinPill(label: 'Lunar', selected: _selectedSkin == 'Lunar', onTap: () => setState(() => _selectedSkin = 'Lunar'))),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              Container(width: 96, height: 96, decoration: BoxDecoration(color: const Color(0xFFFFC21A), shape: BoxShape.circle, boxShadow: [BoxShadow(color: const Color(0xFFFFC21A).withOpacity(0.35), blurRadius: 26)]), child: const Center(child: Text('C', style: TextStyle(color: Color(0xFF5B3200), fontSize: 34, fontWeight: FontWeight.w900)))),
-            ]),
-          ),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(26),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [Color(0xFFFFF1F2), Color(0xFFFFF7ED)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-              borderRadius: BorderRadius.circular(34),
-              border: Border.all(color: Colors.white.withOpacity(0.9)),
-            ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('PET PREVIEW', style: TextStyle(color: Color(0xFFC2410C), letterSpacing: 4, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 26),
-              Center(
-                child: GestureDetector(
-                  onTap: widget.onPetInteract,
-                  child: Stack(alignment: Alignment.topRight, children: [
-                    PetAvatar(pet: widget.pet, size: 150),
-                    Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: gdSurface, borderRadius: BorderRadius.circular(999), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 12)]), child: Text(widget.accessory, style: const TextStyle(color: gdInk, fontWeight: FontWeight.w900))),
+              const SizedBox(height: 20),
+              SectionTitle(title: 'Mystery chest', trailing: '50 coins'),
+          const SizedBox(height: 10),
+              AppCard(
+                color: gdSurface,
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: const [CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.inventory_2_rounded, color: gdPrimary)), SizedBox(width: 12), Expanded(child: Text('Open a chest for random pet skins or accessories.', style: TextStyle(color: gdInk, fontWeight: FontWeight.w900, fontSize: 16)))]),
+                    const SizedBox(height: 14),
+                    SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: widget.onOpenChest, icon: const Icon(Icons.auto_awesome_rounded), label: const Text('Open chest -50 coins'))),
+                    const SizedBox(height: 10),
+                    SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: widget.onFeed, icon: const Icon(Icons.restaurant_rounded), label: const Text('Feed companion -10 coins'))),
                   ]),
                 ),
               ),
-              const SizedBox(height: 22),
-              LinearProgressIndicator(value: widget.happiness / 100, minHeight: 10, backgroundColor: Colors.white, color: widget.pet.to, borderRadius: BorderRadius.circular(999)),
-              const SizedBox(height: 8),
-              Center(child: Text('Tap your pet to cheer it up · Happiness ${widget.happiness}%', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800))),
-              const SizedBox(height: 22),
-              Row(children: [
-                Expanded(child: _SkinPill(label: 'Mint', selected: _selectedSkin == 'Mint', onTap: () => setState(() => _selectedSkin = 'Mint'))),
-                const SizedBox(width: 12),
-                Expanded(child: _SkinPill(label: 'Peach', selected: _selectedSkin == 'Peach', onTap: () => setState(() => _selectedSkin = 'Peach'))),
-                const SizedBox(width: 12),
-                Expanded(child: _SkinPill(label: 'Lunar', selected: _selectedSkin == 'Lunar', onTap: () => setState(() => _selectedSkin = 'Lunar'))),
-              ]),
-            ]),
+            ],
           ),
-          const SizedBox(height: 20),
-          SectionTitle(title: 'Mystery chest', trailing: '50 coins'),
-          const SizedBox(height: 10),
-          AppCard(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: const [CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.inventory_2_rounded, color: gdPrimary)), SizedBox(width: 12), Expanded(child: Text('Open a chest for random pet skins or accessories.', style: TextStyle(color: gdInk, fontWeight: FontWeight.w900, fontSize: 16)))]),
-                const SizedBox(height: 14),
-                SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: widget.onOpenChest, icon: const Icon(Icons.auto_awesome_rounded), label: const Text('Open chest -50 coins'))),
-                const SizedBox(height: 10),
-                SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: widget.onFeed, icon: const Icon(Icons.restaurant_rounded), label: const Text('Feed companion -10 coins'))),
-              ]),
+          Positioned(
+            top: 14,
+            left: 18,
+            child: _FloatingWallet(coins: widget.coins),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FloatingWallet extends StatelessWidget {
+  const _FloatingWallet({required this.coins});
+
+  final int coins;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: gdSurface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: gdBorder),
+        boxShadow: [
+          BoxShadow(
+            color: gdPrimary.withOpacity(0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: const BoxDecoration(color: gdStarGold, shape: BoxShape.circle),
+            alignment: Alignment.center,
+            child: const Text(
+              'C',
+              style: TextStyle(color: Color(0xFF5B3200), fontWeight: FontWeight.w900, fontSize: 14),
             ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Wallet',
+                style: TextStyle(color: gdMuted, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.6),
+              ),
+              Text(
+                '$coins coins',
+                style: const TextStyle(color: gdInk, fontSize: 13, fontWeight: FontWeight.w900),
+              ),
+            ],
           ),
         ],
       ),
