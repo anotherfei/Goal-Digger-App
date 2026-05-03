@@ -499,6 +499,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   int _coins = 140;
   int _streak = 7;
   final List<String> _friends = ['Maya Chen', 'Leo Tan', 'Ari Putra'];
+  final List<String> _friendSuggestions = ['Nina Rahman', 'Jay Lim', 'Sofia Hart'];
+  PetSkin _activePetSkin = defaultPet;
+  String _activeAccessory = 'Cap';
 
   FocusSessionConfig? _activeFocusConfig;
   int _focusRemainingSeconds = 0;
@@ -1117,6 +1120,49 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _showMessage('Joined ${group.name}.');
   }
 
+  void _deleteCommunity(CommunityGroup group) {
+    setState(() => _communities.remove(group));
+    _showMessage('Removed ${group.name}.');
+  }
+
+  void _addFriend(String name) {
+    if (_friends.contains(name)) return;
+    setState(() => _friends.add(name));
+    _showMessage('$name added as a friend.');
+  }
+
+  void _deleteFriend(String name) {
+    setState(() => _friends.remove(name));
+    _showMessage('Removed $name from friends.');
+  }
+
+  void _openPetChest() {
+    if (_coins < 50) {
+      _showHelpfulError(
+        title: 'Not enough coins',
+        message: 'A mystery chest costs 50 coins. Complete a few tasks first, then try again.',
+        actionLabel: 'Got it',
+        onAction: () {},
+      );
+      return;
+    }
+    final skins = [
+      defaultPet,
+      const PetSkin(name: 'Peach', from: Color(0xFFFFB4A2), to: Color(0xFFFFD6A5), accent: Color(0xFFFFF1E6)),
+      const PetSkin(name: 'Lunar', from: Color(0xFF64748B), to: Color(0xFF1E293B), accent: Color(0xFFE2E8F0)),
+    ];
+    final accessories = ['Cap', 'Star badge', 'Tiny scarf', 'Focus glasses'];
+    final skin = skins[Random().nextInt(skins.length)];
+    final accessory = accessories[Random().nextInt(accessories.length)];
+    setState(() {
+      _coins -= 50;
+      _activePetSkin = skin;
+      _activeAccessory = accessory;
+      _petHappiness = min(100, _petHappiness + 6);
+    });
+    _showMessage('Chest opened: ${skin.name} skin + $accessory unlocked!');
+  }
+
   void _feedPet() {
     if (_coins < 10) {
       _showHelpfulError(
@@ -1131,6 +1177,17 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _coins -= 10;
       _petHappiness = min(100, _petHappiness + 12);
     });
+  }
+
+  void _interactWithPet() {
+    final reactions = [
+      '${_activePetSkin.name} is cheering for you!',
+      '${_activePetSkin.name} did a happy little bounce.',
+      '${_activePetSkin.name} says: one tiny step counts!',
+      '${_activePetSkin.name} feels closer to you.',
+    ];
+    setState(() => _petHappiness = min(100, _petHappiness + 2));
+    _showMessage(reactions[Random().nextInt(reactions.length)]);
   }
 
   Future<void> _openFocusMode() async {
@@ -1205,69 +1262,146 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   void _openProfile() {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      backgroundColor: gdSurface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-          children: [
-            Text('Profile', style: Theme.of(context).textTheme.headlineMedium),
-            const SizedBox(height: 14),
-            AppCard(color: gdCardLight, child: ListTile(
-              leading: const CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.person_rounded)),
-              title: Text('Signed in with $_signedInWith', style: const TextStyle(fontWeight: FontWeight.w900)),
-              subtitle: const Text('Account overview and progress stats', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
-            )),
-            const SizedBox(height: 12),
-            Row(children: [
-              Expanded(child: StatMiniCard(icon: Icons.paid_rounded, label: 'Coins', value: '$_coins')),
-              const SizedBox(width: 10),
-              Expanded(child: StatMiniCard(icon: Icons.local_fire_department_rounded, label: 'Streak', value: '$_streak days')),
-            ]),
-            const SizedBox(height: 18),
-            SectionTitle(title: 'Friends', trailing: '${_friends.length}'),
-            const SizedBox(height: 8),
-            for (final friend in _friends)
-              AppCard(margin: const EdgeInsets.only(bottom: 8), child: ListTile(
-                leading: const CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.person_add_alt_1_rounded)),
-                title: Text(friend, style: const TextStyle(fontWeight: FontWeight.w900)),
-                subtitle: const Text('Accountability friend · weekly progress visible', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
-                trailing: TextButton(onPressed: () {}, child: const Text('Manage')),
-              )),
-            FilledButton.icon(onPressed: () {}, icon: const Icon(Icons.group_add_rounded), label: const Text('Add or manage friends')),
-          ],
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (context) => Scaffold(
+          backgroundColor: gdBackground,
+          appBar: AppBar(
+            centerTitle: true,
+            title: const Text('Profile'),
+            leading: IconButton(
+              tooltip: 'Close profile',
+              icon: const Icon(Icons.close_rounded),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+          body: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+              children: [
+                AppCard(
+                  color: gdSurface,
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const CircleAvatar(
+                              radius: 36,
+                              backgroundColor: gdPrimarySoft,
+                              child: Icon(Icons.account_circle_rounded, size: 42, color: gdPrimary),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Goal Digger User', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: gdInk)),
+                                  const SizedBox(height: 4),
+                                  Text('Signed in with $_signedInWith', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+                        Row(children: [
+                          Expanded(child: StatMiniCard(icon: Icons.paid_rounded, label: 'Coins', value: '$_coins')),
+                          const SizedBox(width: 10),
+                          Expanded(child: StatMiniCard(icon: Icons.local_fire_department_rounded, label: 'Streak', value: '$_streak days')),
+                        ]),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                AppCard(
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text('Account', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: gdInk)),
+                        SizedBox(height: 10),
+                        ListTile(leading: Icon(Icons.mail_rounded), title: Text('Email / login method'), subtitle: Text('Manage account connection from settings.')),
+                        ListTile(leading: Icon(Icons.shield_rounded), title: Text('Privacy'), subtitle: Text('Control what friends and communities can see.')),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                AppCard(
+                  color: gdPrimarySoft,
+                  child: const Padding(
+                    padding: EdgeInsets.all(18),
+                    child: Text(
+                      'Friends are now managed from the Community page under the Friends tab.',
+                      style: TextStyle(color: gdInk, fontWeight: FontWeight.w800, height: 1.4),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
   void _openSettings() {
-    showModalBottomSheet<void>(
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (context) => const SettingsScreen(),
+      ),
+    );
+  }
+
+  Future<void> _editGoalDeadline(GoalProject goal) async {
+    final picked = await showDatePicker(
       context: context,
-      showDragHandle: true,
-      backgroundColor: gdSurface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-          child: Column(
+      initialDate: goal.deadline.isBefore(today) ? today : goal.deadline,
+      firstDate: today,
+      lastDate: DateTime(today.year + 5),
+    );
+    if (picked == null) return;
+    setState(() => goal.deadline = picked);
+    _showMessage('Deadline updated to ${shortDate(picked)}.');
+  }
+
+  Future<void> _editGoalPriority(GoalProject goal) async {
+    var draftPriority = goal.importance;
+    final result = await showDialog<int>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocalState) => AlertDialog(
+          backgroundColor: gdSurface,
+          title: const Text('Edit priority'),
+          content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Settings', style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 12),
-              SwitchListTile.adaptive(value: true, onChanged: (_) {}, title: const Text('Goal reminders', style: TextStyle(fontWeight: FontWeight.w900)), subtitle: const Text('Nudge me before scheduled tasks.')),
-              SwitchListTile.adaptive(value: true, onChanged: (_) {}, title: const Text('Friend progress sharing', style: TextStyle(fontWeight: FontWeight.w900)), subtitle: const Text('Show my streak to approved friends.')),
-              ListTile(leading: const Icon(Icons.palette_rounded), title: const Text('Appearance', style: TextStyle(fontWeight: FontWeight.w900)), subtitle: const Text('Readable colors and calm contrast enabled.')),
+              Text(goal.title, style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 14),
+              PrioritySelector(
+                value: draftPriority,
+                onChanged: (value) => setLocalState(() => draftPriority = value),
+              ),
             ],
           ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(context, draftPriority), child: const Text('Save priority')),
+          ],
         ),
       ),
     );
+    if (result == null) return;
+    setState(() => goal.importance = result);
+    _showMessage('Priority updated.');
   }
 
   @override
@@ -1295,6 +1429,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         onCategoryChanged: (value) => setState(() => _newGoalCategory = value),
         onCreateGoal: _createGoalWithProgress,
         onDeleteGoal: _deleteGoal,
+        onEditGoalDeadline: _editGoalDeadline,
+        onEditGoalPriority: _editGoalPriority,
         onCreateFirstGoal: () => setState(() => _selectedIndex = 0),
       ),
       _CalendarPage(
@@ -1318,10 +1454,24 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _CommunityPage(
         controller: _communityController,
         communities: _communities,
+        friends: _friends,
+        friendSuggestions: _friendSuggestions,
+        streak: _streak,
         onAddCommunity: _addCommunity,
         onJoinCommunity: _joinCommunity,
+        onDeleteCommunity: _deleteCommunity,
+        onAddFriend: _addFriend,
+        onDeleteFriend: _deleteFriend,
       ),
-      _CompanionPage(coins: _coins, happiness: _petHappiness, onFeed: _feedPet),
+      _CompanionPage(
+        coins: _coins,
+        happiness: _petHappiness,
+        pet: _activePetSkin,
+        accessory: _activeAccessory,
+        onFeed: _feedPet,
+        onOpenChest: _openPetChest,
+        onPetInteract: _interactWithPet,
+      ),
     ];
 
     return ResponsiveGoalShell(
@@ -1957,6 +2107,92 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
   }
 }
 
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: gdBackground,
+      appBar: AppBar(
+        centerTitle: true,
+        title: const Text('Settings'),
+        leading: IconButton(
+          tooltip: 'Close settings',
+          icon: const Icon(Icons.close_rounded),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
+          children: [
+            AppCard(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text('App preferences', style: TextStyle(color: gdInk, fontSize: 20, fontWeight: FontWeight.w900)),
+                    SizedBox(height: 6),
+                    Text('The whole app uses the same calm Goal Digger theme: soft background, white cards, readable slate text, and one primary blue for actions.', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700, height: 1.4)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            AppCard(
+              child: Column(
+                children: [
+                  SwitchListTile.adaptive(
+                    value: true,
+                    onChanged: (_) {},
+                    activeColor: gdPrimary,
+                    title: const Text('Goal reminders', style: TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
+                    subtitle: const Text('Nudge me before scheduled tasks.', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                  ),
+                  const Divider(height: 1),
+                  SwitchListTile.adaptive(
+                    value: true,
+                    onChanged: (_) {},
+                    activeColor: gdPrimary,
+                    title: const Text('Friend progress sharing', style: TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
+                    subtitle: const Text('Show my streak to approved friends.', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            AppCard(
+              child: Column(
+                children: const [
+                  ListTile(
+                    leading: CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.palette_rounded, color: gdPrimary)),
+                    title: Text('Appearance', style: TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
+                    subtitle: Text('Readable colors and calm contrast enabled.', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                  ),
+                  Divider(height: 1),
+                  ListTile(
+                    leading: CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.notifications_active_rounded, color: gdPrimary)),
+                    title: Text('Notifications', style: TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
+                    subtitle: Text('Focus, routine, friend, and streak notification controls.', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                  ),
+                  Divider(height: 1),
+                  ListTile(
+                    leading: CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.lock_rounded, color: gdPrimary)),
+                    title: Text('Privacy and account', style: TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
+                    subtitle: Text('Manage login, visibility, and connected accounts.', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /* RESPONSIVE NAVIGATION                                                      */
 /* -------------------------------------------------------------------------- */
@@ -2145,6 +2381,8 @@ class _PlannerPage extends StatelessWidget {
     required this.onCategoryChanged,
     required this.onCreateGoal,
     required this.onDeleteGoal,
+    required this.onEditGoalDeadline,
+    required this.onEditGoalPriority,
     required this.onCreateFirstGoal,
   });
 
@@ -2161,6 +2399,8 @@ class _PlannerPage extends StatelessWidget {
   final ValueChanged<String> onCategoryChanged;
   final VoidCallback onCreateGoal;
   final ValueChanged<GoalProject> onDeleteGoal;
+  final ValueChanged<GoalProject> onEditGoalDeadline;
+  final ValueChanged<GoalProject> onEditGoalPriority;
   final VoidCallback onCreateFirstGoal;
 
   @override
@@ -2215,7 +2455,13 @@ class _PlannerPage extends StatelessWidget {
           if (goals.isEmpty)
             EmptyStateCard(icon: Icons.flag_circle_rounded, title: 'No goals yet', message: 'Create your first project and Goal Digger will turn it into small, scheduled actions.', cta: 'Create your first project', onPressed: onCreateFirstGoal)
           else
-            ...goals.map((goal) => GoalCard(goal: goal, today: today, onDelete: () => onDeleteGoal(goal))),
+            ...goals.map((goal) => GoalCard(
+                  goal: goal,
+                  today: today,
+                  onDelete: () => onDeleteGoal(goal),
+                  onEditDeadline: () => onEditGoalDeadline(goal),
+                  onEditPriority: () => onEditGoalPriority(goal),
+                )),
         ],
       ),
     );
@@ -2681,61 +2927,258 @@ class _CalendarStatCard extends StatelessWidget {
   }
 }
 
-class _CommunityPage extends StatelessWidget {
+class _CommunityPage extends StatefulWidget {
   const _CommunityPage({
     required this.controller,
     required this.communities,
+    required this.friends,
+    required this.friendSuggestions,
+    required this.streak,
     required this.onAddCommunity,
     required this.onJoinCommunity,
+    required this.onDeleteCommunity,
+    required this.onAddFriend,
+    required this.onDeleteFriend,
   });
 
   final TextEditingController controller;
   final List<CommunityGroup> communities;
+  final List<String> friends;
+  final List<String> friendSuggestions;
+  final int streak;
   final VoidCallback onAddCommunity;
   final ValueChanged<CommunityGroup> onJoinCommunity;
+  final ValueChanged<CommunityGroup> onDeleteCommunity;
+  final ValueChanged<String> onAddFriend;
+  final ValueChanged<String> onDeleteFriend;
+
+  @override
+  State<_CommunityPage> createState() => _CommunityPageState();
+}
+
+class _CommunityPageState extends State<_CommunityPage> {
+  int _tab = 0;
+  final TextEditingController _friendSearchController = TextEditingController();
+  final TextEditingController _communitySearchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _friendSearchController.dispose();
+    _communitySearchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final recommended = [...communities]..sort((a, b) => b.similarity.compareTo(a.similarity));
     return PageScaffold(
       child: ListView(
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 112),
         children: [
+          const PageHero(
+            icon: Icons.groups_rounded,
+            title: 'Community',
+            subtitle: 'Manage accountability friends on the left tab and goal communities on the right tab.',
+          ),
+          const SizedBox(height: 14),
           AppCard(
+            color: gdCardLight,
             child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const PageHero(icon: Icons.groups_rounded, title: 'Community', subtitle: 'Create a new group, join one that matches your interests, or compare similarity before joining.', compact: true),
-                const SizedBox(height: 14),
-                TextField(controller: controller, decoration: const InputDecoration(labelText: 'Create a community', hintText: 'Example: Midterm study group'), onSubmitted: (_) => onAddCommunity()),
-                const SizedBox(height: 12),
-                Row(children: [
-                  Expanded(child: FilledButton.icon(onPressed: onAddCommunity, icon: const Icon(Icons.add_rounded), label: const Text('Create'))),
-                  const SizedBox(width: 10),
-                  Expanded(child: OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.login_rounded), label: const Text('Join with code'))),
-                ]),
+              padding: const EdgeInsets.all(8),
+              child: Row(children: [
+                Expanded(child: _SegmentButton(label: 'Friends', icon: Icons.person_add_alt_1_rounded, selected: _tab == 0, onTap: () => setState(() => _tab = 0))),
+                Expanded(child: _SegmentButton(label: 'Communities', icon: Icons.groups_rounded, selected: _tab == 1, onTap: () => setState(() => _tab = 1))),
               ]),
             ),
           ),
-          const SizedBox(height: 18),
-          SectionTitle(title: 'Best matches for you', trailing: '${recommended.length}'),
-          const SizedBox(height: 10),
-          ...recommended.map((group) => CommunityMatchCard(group: group, onJoin: () => onJoinCommunity(group))),
-          const SizedBox(height: 10),
-          SectionTitle(title: 'All communities'),
-          const SizedBox(height: 10),
-          ...communities.map((group) => AppCard(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: ListTile(
-                  minVerticalPadding: 16,
-                  leading: const CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.groups_rounded, color: gdPrimary)),
-                  title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w900)),
-                  subtitle: Text('${group.members} members · ${group.tag}\n${group.description}', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w600)),
-                  isThreeLine: true,
-                  trailing: group.joined ? const Chip(label: Text('Joined')) : TextButton(onPressed: () => onJoinCommunity(group), child: const Text('Join')),
-                ),
-              )),
+          const SizedBox(height: 16),
+          if (_tab == 0) _buildFriendsTab(context) else _buildCommunitiesTab(context),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFriendsTab(BuildContext context) {
+    final leaderboard = <MapEntry<String, int>>[
+      MapEntry('You', widget.streak),
+      for (var i = 0; i < widget.friends.length; i++) MapEntry(widget.friends[i], max(2, widget.streak - i + 2)),
+    ]..sort((a, b) => b.value.compareTo(a.value));
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SectionTitle(title: 'Friend streak leaderboard'),
+      const SizedBox(height: 10),
+      AppCard(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(children: [
+            for (var i = 0; i < leaderboard.length; i++)
+              ListTile(
+                leading: CircleAvatar(backgroundColor: i == 0 ? gdAccentSoft : gdPrimarySoft, child: Text('#${i + 1}', style: const TextStyle(fontWeight: FontWeight.w900))),
+                title: Text(leaderboard[i].key, style: const TextStyle(fontWeight: FontWeight.w900)),
+                trailing: Chip(label: Text('${leaderboard[i].value} day streak')),
+              ),
+          ]),
+        ),
+      ),
+      const SizedBox(height: 18),
+      SectionTitle(title: 'My friend list', trailing: '${widget.friends.length}'),
+      const SizedBox(height: 10),
+      for (final friend in widget.friends)
+        AppCard(
+          margin: const EdgeInsets.only(bottom: 10),
+          child: ListTile(
+            leading: const CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.person_rounded, color: gdPrimary)),
+            title: Text(friend, style: const TextStyle(fontWeight: FontWeight.w900)),
+            subtitle: const Text('Accountability friend · progress visible', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+            trailing: Wrap(spacing: 4, children: [
+              IconButton.filledTonal(tooltip: 'Chat', onPressed: () => _showSimpleChat(context, friend, isCommunity: false), icon: const Icon(Icons.chat_bubble_rounded)),
+              IconButton(tooltip: 'Delete friend', onPressed: () => widget.onDeleteFriend(friend), icon: const Icon(Icons.delete_outline_rounded, color: gdError)),
+            ]),
+          ),
+        ),
+      const SizedBox(height: 18),
+      SectionTitle(title: 'Find friends'),
+      const SizedBox(height: 10),
+      TextField(controller: _friendSearchController, decoration: const InputDecoration(labelText: 'Search friend username', hintText: 'Example: @maya'), onSubmitted: (value) { if (value.trim().isNotEmpty) widget.onAddFriend(value.trim()); }),
+      const SizedBox(height: 12),
+      SectionTitle(title: 'Friend suggestions'),
+      const SizedBox(height: 10),
+      for (final name in widget.friendSuggestions.where((name) => !widget.friends.contains(name)))
+        FriendSuggestionCard(name: name, match: 90 - widget.friendSuggestions.indexOf(name) * 6, onAdd: () => widget.onAddFriend(name)),
+    ]);
+  }
+
+  Widget _buildCommunitiesTab(BuildContext context) {
+    final joined = widget.communities.where((group) => group.joined).toList();
+    final suggested = [...widget.communities]..sort((a, b) => b.similarity.compareTo(a.similarity));
+    final leaderboard = [...widget.communities]..sort((a, b) => b.members.compareTo(a.members));
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      AppCard(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Create or join community', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: gdInk)),
+            const SizedBox(height: 10),
+            TextField(controller: widget.controller, decoration: const InputDecoration(labelText: 'Create a community', hintText: 'Example: Midterm study group'), onSubmitted: (_) => widget.onAddCommunity()),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(child: FilledButton.icon(onPressed: widget.onAddCommunity, icon: const Icon(Icons.add_rounded), label: const Text('Create'))),
+              const SizedBox(width: 10),
+              Expanded(child: OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.login_rounded), label: const Text('Join with code'))),
+            ]),
+          ]),
+        ),
+      ),
+      const SizedBox(height: 18),
+      SectionTitle(title: 'Community streak leaderboard'),
+      const SizedBox(height: 10),
+      AppCard(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(children: [
+            for (var i = 0; i < min(3, leaderboard.length); i++)
+              ListTile(
+                leading: CircleAvatar(backgroundColor: gdPrimarySoft, child: Text('#${i + 1}', style: const TextStyle(fontWeight: FontWeight.w900))),
+                title: Text(leaderboard[i].name, style: const TextStyle(fontWeight: FontWeight.w900)),
+                subtitle: Text('${leaderboard[i].members} members', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                trailing: Chip(label: Text('${leaderboard[i].similarity}% fit')),
+              ),
+          ]),
+        ),
+      ),
+      const SizedBox(height: 18),
+      SectionTitle(title: 'My community list', trailing: '${joined.length}'),
+      const SizedBox(height: 10),
+      if (joined.isEmpty)
+        const HelpfulErrorBox(title: 'No joined communities yet', message: 'Join a suggested community below or create your own group.', actionLabel: 'Got it', showAction: false)
+      else
+        for (final group in joined)
+          AppCard(
+            margin: const EdgeInsets.only(bottom: 10),
+            child: ListTile(
+              leading: const CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.groups_rounded, color: gdPrimary)),
+              title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+              subtitle: Text('${group.members} members · ${group.tag}', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+              trailing: Wrap(spacing: 4, children: [
+                IconButton.filledTonal(tooltip: 'Chat', onPressed: () => _showSimpleChat(context, group.name, isCommunity: true), icon: const Icon(Icons.chat_bubble_rounded)),
+                IconButton(tooltip: 'Delete community', onPressed: () => widget.onDeleteCommunity(group), icon: const Icon(Icons.delete_outline_rounded, color: gdError)),
+              ]),
+            ),
+          ),
+      const SizedBox(height: 18),
+      SectionTitle(title: 'Find communities'),
+      const SizedBox(height: 10),
+      TextField(controller: _communitySearchController, decoration: const InputDecoration(labelText: 'Search communities', hintText: 'Example: design, fitness, exam'), onSubmitted: (_) {}),
+      const SizedBox(height: 12),
+      SectionTitle(title: 'Community suggestions'),
+      const SizedBox(height: 10),
+      ...suggested.map((group) => CommunityMatchCard(group: group, onJoin: () => widget.onJoinCommunity(group))),
+    ]);
+  }
+
+  void _showSimpleChat(BuildContext context, String title, {required bool isCommunity}) {
+    final controller = TextEditingController();
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: gdSurface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(isCommunity ? '$title chat' : 'Chat with $title', style: Theme.of(context).textTheme.headlineMedium),
+            const SizedBox(height: 12),
+            AppCard(color: gdCardLight, child: const Padding(padding: EdgeInsets.all(16), child: Text('Say hi, share your goal update, or ask for accountability.', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)))),
+            const SizedBox(height: 12),
+            TextField(controller: controller, decoration: const InputDecoration(labelText: 'Message', hintText: 'Write a message...')),
+            const SizedBox(height: 12),
+            SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.send_rounded), label: const Text('Send'))),
+          ]),
+        ),
+      ),
+    ).whenComplete(controller.dispose);
+  }
+}
+
+class _SegmentButton extends StatelessWidget {
+  const _SegmentButton({required this.label, required this.icon, required this.selected, required this.onTap});
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+        decoration: BoxDecoration(color: selected ? gdPrimary : Colors.transparent, borderRadius: BorderRadius.circular(18)),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(icon, color: selected ? Colors.white : gdMuted), const SizedBox(width: 8), Text(label, style: TextStyle(color: selected ? Colors.white : gdInk, fontWeight: FontWeight.w900))]),
+      ),
+    );
+  }
+}
+
+class FriendSuggestionCard extends StatelessWidget {
+  const FriendSuggestionCard({super.key, required this.name, required this.match, required this.onAdd});
+  final String name;
+  final int match;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: ListTile(
+        leading: const CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.person_search_rounded, color: gdPrimary)),
+        title: Text(name, style: const TextStyle(fontWeight: FontWeight.w900)),
+        subtitle: Text('$match% similar goals · active this week', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+        trailing: FilledButton(onPressed: onAdd, child: const Text('Add')),
       ),
     );
   }
@@ -2753,10 +3196,7 @@ class CommunityMatchCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Expanded(child: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
-            Chip(label: Text('${group.similarity}% match')),
-          ]),
+          Row(children: [Expanded(child: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))), Chip(label: Text('${group.similarity}% match'))]),
           const SizedBox(height: 6),
           Text('${group.members} members · ${group.tag}', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800)),
           const SizedBox(height: 6),
@@ -2769,16 +3209,37 @@ class CommunityMatchCard extends StatelessWidget {
   }
 }
 
-class _CompanionPage extends StatelessWidget {
+class _CompanionPage extends StatefulWidget {
   const _CompanionPage({
     required this.coins,
     required this.happiness,
+    required this.pet,
+    required this.accessory,
     required this.onFeed,
+    required this.onOpenChest,
+    required this.onPetInteract,
   });
 
   final int coins;
   final int happiness;
+  final PetSkin pet;
+  final String accessory;
   final VoidCallback onFeed;
+  final VoidCallback onOpenChest;
+  final VoidCallback onPetInteract;
+
+  @override
+  State<_CompanionPage> createState() => _CompanionPageState();
+}
+
+class _CompanionPageState extends State<_CompanionPage> {
+  String _selectedSkin = 'Mint';
+
+  @override
+  void didUpdateWidget(covariant _CompanionPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _selectedSkin = widget.pet.name;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2786,71 +3247,96 @@ class _CompanionPage extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 112),
         children: [
-          AppCard(
-            color: gdPrimaryDark,
-            child: Padding(
-              padding: const EdgeInsets.all(22),
-              child: Column(
-                children: [
-                  PetAvatar(pet: defaultPet, size: 120),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Your companion grows when you finish tasks.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: gdOnDark,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  LinearProgressIndicator(
-                    value: happiness / 100,
-                    minHeight: 10,
-                    backgroundColor: Colors.white24,
-                    color: gdPetMintTo,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Happiness $happiness% · $coins coins',
-                    style: const TextStyle(color: gdOnDarkMuted, fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: onFeed,
-                      icon: const Icon(Icons.restaurant_rounded),
-                      label: const Text('Feed companion -10 coins'),
-                    ),
-                  ),
-                ],
+          Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: const Color(0xFF071022),
+              borderRadius: BorderRadius.circular(34),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 28, offset: const Offset(0, 14))],
+            ),
+            child: Row(children: [
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('WALLET', style: TextStyle(color: Color(0xFF9CA3AF), letterSpacing: 5, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 14),
+                  Text('${widget.coins}', style: const TextStyle(color: Colors.white, fontSize: 44, fontWeight: FontWeight.w900, letterSpacing: -1.5)),
+                  const Text('coins earned', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 17, fontWeight: FontWeight.w900)),
+                ]),
               ),
+              Container(width: 96, height: 96, decoration: BoxDecoration(color: const Color(0xFFFFC21A), shape: BoxShape.circle, boxShadow: [BoxShadow(color: const Color(0xFFFFC21A).withOpacity(0.35), blurRadius: 26)]), child: const Center(child: Text('C', style: TextStyle(color: Color(0xFF5B3200), fontSize: 34, fontWeight: FontWeight.w900)))),
+            ]),
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(26),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [Color(0xFFFFF1F2), Color(0xFFFFF7ED)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+              borderRadius: BorderRadius.circular(34),
+              border: Border.all(color: Colors.white.withOpacity(0.9)),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('PET PREVIEW', style: TextStyle(color: Color(0xFFC2410C), letterSpacing: 4, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 26),
+              Center(
+                child: GestureDetector(
+                  onTap: widget.onPetInteract,
+                  child: Stack(alignment: Alignment.topRight, children: [
+                    PetAvatar(pet: widget.pet, size: 150),
+                    Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: gdSurface, borderRadius: BorderRadius.circular(999), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 12)]), child: Text(widget.accessory, style: const TextStyle(color: gdInk, fontWeight: FontWeight.w900))),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 22),
+              LinearProgressIndicator(value: widget.happiness / 100, minHeight: 10, backgroundColor: Colors.white, color: widget.pet.to, borderRadius: BorderRadius.circular(999)),
+              const SizedBox(height: 8),
+              Center(child: Text('Tap your pet to cheer it up · Happiness ${widget.happiness}%', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800))),
+              const SizedBox(height: 22),
+              Row(children: [
+                Expanded(child: _SkinPill(label: 'Mint', selected: _selectedSkin == 'Mint', onTap: () => setState(() => _selectedSkin = 'Mint'))),
+                const SizedBox(width: 12),
+                Expanded(child: _SkinPill(label: 'Peach', selected: _selectedSkin == 'Peach', onTap: () => setState(() => _selectedSkin = 'Peach'))),
+                const SizedBox(width: 12),
+                Expanded(child: _SkinPill(label: 'Lunar', selected: _selectedSkin == 'Lunar', onTap: () => setState(() => _selectedSkin = 'Lunar'))),
+              ]),
+            ]),
+          ),
+          const SizedBox(height: 20),
+          SectionTitle(title: 'Mystery chest', trailing: '50 coins'),
+          const SizedBox(height: 10),
+          AppCard(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: const [CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.inventory_2_rounded, color: gdPrimary)), SizedBox(width: 12), Expanded(child: Text('Open a chest for random pet skins or accessories.', style: TextStyle(color: gdInk, fontWeight: FontWeight.w900, fontSize: 16)))]),
+                const SizedBox(height: 14),
+                SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: widget.onOpenChest, icon: const Icon(Icons.auto_awesome_rounded), label: const Text('Open chest -50 coins'))),
+                const SizedBox(height: 10),
+                SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: widget.onFeed, icon: const Icon(Icons.restaurant_rounded), label: const Text('Feed companion -10 coins'))),
+              ]),
             ),
           ),
-          const SizedBox(height: 18),
-          SectionTitle(title: 'Rewards shop', trailing: 'Material icons'),
-          const SizedBox(height: 10),
-          const RewardTile(
-            icon: Icons.lightbulb_rounded,
-            title: 'Focus Lamp',
-            subtitle: 'A clean, consistent Material icon style.',
-            price: 80,
-          ),
-          const RewardTile(
-            icon: Icons.bed_rounded,
-            title: 'Cloud Bed',
-            subtitle: 'Consistent iconography improves visual polish.',
-            price: 120,
-          ),
-          const RewardTile(
-            icon: Icons.backpack_rounded,
-            title: 'Tiny Backpack',
-            subtitle: 'No mixed emoji/icon libraries in dashboard cards.',
-            price: 110,
-          ),
         ],
+      ),
+    );
+  }
+}
+
+class _SkinPill extends StatelessWidget {
+  const _SkinPill({required this.label, required this.selected, required this.onTap});
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
+      child: Container(
+        height: 62,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: selected ? const Color(0xFF071022) : Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: selected ? null : [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12)]),
+        child: Text(label, style: TextStyle(color: selected ? Colors.white : gdMuted, fontSize: 18, fontWeight: FontWeight.w800)),
       ),
     );
   }
@@ -3543,11 +4029,20 @@ class PrioritySelector extends StatelessWidget {
 }
 
 class GoalCard extends StatelessWidget {
-  const GoalCard({super.key, required this.goal, required this.today, required this.onDelete});
+  const GoalCard({
+    super.key,
+    required this.goal,
+    required this.today,
+    required this.onDelete,
+    required this.onEditDeadline,
+    required this.onEditPriority,
+  });
 
   final GoalProject goal;
   final DateTime today;
   final VoidCallback onDelete;
+  final VoidCallback onEditDeadline;
+  final VoidCallback onEditPriority;
 
   void _showTaskDetail(BuildContext context, MicroTask task) {
     showModalBottomSheet<void>(
@@ -3600,7 +4095,26 @@ class GoalCard extends StatelessWidget {
                 Text('$completed/${goal.tasks.length} tasks done', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
                 Row(children: [Icon(daysLeft <= 2 ? Icons.warning_amber_rounded : Icons.event_rounded, size: 18, color: daysLeft <= 2 ? gdWarning : gdPrimary), const SizedBox(width: 4), Text(daysLeft < 0 ? 'Overdue' : '$daysLeft days left', style: TextStyle(color: daysLeft <= 2 ? gdWarning : gdMuted, fontWeight: FontWeight.w900))]),
+                const SizedBox(height: 6),
+                Row(children: [
+                  const Icon(Icons.star_rounded, size: 18, color: gdStarGold),
+                  const SizedBox(width: 4),
+                  Text('Priority ${goal.importance}/5', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w900)),
+                ]),
               ])),
+            ]),
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              OutlinedButton.icon(
+                onPressed: onEditDeadline,
+                icon: const Icon(Icons.event_rounded, size: 18),
+                label: const Text('Edit deadline'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onEditPriority,
+                icon: const Icon(Icons.star_rounded, size: 18),
+                label: const Text('Edit priority'),
+              ),
             ]),
             const Divider(height: 26),
             const Text('Subtasks', style: TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
