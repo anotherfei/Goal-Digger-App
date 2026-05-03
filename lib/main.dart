@@ -786,7 +786,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     showGeneralDialog<void>(
       context: context,
       barrierDismissible: false,
-      barrierColor: Colors.black.withOpacity(0.24),
+      barrierColor: Colors.black.withValues(alpha: 0.24),
       transitionDuration: const Duration(milliseconds: 220),
       pageBuilder: (context, animation, secondaryAnimation) {
         return FocusCountdownDialog(config: config);
@@ -1404,7 +1404,7 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
                       SwitchListTile.adaptive(
                         contentPadding: EdgeInsets.zero,
                         value: _blockUnrelatedApps,
-                        activeColor: gdPrimary,
+                        activeThumbColor: gdPrimary,
                         title: const Text(
                           'Block apps unrelated to this goal',
                           style: TextStyle(fontWeight: FontWeight.w900),
@@ -1597,7 +1597,7 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
                         ),
                         const SizedBox(height: 28),
                         AppCard(
-                          color: gdSurface.withOpacity(0.94),
+                          color: gdSurface.withValues(alpha: 0.94),
                           child: Padding(
                             padding: const EdgeInsets.all(16),
                             child: Column(
@@ -1778,22 +1778,22 @@ class _GoalBottomNavigation extends StatelessWidget {
               height: 88,
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
               decoration: BoxDecoration(
-                color: gdSurface.withOpacity(0.96),
+                color: gdSurface.withValues(alpha: 0.96),
                 borderRadius: BorderRadius.circular(32),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.13),
+                    color: Colors.black.withValues(alpha: 0.13),
                     blurRadius: 30,
                     offset: const Offset(0, 15),
                   ),
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
+                    color: Colors.black.withValues(alpha: 0.06),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
                 ],
                 border: Border.all(
-                  color: gdOnDark.withOpacity(0.55),
+                  color: gdOnDark.withValues(alpha: 0.55),
                   width: 1,
                 ),
               ),
@@ -1862,12 +1862,12 @@ class _BottomNavItem extends StatelessWidget {
                         : Colors.transparent,
                 shape: BoxShape.circle,
                 border: highlighted && !selected
-                    ? Border.all(color: gdPrimaryDark.withOpacity(0.2), width: 2)
+                    ? Border.all(color: gdPrimaryDark.withValues(alpha: 0.2), width: 2)
                     : null,
                 boxShadow: highlighted
                     ? [
                         BoxShadow(
-                          color: gdPrimary.withOpacity(0.34),
+                          color: gdPrimary.withValues(alpha: 0.34),
                           blurRadius: 14,
                           offset: const Offset(0, 7),
                         ),
@@ -2853,8 +2853,8 @@ class AmbientBackground extends StatelessWidget {
               end: Alignment.bottomRight,
               colors: [
                 gdBackground,
-                const Color(0xFFE0F2FE).withOpacity(0.7),
-                const Color(0xFFFCE7F3).withOpacity(0.45),
+                const Color(0xFFE0F2FE).withValues(alpha: 0.7),
+                const Color(0xFFFCE7F3).withValues(alpha: 0.45),
               ],
             ),
           ),
@@ -2880,7 +2880,7 @@ class AppCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 24,
             offset: const Offset(0, 12),
           ),
@@ -2998,7 +2998,7 @@ class MoodCheckPanel extends StatelessWidget {
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: gdPrimaryDark.withOpacity(0.18),
+            color: gdPrimaryDark.withValues(alpha: 0.18),
             blurRadius: 24,
             offset: const Offset(0, 10),
           ),
@@ -3072,10 +3072,10 @@ class _MoodButton extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
         decoration: BoxDecoration(
-          color: selected ? gdSurface : gdOnDark.withOpacity(0.18),
+          color: selected ? gdSurface : gdOnDark.withValues(alpha: 0.18),
           borderRadius: BorderRadius.circular(22),
           border: Border.all(
-            color: selected ? gdOnDark : gdOnDark.withOpacity(0.18),
+            color: selected ? gdOnDark : gdOnDark.withValues(alpha: 0.18),
           ),
         ),
         child: Column(
@@ -3301,7 +3301,7 @@ class HelpfulErrorBox extends StatelessWidget {
       decoration: BoxDecoration(
         color: gdErrorSoft,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: gdError.withOpacity(0.35)),
+        border: Border.all(color: gdError.withValues(alpha: 0.35)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3430,7 +3430,7 @@ class PrioritySelector extends StatelessWidget {
                   onPressed: () => onChanged(star),
                   icon: Icon(
                     star <= value ? Icons.star_rounded : Icons.star_border_rounded,
-                    color: star <= value ? gdStarGold : gdOnDarkMuted.withOpacity(0.72),
+                    color: star <= value ? gdStarGold : gdOnDarkMuted.withValues(alpha: 0.72),
                   ),
                 ),
               );
@@ -3646,7 +3646,7 @@ class PetAvatar extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: pet.to.withOpacity(0.34),
+            color: pet.to.withValues(alpha: 0.34),
             blurRadius: size * 0.22,
             offset: Offset(0, size * 0.08),
           ),
@@ -3661,7 +3661,7 @@ class PetAvatar extends StatelessWidget {
               width: size * 0.45,
               height: size * 0.17,
               decoration: BoxDecoration(
-                color: pet.accent.withOpacity(0.85),
+                color: pet.accent.withValues(alpha: 0.85),
                 borderRadius: BorderRadius.circular(999),
               ),
             ),
@@ -3682,7 +3682,7 @@ class PetAvatar extends StatelessWidget {
               width: size * 0.22,
               height: size * 0.08,
               decoration: BoxDecoration(
-                color: gdSurface.withOpacity(0.94),
+                color: gdSurface.withValues(alpha: 0.94),
                 borderRadius: BorderRadius.circular(999),
               ),
             ),
