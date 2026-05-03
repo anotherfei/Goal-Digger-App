@@ -74,10 +74,10 @@ ThemeData buildGoalDiggerTheme() {
     ),
     navigationBarTheme: const NavigationBarThemeData(
       height: 72,
-      labelTextStyle: MaterialStatePropertyAll(
+      labelTextStyle: WidgetStatePropertyAll(
         TextStyle(fontWeight: FontWeight.w800, color: gdInk),
       ),
-      iconTheme: MaterialStatePropertyAll(
+      iconTheme: WidgetStatePropertyAll(
         IconThemeData(color: gdMuted),
       ),
     ),
@@ -2587,51 +2587,6 @@ class _CalendarDayCell extends StatelessWidget {
               )
             else
               const SizedBox(height: 7),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CalendarStatCard extends StatelessWidget {
-  const _CalendarStatCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            CircleAvatar(
-              backgroundColor: gdPrimarySoft,
-              child: Icon(icon, color: gdPrimary),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
-                  ),
-                  Text(
-                    value,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ),
