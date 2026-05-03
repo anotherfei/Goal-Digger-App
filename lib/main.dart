@@ -2264,6 +2264,8 @@ class _TasksPage extends StatelessWidget {
             total: todayTotal,
             remainingMinutes: remainingMinutes,
           ),
+          const SizedBox(height: 12),
+          MoodAdjustmentNotice(mood: mood),
           const SizedBox(height: 18),
           SectionTitle(
             title: 'Goals for today',
@@ -2284,6 +2286,7 @@ class _TasksPage extends StatelessWidget {
               (task) => TaskCard(
                 task: task,
                 goal: goalForTask(task),
+                mood: mood,
                 onToggle: () => onToggleTask(task),
               ),
             ),
@@ -3619,26 +3622,122 @@ class GoalCard extends StatelessWidget {
   }
 }
 
+class MoodAdjustmentNotice extends StatelessWidget {
+  const MoodAdjustmentNotice({super.key, required this.mood});
+
+  final String mood;
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = mood == 'Tired'
+        ? Icons.spa_rounded
+        : mood == 'Great'
+            ? Icons.local_fire_department_rounded
+            : Icons.tune_rounded;
+    final title = mood == 'Tired'
+        ? 'Tasks softened for low energy'
+        : mood == 'Great'
+            ? 'Stretch mode is available today'
+            : 'Balanced task plan';
+    final message = mood == 'Tired'
+        ? 'Goal Digger shortens today’s actions and turns heavy tasks into smaller first steps.'
+        : mood == 'Great'
+            ? 'Goal Digger keeps the plan ambitious and suggests deeper work where it fits.'
+            : 'Goal Digger keeps today’s tasks at their normal size.';
+
+    return AppCard(
+      color: mood == 'Tired'
+          ? const Color(0xFFF0FDF4)
+          : mood == 'Great'
+              ? const Color(0xFFFFF7ED)
+              : gdCardLight,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: gdSurface,
+              child: Icon(icon, color: gdPrimary),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: gdInk)),
+                  const SizedBox(height: 3),
+                  Text(
+                    message,
+                    style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700, height: 1.35),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class TaskCard extends StatelessWidget {
   const TaskCard({
     super.key,
     required this.task,
     required this.goal,
+    required this.mood,
     required this.onToggle,
   });
 
   final MicroTask task;
   final GoalProject goal;
+  final String mood;
   final VoidCallback onToggle;
 
-  @override
-  Widget build(BuildContext context) {
-    final tip = task.load == TaskLoad.light
+  String get _adjustedTitle {
+    if (mood == 'Tired') {
+      if (task.load == TaskLoad.stretch) return 'Tiny version: ${task.title}';
+      if (task.durationMinutes > 15) return 'Start only: ${task.title}';
+      return task.title;
+    }
+    if (mood == 'Great' && task.load != TaskLoad.light) {
+      return 'Deep work: ${task.title}';
+    }
+    return task.title;
+  }
+
+  int get _adjustedMinutes {
+    if (mood == 'Tired') return min(task.durationMinutes, task.load == TaskLoad.stretch ? 12 : 15);
+    if (mood == 'Great' && task.load == TaskLoad.stretch) return task.durationMinutes + 10;
+    return task.durationMinutes;
+  }
+
+  String get _moodTip {
+    if (mood == 'Tired') {
+      return task.load == TaskLoad.stretch
+          ? 'Mood adjusted: do only the smallest useful part. You can finish the rest later.'
+          : 'Mood adjusted: keep this light and stop after the first clear win.';
+    }
+    if (mood == 'Great') {
+      return task.load == TaskLoad.light
+          ? 'Warm-up task. Finish this quickly, then move to a deeper step.'
+          : 'Mood adjusted: good energy today, so this can become a focused stretch block.';
+    }
+    return task.load == TaskLoad.light
         ? 'Start here when energy is low. This task is intentionally small.'
         : task.load == TaskLoad.focus
             ? 'Block distractions and work on this single step first.'
             : 'This is a higher-effort step. Do it when you have enough time.';
+  }
 
+  Color get _moodChipColor {
+    if (mood == 'Tired') return const Color(0xFFDCFCE7);
+    if (mood == 'Great') return const Color(0xFFFFEDD5);
+    return gdPrimarySoft;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return AppCard(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
@@ -3654,17 +3753,41 @@ class TaskCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      task.title,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        decoration: task.done ? TextDecoration.lineThrough : null,
-                      ),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          _adjustedTitle,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                            decoration: task.done ? TextDecoration.lineThrough : null,
+                          ),
+                        ),
+                        if (mood != 'Okay')
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: _moodChipColor,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: gdBorder),
+                            ),
+                            child: Text(
+                              mood == 'Tired' ? 'Adjusted lighter' : 'Stretch option',
+                              style: const TextStyle(
+                                color: gdInk,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${goal.title} · ${shortDate(task.scheduledDate)} · ${task.durationMinutes} min · ${task.load.label}',
+                      '${goal.title} · ${shortDate(task.scheduledDate)} · $_adjustedMinutes min · ${task.load.label}',
                       style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
                     ),
                     const SizedBox(height: 8),
@@ -3674,7 +3797,7 @@ class TaskCard extends StatelessWidget {
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            tip,
+                            _moodTip,
                             style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w600),
                           ),
                         ),
