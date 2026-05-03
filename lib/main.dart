@@ -12,14 +12,14 @@ void main() {
 /* DESIGN TOKENS                                                              */
 /* -------------------------------------------------------------------------- */
 
-const Color gdBackground = Color(0xFFF6F7FB);
+const Color gdBackground = Color(0xFFF7F8FC);
 const Color gdSurface = Color(0xFFFFFFFF);
-const Color gdInk = Color(0xFF0F172A);
-const Color gdMuted = Color(0xFF475569); // modern slate secondary text
-const Color gdPrimary = ui.Color.fromARGB(255, 0, 40, 125);
-const Color gdPrimaryDark = ui.Color.fromARGB(255, 50, 85, 180);
-const Color gdPrimarySoft = Color(0xFFDBEAFE);
-const Color gdAccent = Color(0xFFFF6B6B);
+const Color gdInk = Color(0xFF263247);
+const Color gdMuted = Color(0xFF5F6B7A); // readable but softer secondary text
+const Color gdPrimary = Color(0xFF315C9D);
+const Color gdPrimaryDark = Color(0xFF496DA8);
+const Color gdPrimarySoft = Color(0xFFE8F0FE);
+const Color gdAccent = Color(0xFFE66A6A);
 const Color gdAccentSoft = Color(0xFFFFE4E6);
 const Color gdWarning = Color(0xFFC2410C);
 const Color gdError = Color(0xFFDC2626);
@@ -41,9 +41,9 @@ const Color gdPetMintFrom = Color(0xFF22D3EE); // pet aqua gradient start
 const Color gdPetMintTo = Color(0xFF2DD4BF); // pet mint gradient end
 const Color gdPetAccent = Color(0xFFEAF2FF); // high-contrast soft text on dark blue
 const Color gdOnDark = Color(0xFFFFFFFF); // readable foreground on dark surfaces
-const Color gdOnDarkMuted = Color(0xFFDBEAFE); // readable secondary text on dark surfaces
+const Color gdOnDarkMuted = Color(0xFFF4F7FF); // readable secondary text on soft blue surfaces
 const Color gdCardLight = Color(0xFFF8FAFC); // crisp light card background
-const Color gdStarGold = Color(0xFFF59E0B); // energetic star rating gold color
+const Color gdStarGold = Color(0xFFE9A63A); // energetic star rating gold color
 const double gdTouchTarget = 52;
 
 ThemeData buildGoalDiggerTheme() {
@@ -118,7 +118,7 @@ ThemeData buildGoalDiggerTheme() {
     chipTheme: ChipThemeData(
       backgroundColor: gdPrimarySoft,
       selectedColor: gdPrimary,
-      labelStyle: const TextStyle(fontWeight: FontWeight.w800),
+      labelStyle: const TextStyle(color: gdInk, fontWeight: FontWeight.w800),
       secondaryLabelStyle: const TextStyle(
         color: Colors.white,
         fontWeight: FontWeight.w800,
@@ -249,12 +249,47 @@ class CommunityGroup {
     required this.members,
     required this.tag,
     required this.description,
+    this.similarity = 82,
+    this.joined = false,
   });
 
   final String name;
   final int members;
   final String tag;
   final String description;
+  final int similarity;
+  bool joined;
+}
+
+enum RoutineRepeat { yearly, monthly, weekly, daily, custom }
+
+extension RoutineRepeatX on RoutineRepeat {
+  String get label {
+    switch (this) {
+      case RoutineRepeat.yearly:
+        return 'Yearly';
+      case RoutineRepeat.monthly:
+        return 'Monthly';
+      case RoutineRepeat.weekly:
+        return 'Weekly';
+      case RoutineRepeat.daily:
+        return 'Daily';
+      case RoutineRepeat.custom:
+        return 'Custom';
+    }
+  }
+}
+
+class RoutineItem {
+  RoutineItem({
+    required this.title,
+    required this.startsAt,
+    required this.repeat,
+  });
+
+  final String title;
+  final DateTime startsAt;
+  final RoutineRepeat repeat;
 }
 
 class PetSkin {
@@ -462,6 +497,16 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   String _selectedMood = 'Okay';
   int _petHappiness = 62;
   int _coins = 140;
+  int _streak = 7;
+  final List<String> _friends = ['Maya Chen', 'Leo Tan', 'Ari Putra'];
+
+  FocusSessionConfig? _activeFocusConfig;
+  int _focusRemainingSeconds = 0;
+  bool _focusPaused = false;
+  Timer? _focusTimer;
+
+  bool get _hasActiveFocus => _activeFocusConfig != null && _focusRemainingSeconds > 0;
+  bool get _focusComplete => _activeFocusConfig != null && _focusRemainingSeconds <= 0;
 
   @override
   void initState() {
@@ -472,13 +517,22 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         name: 'Study Sprint Club',
         members: 89,
         tag: 'Exam prep',
+        similarity: 94,
         description: 'Short daily sprints for students who want accountability.',
       ),
       CommunityGroup(
         name: 'Portfolio Builders',
         members: 142,
         tag: 'Career',
+        similarity: 88,
         description: 'Share portfolio progress and get feedback from builders.',
+      ),
+      CommunityGroup(
+        name: 'Calm Wellness Crew',
+        members: 76,
+        tag: 'Wellness',
+        similarity: 81,
+        description: 'Build low-pressure routines around sleep, movement, and reflection.',
       ),
     ];
   }
@@ -486,21 +540,17 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   @override
   void dispose() {
     _processingTimer?.cancel();
+    _focusTimer?.cancel();
     _goalController.dispose();
     _communityController.dispose();
     super.dispose();
   }
 
-  List<MicroTask> get _allTasks {
-    return _goals.expand((goal) => goal.tasks).toList();
-  }
+  List<MicroTask> get _allTasks => _goals.expand((goal) => goal.tasks).toList();
 
-  List<MicroTask> get _todayTasks {
-    return _allTasks
-        .where((task) => dateOnly(task.scheduledDate) == today)
-        .toList();
-  }
-
+  List<MicroTask> get _todayTasks => _allTasks
+      .where((task) => dateOnly(task.scheduledDate) == today)
+      .toList();
 
   GoalProject _goalForTask(MicroTask task) {
     return _goals.firstWhere((goal) => goal.id == task.goalId);
@@ -508,15 +558,16 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   int get _todayCompleted => _todayTasks.where((task) => task.done).length;
 
-  double get _todayProgress {
-    if (_todayTasks.isEmpty) return 0;
-    return _todayCompleted / _todayTasks.length;
-  }
+  double get _todayProgress => _todayTasks.isEmpty ? 0 : _todayCompleted / _todayTasks.length;
 
-  int get _remainingMinutes {
-    return _todayTasks
-        .where((task) => !task.done)
-        .fold(0, (sum, task) => sum + task.durationMinutes);
+  int get _remainingMinutes => _todayTasks
+      .where((task) => !task.done)
+      .fold(0, (sum, task) => sum + task.durationMinutes);
+
+  String _formatFocusTime(int seconds) {
+    final minutes = seconds ~/ 60;
+    final remaining = seconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${remaining.toString().padLeft(2, '0')}';
   }
 
   void _completeOnboarding(String provider) {
@@ -530,10 +581,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   void _showMessage(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-      ),
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
 
@@ -552,10 +600,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           title: Text(title),
           content: Text(message),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
             FilledButton(
               onPressed: () {
                 Navigator.pop(context);
@@ -576,9 +621,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       firstDate: today,
       lastDate: DateTime(today.year + 5),
     );
-    if (picked != null) {
-      setState(() => _newGoalDeadline = picked);
-    }
+    if (picked != null) setState(() => _newGoalDeadline = picked);
   }
 
   void _createGoalWithProgress() {
@@ -586,59 +629,316 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     if (title.isEmpty) {
       _showHelpfulError(
         title: 'Goal name is missing',
-        message:
-            'Please write one clear goal first. Example: “Prepare for midterm” or “Build my portfolio”.',
+        message: 'Please write one clear goal first. Example: “Prepare for midterm” or “Build my portfolio”.',
         actionLabel: 'Write goal',
-        onAction: () => FocusScope.of(context).requestFocus(FocusNode()),
+        onAction: () {},
       );
       return;
     }
-
-    _processingTimer?.cancel();
-    setState(() {
-      _isProcessing = true;
-      _processingProgress = 0;
-    });
-
-    _processingTimer = Timer.periodic(const Duration(milliseconds: 350), (timer) {
-      if (!mounted) return;
-      setState(() {
-        _processingProgress = min(1, _processingProgress + 0.17);
-      });
-      if (_processingProgress >= 1) {
-        timer.cancel();
-        _finishCreateGoal(title);
-      }
-    });
+    _openGoalBreakdownDialog(title);
   }
 
-  void _finishCreateGoal(String title) {
-    final goalId = _nextGoalId++;
-    final Color from;
-    final Color to;
-    switch (_newGoalCategory) {
-      case 'Career':
-        from = gdGradientCareerFrom;
-        to = gdGradientCareerTo;
-        break;
-      case 'Wellness':
-        from = gdGradientWellnessFrom;
-        to = gdGradientWellnessTo;
-        break;
-      case 'Finance':
-        from = gdGradientFinanceFrom;
-        to = gdGradientFinanceTo;
-        break;
-      case 'Creative':
-        from = gdGradientCreativeFrom;
-        to = gdGradientCreativeTo;
-        break;
-      default:
-        from = gdGradientStudyFrom;
-        to = gdGradientStudyTo;
-    }
+  Future<void> _openGoalBreakdownDialog(String title) async {
+    final chatController = TextEditingController();
+    var draftTitles = _generateTaskTitles(title).toList();
+    final messages = <Map<String, dynamic>>[
+      {
+        'role': 'assistant',
+        'text':
+            "Great! Let\'s break down \"$title\" into actionable steps. I\'ve drafted ${draftTitles.length} micro-tasks below. If you want, ask me to make them easier, more detailed, or change the order.",
+        'tasks': List<String>.from(draftTitles),
+      },
+    ];
 
-    final steps = _generateMicroTasks(title, goalId);
+    final result = await showDialog<List<String>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setLocalState) {
+            Future<void> sendMessage() async {
+              final request = chatController.text.trim();
+              if (request.isEmpty) return;
+              setLocalState(() {
+                messages.add({'role': 'user', 'text': request});
+                draftTitles = _refineTaskTitlesFromPrompt(draftTitles, request, title);
+                messages.add({
+                  'role': 'assistant',
+                  'text':
+                      "Absolutely — I refined the plan. Here\'s an updated version you can review before scheduling.",
+                  'tasks': List<String>.from(draftTitles),
+                });
+                chatController.clear();
+              });
+            }
+
+            Widget buildMessageBubble(Map<String, dynamic> message) {
+              final isUser = message['role'] == 'user';
+              final bubbleColor = isUser ? gdPrimary : const Color(0xFFF3F5F8);
+              final textColor = isUser ? Colors.white : gdInk;
+              final tasks = (message['tasks'] as List?)?.cast<String>();
+
+              return Align(
+                alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  constraints: const BoxConstraints(maxWidth: 680),
+                  margin: EdgeInsets.only(left: isUser ? 44 : 0, right: isUser ? 0 : 44),
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: bubbleColor,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(26),
+                      topRight: const Radius.circular(26),
+                      bottomLeft: Radius.circular(isUser ? 26 : 8),
+                      bottomRight: Radius.circular(isUser ? 8 : 26),
+                    ),
+                    border: !isUser ? Border.all(color: gdBorder) : null,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (!isUser)
+                        Row(
+                          children: const [
+                            CircleAvatar(
+                              radius: 15,
+                              backgroundColor: gdPrimarySoft,
+                              child: Icon(Icons.auto_awesome_rounded, size: 16, color: gdPrimary),
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Assistant',
+                              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w900),
+                            ),
+                          ],
+                        ),
+                      if (!isUser) const SizedBox(height: 10),
+                      Text(
+                        message['text'] as String,
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: 15,
+                          height: 1.55,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (tasks != null && tasks.isNotEmpty) ...[
+                        const SizedBox(height: 14),
+                        for (var i = 0; i < tasks.length; i++)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 26,
+                                  height: 26,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: isUser ? Colors.white.withOpacity(0.14) : Colors.white,
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color: isUser ? Colors.white24 : gdBorder,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    '${i + 1}',
+                                    style: TextStyle(
+                                      color: isUser ? Colors.white : gdPrimary,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(top: 3),
+                                    child: Text(
+                                      tasks[i],
+                                      style: TextStyle(
+                                        color: textColor,
+                                        fontSize: 15,
+                                        height: 1.45,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 880,
+                  maxHeight: MediaQuery.of(dialogContext).size.height * 0.86,
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: gdSurface,
+                    borderRadius: BorderRadius.circular(34),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.12),
+                        blurRadius: 28,
+                        offset: const Offset(0, 16),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'GOAL BREAKDOWN',
+                                    style: TextStyle(
+                                      color: Color(0xFF7C8AA5),
+                                      fontSize: 13,
+                                      letterSpacing: 3,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    title,
+                                    style: const TextStyle(
+                                      color: gdInk,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F3F6),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: IconButton(
+                                tooltip: 'Close',
+                                onPressed: () => Navigator.pop(dialogContext),
+                                icon: const Icon(Icons.close_rounded, color: gdMuted),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFBFCFE),
+                              borderRadius: BorderRadius.circular(28),
+                              border: Border.all(color: gdBorder),
+                            ),
+                            padding: const EdgeInsets.all(16),
+                            child: ListView.separated(
+                              itemCount: messages.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 12),
+                              itemBuilder: (context, index) => buildMessageBubble(messages[index]),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: chatController,
+                                minLines: 1,
+                                maxLines: 4,
+                                textInputAction: TextInputAction.send,
+                                onSubmitted: (_) => sendMessage(),
+                                decoration: InputDecoration(
+                                  hintText: 'Adjust the plan...',
+                                  filled: true,
+                                  fillColor: const Color(0xFFF7F5EF),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(24),
+                                    borderSide: const BorderSide(color: Color(0xFFE6DFD2)),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(24),
+                                    borderSide: const BorderSide(color: gdPrimary, width: 1.6),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            SizedBox(
+                              height: 56,
+                              child: FilledButton(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: gdPrimary,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                                ),
+                                onPressed: sendMessage,
+                                child: const Text('Send'),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF10B981),
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size.fromHeight(64),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                            ),
+                            onPressed: () => Navigator.pop(dialogContext, List<String>.from(draftTitles)),
+                            child: const Text('Looks good, finalize!'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    // Dispose after the dialog has fully unmounted.
+    WidgetsBinding.instance.addPostFrameCallback((_) => chatController.dispose());
+    if (result != null) {
+      // Let Flutter finish removing the dialog route before rebuilding this page.
+      // This prevents the framework `_dependents.isEmpty` assertion on finalize.
+      await WidgetsBinding.instance.endOfFrame;
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      if (!mounted) return;
+      _finishCreateGoal(title, approvedTaskTitles: result);
+    }
+  }
+
+  void _finishCreateGoal(String title, {List<String>? approvedTaskTitles}) {
+    final goalId = _nextGoalId++;
+    final colors = _categoryColors(_newGoalCategory);
+    final steps = approvedTaskTitles == null
+        ? _generateMicroTasks(title, goalId)
+        : _generateMicroTasksFromTitles(approvedTaskTitles, goalId);
     setState(() {
       _goals.insert(
         0,
@@ -648,8 +948,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           importance: _newGoalPriority,
           category: _newGoalCategory,
           deadline: _newGoalDeadline,
-          from: from,
-          to: to,
+          from: colors[0],
+          to: colors[1],
           tasks: steps,
         ),
       );
@@ -659,48 +959,110 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _newGoalPriority = 3;
       _newGoalCategory = 'Study';
       _newGoalDeadline = addDays(today, 14);
-      _selectedIndex = 2;
     });
-    _showMessage('Goal created. Your first tasks are ready on Home.');
+    _showMessage('Goal created. Your subtasks are scheduled.');
   }
 
-  List<MicroTask> _generateMicroTasks(String title, int goalId) {
+  List<Color> _categoryColors(String category) {
+    switch (category) {
+      case 'Career': return [gdGradientCareerFrom, gdGradientCareerTo];
+      case 'Wellness': return [gdGradientWellnessFrom, gdGradientWellnessTo];
+      case 'Finance': return [gdGradientFinanceFrom, gdGradientFinanceTo];
+      case 'Creative': return [gdGradientCreativeFrom, gdGradientCreativeTo];
+      default: return [gdGradientStudyFrom, gdGradientStudyTo];
+    }
+  }
+
+  List<String> _generateTaskTitles(String title) {
     final lower = title.toLowerCase();
-    final List<String> taskTitles;
     if (lower.contains('exam') || lower.contains('midterm') || lower.contains('study')) {
-      taskTitles = [
-        'List topics to review',
-        'Study the hardest topic for 20 minutes',
-        'Solve practice questions',
-        'Review mistakes and make flashcards',
-      ];
+      return ['List topics to review', 'Study the hardest topic for 20 minutes', 'Solve practice questions', 'Review mistakes and make flashcards'];
     } else if (lower.contains('portfolio') || lower.contains('project')) {
-      taskTitles = [
-        'Define the project outcome',
-        'Create the first rough draft',
-        'Improve one visible section',
-        'Share for feedback',
+      return ['Define the project outcome', 'Create the first rough draft', 'Improve one visible section', 'Share for feedback'];
+    }
+    return ['Write the desired outcome', 'Break the goal into 3 milestones', 'Do the smallest first action', 'Review progress and adjust tomorrow'];
+  }
+
+  List<String> _refineTaskTitlesFromPrompt(List<String> currentTitles, String request, String goalTitle) {
+    final lower = request.toLowerCase();
+    List<String> updated = List<String>.from(currentTitles);
+
+    final wantsSimpler = lower.contains('easy') ||
+        lower.contains('easier') ||
+        lower.contains('simple') ||
+        lower.contains('smaller') ||
+        lower.contains('busy');
+    final wantsMoreDetail = lower.contains('detail') ||
+        lower.contains('specific') ||
+        lower.contains('clearer') ||
+        lower.contains('more info');
+    final wantsReorder = lower.contains('order') ||
+        lower.contains('reorder') ||
+        lower.contains('sequence');
+
+    if (goalTitle.toLowerCase().contains('youtube')) {
+      if (wantsSimpler) {
+        return [
+          'Pick one video idea for your first upload',
+          'Write a short outline or talking points',
+          'Record a simple first draft',
+          'Upload it and note what to improve next',
+        ];
+      }
+      if (wantsMoreDetail) {
+        return [
+          'Choose your niche and the topic for your first video',
+          'Write your first script or recording outline',
+          'Film the video and edit the best parts',
+          'Publish it and review the response for your next upload',
+        ];
+      }
+    }
+
+    if (wantsSimpler) {
+      updated = [
+        'Define one small win for $goalTitle',
+        'Work on the smallest part for 10 minutes',
+        'Finish one visible improvement',
+        'Review progress and set the next tiny step',
       ];
+    } else if (wantsMoreDetail) {
+      updated = [
+        'Clarify the outcome and success metric',
+        'Prepare the tools, files, or materials you need',
+        'Complete the main work session',
+        'Review results and plan the next follow-up action',
+      ];
+    } else if (wantsReorder && updated.length > 1) {
+      final first = updated.removeAt(0);
+      updated.insert(1, first);
+    } else if (lower.contains('add')) {
+      updated = List<String>.from(updated.take(3))
+        ..add('Review progress and lock in the next step');
     } else {
-      taskTitles = [
-        'Write the desired outcome',
-        'Break the goal into 3 milestones',
-        'Do the smallest first action',
-        'Review progress and adjust tomorrow',
+      updated = [
+        'Clarify the first concrete milestone',
+        'Do the smallest useful action',
+        'Improve one meaningful part',
+        'Review the result and plan the next session',
       ];
     }
 
+    return updated;
+  }
+
+  List<MicroTask> _generateMicroTasks(String title, int goalId) {
+    return _generateMicroTasksFromTitles(_generateTaskTitles(title), goalId);
+  }
+
+  List<MicroTask> _generateMicroTasksFromTitles(List<String> taskTitles, int goalId) {
     return List.generate(taskTitles.length, (index) {
       return MicroTask(
         id: _nextTaskId++,
         goalId: goalId,
         title: taskTitles[index],
         durationMinutes: index == 0 ? 8 : 15 + index * 5,
-        load: index == 0
-            ? TaskLoad.light
-            : index == taskTitles.length - 1
-                ? TaskLoad.stretch
-                : TaskLoad.focus,
+        load: index == 0 ? TaskLoad.light : index == taskTitles.length - 1 ? TaskLoad.stretch : TaskLoad.focus,
         scheduledDate: addDays(today, index),
         points: 10 + index * 5,
       );
@@ -737,18 +1099,22 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       return;
     }
     setState(() {
-      _communities.insert(
-        0,
-        CommunityGroup(
-          name: title,
-          members: 1,
-          tag: 'Created by you',
-          description: 'A new accountability group for people working on similar goals.',
-        ),
-      );
+      _communities.insert(0, CommunityGroup(
+        name: title,
+        members: 1,
+        tag: 'Created by you',
+        similarity: 100,
+        joined: true,
+        description: 'A new accountability group for people working on similar goals.',
+      ));
       _communityController.clear();
     });
     _showMessage('Community created.');
+  }
+
+  void _joinCommunity(CommunityGroup group) {
+    setState(() => group.joined = true);
+    _showMessage('Joined ${group.name}.');
   }
 
   void _feedPet() {
@@ -768,44 +1134,139 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   Future<void> _openFocusMode() async {
+    if (_hasActiveFocus || _focusComplete) {
+      _openActiveFocusDialog();
+      return;
+    }
     final unfinishedToday = _todayTasks.where((task) => !task.done).toList();
-
     final config = await showModalBottomSheet<FocusSessionConfig>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       backgroundColor: gdSurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (context) {
-        return FocusSetupSheet(todayTasks: unfinishedToday);
-      },
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (context) => FocusSetupSheet(todayTasks: unfinishedToday),
     );
-
     if (!mounted || config == null) return;
-    _openFocusCountdown(config);
+    _startFocusSession(config);
   }
 
-  void _openFocusCountdown(FocusSessionConfig config) {
+  void _startFocusSession(FocusSessionConfig config) {
+    _focusTimer?.cancel();
+    setState(() {
+      _activeFocusConfig = config;
+      _focusRemainingSeconds = config.durationMinutes * 60;
+      _focusPaused = false;
+    });
+    _focusTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      if (_focusPaused) return;
+      setState(() => _focusRemainingSeconds = max(0, _focusRemainingSeconds - 1));
+      if (_focusRemainingSeconds == 0) timer.cancel();
+    });
+    _openActiveFocusDialog();
+  }
+
+  void _openActiveFocusDialog() {
+    final config = _activeFocusConfig;
+    if (config == null) return;
     showGeneralDialog<void>(
       context: context,
       barrierDismissible: false,
-      barrierColor: Colors.black.withOpacity(0.24),
+      barrierColor: Colors.black.withOpacity(0.18),
       transitionDuration: const Duration(milliseconds: 220),
       pageBuilder: (context, animation, secondaryAnimation) {
-        return FocusCountdownDialog(config: config);
+        return FocusCountdownDialog(
+          config: config,
+          remainingSecondsProvider: () => _focusRemainingSeconds,
+          pausedProvider: () => _focusPaused,
+          onPauseToggle: _toggleFocusPause,
+          onMinimize: () => Navigator.of(context).pop(),
+          onStop: _stopFocusSession,
+        );
       },
       transitionBuilder: (context, animation, secondaryAnimation, child) {
         final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-        return FadeTransition(
-          opacity: curved,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.98, end: 1).animate(curved),
-            child: child,
-          ),
-        );
+        return FadeTransition(opacity: curved, child: ScaleTransition(scale: Tween<double>(begin: 0.98, end: 1).animate(curved), child: child));
       },
+    );
+  }
+
+  void _toggleFocusPause() => setState(() => _focusPaused = !_focusPaused);
+
+  void _stopFocusSession() {
+    _focusTimer?.cancel();
+    setState(() {
+      _activeFocusConfig = null;
+      _focusRemainingSeconds = 0;
+      _focusPaused = false;
+    });
+    Navigator.of(context, rootNavigator: true).maybePop();
+  }
+
+  void _openProfile() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: gdSurface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          children: [
+            Text('Profile', style: Theme.of(context).textTheme.headlineMedium),
+            const SizedBox(height: 14),
+            AppCard(color: gdCardLight, child: ListTile(
+              leading: const CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.person_rounded)),
+              title: Text('Signed in with $_signedInWith', style: const TextStyle(fontWeight: FontWeight.w900)),
+              subtitle: const Text('Account overview and progress stats', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+            )),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(child: StatMiniCard(icon: Icons.paid_rounded, label: 'Coins', value: '$_coins')),
+              const SizedBox(width: 10),
+              Expanded(child: StatMiniCard(icon: Icons.local_fire_department_rounded, label: 'Streak', value: '$_streak days')),
+            ]),
+            const SizedBox(height: 18),
+            SectionTitle(title: 'Friends', trailing: '${_friends.length}'),
+            const SizedBox(height: 8),
+            for (final friend in _friends)
+              AppCard(margin: const EdgeInsets.only(bottom: 8), child: ListTile(
+                leading: const CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.person_add_alt_1_rounded)),
+                title: Text(friend, style: const TextStyle(fontWeight: FontWeight.w900)),
+                subtitle: const Text('Accountability friend · weekly progress visible', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                trailing: TextButton(onPressed: () {}, child: const Text('Manage')),
+              )),
+            FilledButton.icon(onPressed: () {}, icon: const Icon(Icons.group_add_rounded), label: const Text('Add or manage friends')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openSettings() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: gdSurface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Settings', style: Theme.of(context).textTheme.headlineMedium),
+              const SizedBox(height: 12),
+              SwitchListTile.adaptive(value: true, onChanged: (_) {}, title: const Text('Goal reminders', style: TextStyle(fontWeight: FontWeight.w900)), subtitle: const Text('Nudge me before scheduled tasks.')),
+              SwitchListTile.adaptive(value: true, onChanged: (_) {}, title: const Text('Friend progress sharing', style: TextStyle(fontWeight: FontWeight.w900)), subtitle: const Text('Show my streak to approved friends.')),
+              ListTile(leading: const Icon(Icons.palette_rounded), title: const Text('Appearance', style: TextStyle(fontWeight: FontWeight.w900)), subtitle: const Text('Readable colors and calm contrast enabled.')),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -840,7 +1301,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         tasks: _allTasks,
         goalForTask: _goalForTask,
         today: today,
-        onToggleTask: _toggleTask,
         onCreateGoal: () => setState(() => _selectedIndex = 0),
       ),
       _TasksPage(
@@ -859,12 +1319,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         controller: _communityController,
         communities: _communities,
         onAddCommunity: _addCommunity,
+        onJoinCommunity: _joinCommunity,
       ),
-      _CompanionPage(
-        coins: _coins,
-        happiness: _petHappiness,
-        onFeed: _feedPet,
-      ),
+      _CompanionPage(coins: _coins, happiness: _petHappiness, onFeed: _feedPet),
     ];
 
     return ResponsiveGoalShell(
@@ -873,6 +1330,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       pages: pages,
       onSelect: (index) => setState(() => _selectedIndex = index),
       onFocusMode: _openFocusMode,
+      onProfile: _openProfile,
+      onSettings: _openSettings,
+      hasActiveFocus: _hasActiveFocus || _focusComplete,
+      focusLabel: _activeFocusConfig == null ? null : (_focusComplete ? 'Done' : _formatFocusTime(_focusRemainingSeconds)),
     );
   }
 }
@@ -903,20 +1364,12 @@ class OnboardingScreen extends StatelessWidget {
             LayoutBuilder(
               builder: (context, constraints) {
                 final wide = constraints.maxWidth >= 900;
-                final heroColumn = Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    DirectValueHero(onPrimaryCta: onGuest),
-                    const SizedBox(height: 18),
-                    const HowItWorksSimple(),
-                  ],
-                );
-                final signInCard = SimpleOnboardingCard(
+                final tutorial = const TutorialIntroPanel();
+                final login = SimpleOnboardingCard(
                   onGoogle: onGoogle,
                   onLinkedIn: onLinkedIn,
                   onGuest: onGuest,
                 );
-
                 return SingleChildScrollView(
                   padding: const EdgeInsets.all(18),
                   child: Center(
@@ -925,20 +1378,9 @@ class OnboardingScreen extends StatelessWidget {
                       child: wide
                           ? Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(flex: 6, child: heroColumn),
-                                const SizedBox(width: 24),
-                                Expanded(flex: 4, child: signInCard),
-                              ],
+                              children: [Expanded(flex: 6, child: tutorial), const SizedBox(width: 24), Expanded(flex: 4, child: login)],
                             )
-                          : Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                heroColumn,
-                                const SizedBox(height: 18),
-                                signInCard,
-                              ],
-                            ),
+                          : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [tutorial, const SizedBox(height: 18), login]),
                     ),
                   ),
                 );
@@ -951,70 +1393,52 @@ class OnboardingScreen extends StatelessWidget {
   }
 }
 
-class DirectValueHero extends StatelessWidget {
-  const DirectValueHero({super.key, required this.onPrimaryCta});
-
-  final VoidCallback onPrimaryCta;
+class TutorialIntroPanel extends StatelessWidget {
+  const TutorialIntroPanel({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: gdPrimarySoft,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: const Text(
-                'AI goal planner + daily action coach',
-                style: TextStyle(
-                  color: gdPrimaryDark,
-                  fontWeight: FontWeight.w900,
+    final steps = [
+      const _StepData(icon: Icons.login_rounded, title: '1. Log in or sign up', subtitle: 'Create an account first so goals, routines, coins, streaks, and friends can stay synced.'),
+      const _StepData(icon: Icons.flag_rounded, title: '2. Add one goal', subtitle: 'Choose a category, priority, and deadline. You can chat with AI before subtasks are scheduled.'),
+      const _StepData(icon: Icons.checklist_rounded, title: '3. Work from Home', subtitle: 'Finish today’s tasks, start Focus Mode, and earn coins for your companion.'),
+      const _StepData(icon: Icons.groups_rounded, title: '4. Stay accountable', subtitle: 'Join recommended communities and manage friends from your profile.'),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppCard(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(color: gdPrimarySoft, borderRadius: BorderRadius.circular(999)),
+                  child: const Text('Quick tutorial', style: TextStyle(color: gdPrimaryDark, fontWeight: FontWeight.w900)),
                 ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            Text(
-              'Turn big goals into today’s next step.',
-              style: Theme.of(context).textTheme.headlineLarge,
-            ),
-            const SizedBox(height: 14),
-            const Text(
-              'Goal Digger breaks a goal into small tasks, schedules them by deadline and energy, and shows clear progress so you always know what to do next.',
-              style: TextStyle(
-                color: gdMuted,
-                fontSize: 16,
-                height: 1.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 22),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: const [
-                _BenefitChip(icon: Icons.account_tree_rounded, text: 'Micro-tasks'),
-                _BenefitChip(icon: Icons.calendar_month_rounded, text: 'Auto schedule'),
-                _BenefitChip(icon: Icons.trending_up_rounded, text: 'Progress nudges'),
+                const SizedBox(height: 18),
+                Text('Welcome to Goal Digger', style: Theme.of(context).textTheme.headlineLarge),
+                const SizedBox(height: 12),
+                const Text('Here is how the app works before you enter: plan goals, review AI subtasks, schedule routines, focus without distractions, and grow with friends.', style: TextStyle(color: gdMuted, fontSize: 16, height: 1.5, fontWeight: FontWeight.w600)),
               ],
             ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: onPrimaryCta,
-                icon: const Icon(Icons.rocket_launch_rounded),
-                label: const Text('Start with my first goal'),
-              ),
-            ),
-          ],
+          ),
         ),
-      ),
+        const SizedBox(height: 14),
+        ...steps.map((step) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: AppCard(
+                child: ListTile(
+                  minVerticalPadding: 18,
+                  leading: CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(step.icon, color: gdPrimary)),
+                  title: Text(step.title, style: const TextStyle(fontWeight: FontWeight.w900)),
+                  subtitle: Text(step.subtitle, style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w600)),
+                ),
+              ),
+            )),
+      ],
     );
   }
 }
@@ -1039,37 +1463,17 @@ class SimpleOnboardingCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Start in one step', style: Theme.of(context).textTheme.headlineMedium),
+            Text('Login or sign up', style: Theme.of(context).textTheme.headlineMedium),
             const SizedBox(height: 8),
-            const Text(
-              'No long account setup. Sign in quickly, then add details only when they are needed.',
-              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w600),
-            ),
+            const Text('Start with an account so your profile, friends, streaks, and routines are saved.', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w600)),
             const SizedBox(height: 20),
-            OutlinedButton.icon(
-              onPressed: onGoogle,
-              icon: const Icon(Icons.g_mobiledata_rounded, size: 30),
-              label: const Text('Continue with Google'),
-            ),
+            FilledButton.icon(onPressed: onGoogle, icon: const Icon(Icons.g_mobiledata_rounded, size: 30), label: const Text('Sign up with Google')),
             const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: onLinkedIn,
-              icon: const Icon(Icons.work_rounded),
-              label: const Text('Continue with LinkedIn'),
-            ),
+            OutlinedButton.icon(onPressed: onLinkedIn, icon: const Icon(Icons.work_rounded), label: const Text('Continue with LinkedIn')),
             const SizedBox(height: 10),
-            TextButton(
-              onPressed: onGuest,
-              child: const Text('Continue without account'),
-            ),
+            OutlinedButton.icon(onPressed: onGuest, icon: const Icon(Icons.person_outline_rounded), label: const Text('Preview as guest')),
             const Divider(height: 32),
-            const HelpfulErrorBox(
-              title: 'Prototype note',
-              message:
-                  'These social buttons are ready for Firebase Auth, Supabase Auth, or your preferred login provider.',
-              actionLabel: 'Got it',
-              showAction: false,
-            ),
+            const HelpfulErrorBox(title: 'Tutorial first', message: 'The app now explains the main flow before users enter, then gives clear login/sign-up choices.', actionLabel: 'Got it', showAction: false),
           ],
         ),
       ),
@@ -1077,71 +1481,12 @@ class SimpleOnboardingCard extends StatelessWidget {
   }
 }
 
-class HowItWorksSimple extends StatelessWidget {
-  const HowItWorksSimple({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final steps = [
-      const _StepData(
-        icon: Icons.flag_rounded,
-        title: 'Tell us your goal',
-        subtitle: 'Write the outcome and choose a deadline. That is enough to start.',
-      ),
-      const _StepData(
-        icon: Icons.account_tree_rounded,
-        title: 'Get tiny tasks',
-        subtitle: 'Goal Digger turns the goal into clear actions you can finish today.',
-      ),
-      const _StepData(
-        icon: Icons.trending_up_rounded,
-        title: 'Track progress calmly',
-        subtitle: 'See what is done, what is next, and how much time remains.',
-      ),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('How it works', style: Theme.of(context).textTheme.headlineMedium),
-        const SizedBox(height: 12),
-        ...steps.map((step) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: AppCard(
-                child: ListTile(
-                  minVerticalPadding: 18,
-                  leading: CircleAvatar(
-                    backgroundColor: gdPrimarySoft,
-                    child: Icon(step.icon, color: gdPrimary),
-                  ),
-                  title: Text(
-                    step.title,
-                    style: const TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                  subtitle: Text(
-                    step.subtitle,
-                    style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-            )),
-      ],
-    );
-  }
-}
-
 class _StepData {
-  const _StepData({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
+  const _StepData({required this.icon, required this.title, required this.subtitle});
   final IconData icon;
   final String title;
   final String subtitle;
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* FOCUS MODE                                                                 */
@@ -1248,7 +1593,15 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return SafeArea(
-      child: SingleChildScrollView(
+      child: ChipTheme(
+        data: Theme.of(context).chipTheme.copyWith(
+          backgroundColor: gdSurface,
+          selectedColor: gdPrimary,
+          labelStyle: const TextStyle(color: gdInk, fontWeight: FontWeight.w800),
+          secondaryLabelStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+          side: const BorderSide(color: gdBorderStrong),
+        ),
+        child: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + bottomInset),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1462,42 +1815,52 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
           ],
         ),
       ),
+      ),
     );
   }
 }
 
 class FocusCountdownDialog extends StatefulWidget {
-  const FocusCountdownDialog({super.key, required this.config});
+  const FocusCountdownDialog({
+    super.key,
+    required this.config,
+    required this.remainingSecondsProvider,
+    required this.pausedProvider,
+    required this.onPauseToggle,
+    required this.onMinimize,
+    required this.onStop,
+  });
 
   final FocusSessionConfig config;
+  final int Function() remainingSecondsProvider;
+  final bool Function() pausedProvider;
+  final VoidCallback onPauseToggle;
+  final VoidCallback onMinimize;
+  final VoidCallback onStop;
 
   @override
   State<FocusCountdownDialog> createState() => _FocusCountdownDialogState();
 }
 
 class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
-  late int _remainingSeconds;
-  Timer? _timer;
+  Timer? _refreshTimer;
 
   int get _totalSeconds => widget.config.durationMinutes * 60;
+  int get _remainingSeconds => widget.remainingSecondsProvider();
+  bool get _paused => widget.pausedProvider();
   bool get _isComplete => _remainingSeconds <= 0;
 
   @override
   void initState() {
     super.initState();
-    _remainingSeconds = _totalSeconds;
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) return;
-      setState(() {
-        _remainingSeconds = max(0, _remainingSeconds - 1);
-      });
-      if (_remainingSeconds == 0) timer.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
     });
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _refreshTimer?.cancel();
     super.dispose();
   }
 
@@ -1510,7 +1873,6 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
   @override
   Widget build(BuildContext context) {
     final progress = _totalSeconds == 0 ? 1.0 : 1 - (_remainingSeconds / _totalSeconds);
-
     return Material(
       color: gdBackground,
       child: SafeArea(
@@ -1520,22 +1882,10 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
             children: [
               Row(
                 children: [
-                  const CircleAvatar(
-                    backgroundColor: gdPrimarySoft,
-                    child: Icon(Icons.track_changes_rounded, color: gdPrimary),
-                  ),
+                  const CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.track_changes_rounded, color: gdPrimary)),
                   const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _isComplete ? 'Focus complete' : 'Focus mode',
-                      style: Theme.of(context).textTheme.headlineMedium,
-                    ),
-                  ),
-                  IconButton.filledTonal(
-                    tooltip: 'Minimize focus timer',
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                  ),
+                  Expanded(child: Text(_isComplete ? 'Focus complete' : 'Focus mode', style: Theme.of(context).textTheme.headlineMedium)),
+                  IconButton.filledTonal(tooltip: 'Minimize without stopping', onPressed: widget.onMinimize, icon: const Icon(Icons.keyboard_arrow_down_rounded)),
                 ],
               ),
               const SizedBox(height: 18),
@@ -1543,99 +1893,46 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
                 child: Center(
                   child: SingleChildScrollView(
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        PetAvatar(pet: defaultPet, size: 120),
-                        const SizedBox(height: 22),
-                        Text(
-                          widget.config.title,
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
+                        PetAvatar(pet: defaultPet, size: 112),
+                        const SizedBox(height: 20),
+                        Text(widget.config.title, textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleLarge),
                         const SizedBox(height: 8),
-                        Text(
-                          widget.config.blockingSummary,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
-                        ),
-                        const SizedBox(height: 28),
+                        Text(widget.config.blockingSummary, textAlign: TextAlign.center, style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 24),
                         SizedBox(
                           width: 230,
                           height: 230,
                           child: Stack(
                             alignment: Alignment.center,
                             children: [
-                              SizedBox.expand(
-                                child: CircularProgressIndicator(
-                                  value: progress.clamp(0.0, 1.0).toDouble(),
-                                  strokeWidth: 14,
-                                  backgroundColor: gdPrimarySoft,
-                                  strokeCap: StrokeCap.round,
-                                ),
-                              ),
+                              SizedBox.expand(child: CircularProgressIndicator(value: progress.clamp(0.0, 1.0).toDouble(), strokeWidth: 14, backgroundColor: gdPrimarySoft, strokeCap: StrokeCap.round)),
                               Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(
-                                    _isComplete ? Icons.check_circle_rounded : Icons.track_changes_rounded,
-                                    size: 34,
-                                    color: gdPrimary,
-                                  ),
+                                  Icon(_isComplete ? Icons.check_circle_rounded : _paused ? Icons.pause_circle_filled_rounded : Icons.track_changes_rounded, size: 34, color: gdPrimary),
                                   const SizedBox(height: 8),
-                                  Text(
-                                    _formatTime(_remainingSeconds),
-                                    style: const TextStyle(
-                                      fontSize: 42,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: -1.5,
-                                      color: gdInk,
-                                    ),
-                                  ),
-                                  Text(
-                                    _isComplete ? 'Nice work' : 'Stay locked in',
-                                    style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
-                                  ),
+                                  Text(_formatTime(_remainingSeconds), style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w900, letterSpacing: -1.5, color: gdInk)),
+                                  Text(_isComplete ? 'Nice work' : _paused ? 'Paused' : 'Running', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800)),
                                 ],
                               ),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 28),
+                        const SizedBox(height: 22),
                         AppCard(
-                          color: gdSurface.withOpacity(0.94),
+                          color: gdSurface,
                           child: Padding(
                             padding: const EdgeInsets.all(16),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
-                                  children: const [
-                                    Icon(Icons.block_rounded, size: 20),
-                                    SizedBox(width: 8),
-                                    Text(
-                                      'Blocked during focus',
-                                      style: TextStyle(fontWeight: FontWeight.w900),
-                                    ),
-                                  ],
-                                ),
+                                const Row(children: [Icon(Icons.block_rounded, size: 20), SizedBox(width: 8), Text('Blocked during focus', style: TextStyle(fontWeight: FontWeight.w900, color: gdInk))]),
                                 const SizedBox(height: 10),
                                 if (widget.config.blockedApps.isEmpty)
-                                  const Text(
-                                    'No apps selected.',
-                                    style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
-                                  )
+                                  const Text('No apps selected.', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700))
                                 else
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: [
-                                      for (final app in widget.config.blockedApps)
-                                        Chip(
-                                          avatar: const Icon(Icons.lock_rounded, size: 16),
-                                          label: Text(app),
-                                        ),
-                                    ],
-                                  ),
+                                  Wrap(spacing: 8, runSpacing: 8, children: [for (final app in widget.config.blockedApps) Chip(backgroundColor: gdPrimarySoft, avatar: const Icon(Icons.lock_rounded, size: 16, color: gdPrimary), label: Text(app, style: const TextStyle(color: gdInk, fontWeight: FontWeight.w800)))]),
                               ],
                             ),
                           ),
@@ -1645,19 +1942,12 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
                   ),
                 ),
               ),
-              SizedBox(
-                width: double.infinity,
-                child: _isComplete
-                    ? FilledButton.icon(
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.check_circle_rounded),
-                        label: const Text('Finish session'),
-                      )
-                    : OutlinedButton.icon(
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.close_rounded),
-                        label: const Text('End focus session'),
-                      ),
+              Row(
+                children: [
+                  Expanded(child: OutlinedButton.icon(onPressed: _isComplete ? null : widget.onPauseToggle, icon: Icon(_paused ? Icons.play_arrow_rounded : Icons.pause_rounded), label: Text(_paused ? 'Resume' : 'Pause'))),
+                  const SizedBox(width: 10),
+                  Expanded(child: FilledButton.icon(onPressed: widget.onStop, icon: Icon(_isComplete ? Icons.check_circle_rounded : Icons.stop_rounded), label: Text(_isComplete ? 'Finish' : 'Stop session'))),
+                ],
               ),
             ],
           ),
@@ -1679,6 +1969,10 @@ class ResponsiveGoalShell extends StatelessWidget {
     required this.pages,
     required this.onSelect,
     required this.onFocusMode,
+    required this.onProfile,
+    required this.onSettings,
+    required this.hasActiveFocus,
+    required this.focusLabel,
   });
 
   final int selectedIndex;
@@ -1686,67 +1980,82 @@ class ResponsiveGoalShell extends StatelessWidget {
   final List<Widget> pages;
   final ValueChanged<int> onSelect;
   final VoidCallback onFocusMode;
+  final VoidCallback onProfile;
+  final VoidCallback onSettings;
+  final bool hasActiveFocus;
+  final String? focusLabel;
 
   static const labels = ['Goals', 'Calendar', 'Home', 'Community', 'Pet'];
-  static const icons = [
-    Icons.flag_rounded,
-    Icons.calendar_month_rounded,
-    Icons.home_rounded,
-    Icons.groups_rounded,
-    Icons.pets_rounded,
-  ];
+  static const icons = [Icons.flag_rounded, Icons.calendar_month_rounded, Icons.home_rounded, Icons.groups_rounded, Icons.pets_rounded];
 
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).padding.bottom;
-
     return Scaffold(
       extendBody: true,
       backgroundColor: Colors.transparent,
       appBar: AppBar(
-        title: const Text('Goal Digger'),
         automaticallyImplyLeading: false,
+        titleSpacing: 0,
+        leadingWidth: 72,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: IconButton.filledTonal(
+            tooltip: 'Profile and friends',
+            onPressed: onProfile,
+            icon: const Icon(Icons.account_circle_rounded),
+          ),
+        ),
+        centerTitle: true,
+        title: const Text('Goal Digger'),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: Chip(
-              avatar: const Icon(Icons.verified_user_rounded, size: 18),
-              label: Text(signedInWith),
+            child: IconButton.filledTonal(
+              tooltip: 'Settings',
+              onPressed: onSettings,
+              icon: const Icon(Icons.settings_rounded),
             ),
           ),
         ],
       ),
       body: Stack(
         children: [
-          Positioned.fill(
-            child: SafeArea(
-              top: false,
-              bottom: false,
-              child: pages[selectedIndex],
+          Positioned.fill(child: SafeArea(top: false, bottom: false, child: pages[selectedIndex])),
+          if (hasActiveFocus)
+            Positioned(
+              left: 22,
+              right: 22,
+              bottom: bottomInset + 126,
+              child: AppCard(
+                child: ListTile(
+                  dense: true,
+                  leading: const CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.track_changes_rounded, color: gdPrimary)),
+                  title: const Text('Focus session running', style: TextStyle(fontWeight: FontWeight.w900)),
+                  subtitle: Text('Tap to reopen · ${focusLabel ?? ''}', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                  trailing: const Icon(Icons.open_in_full_rounded),
+                  onTap: onFocusMode,
+                ),
+              ),
             ),
-          ),
           Positioned(
             right: 22,
-            bottom: bottomInset + 124,
-            child: FloatingActionButton(
+            bottom: bottomInset + (hasActiveFocus ? 220 : 124),
+            child: FloatingActionButton.extended(
               tooltip: 'Focus mode',
               onPressed: onFocusMode,
               backgroundColor: gdPrimary,
               foregroundColor: Colors.white,
               elevation: 8,
-              child: const Icon(Icons.track_changes_rounded),
+              icon: const Icon(Icons.track_changes_rounded),
+              label: const Text('Focus'),
             ),
           ),
           Positioned(
             left: 14,
             right: 14,
             bottom: bottomInset + 4,
-            child: _GoalBottomNavigation(
-              labels: labels,
-              icons: icons,
-              selectedIndex: selectedIndex,
-              onSelect: onSelect,
-            ),
+            child: _GoalBottomNavigation(labels: labels, icons: icons, selectedIndex: selectedIndex, onSelect: onSelect),
           ),
         ],
       ),
@@ -1755,13 +2064,7 @@ class ResponsiveGoalShell extends StatelessWidget {
 }
 
 class _GoalBottomNavigation extends StatelessWidget {
-  const _GoalBottomNavigation({
-    required this.labels,
-    required this.icons,
-    required this.selectedIndex,
-    required this.onSelect,
-  });
-
+  const _GoalBottomNavigation({required this.labels, required this.icons, required this.selectedIndex, required this.onSelect});
   final List<String> labels;
   final List<IconData> icons;
   final int selectedIndex;
@@ -1776,46 +2079,13 @@ class _GoalBottomNavigation extends StatelessWidget {
         child: BackdropFilter(
           filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
           child: Container(
-            color: Colors.transparent,
             alignment: Alignment.center,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Container(
               height: 88,
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-              decoration: BoxDecoration(
-                color: gdSurface.withOpacity(0.94),
-                borderRadius: BorderRadius.circular(32),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.13),
-                    blurRadius: 30,
-                    offset: const Offset(0, 15),
-                  ),
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-                border: Border.all(
-                  color: gdOnDark.withOpacity(0.55),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                children: [
-                  for (var i = 0; i < labels.length; i++)
-                    Expanded(
-                      child: _BottomNavItem(
-                        label: labels[i],
-                        icon: icons[i],
-                        selected: selectedIndex == i,
-                        highlighted: i == 2,
-                        onTap: () => onSelect(i),
-                      ),
-                    ),
-                ],
-              ),
+              decoration: BoxDecoration(color: gdSurface.withOpacity(0.96), borderRadius: BorderRadius.circular(32), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.10), blurRadius: 24, offset: const Offset(0, 12))], border: Border.all(color: gdBorder)),
+              child: Row(children: [for (var i = 0; i < labels.length; i++) Expanded(child: _BottomNavItem(label: labels[i], icon: icons[i], selected: selectedIndex == i, highlighted: i == 2, onTap: () => onSelect(i)))]),
             ),
           ),
         ),
@@ -1825,14 +2095,7 @@ class _GoalBottomNavigation extends StatelessWidget {
 }
 
 class _BottomNavItem extends StatelessWidget {
-  const _BottomNavItem({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.highlighted,
-    required this.onTap,
-  });
-
+  const _BottomNavItem({required this.label, required this.icon, required this.selected, required this.highlighted, required this.onTap});
   final String label;
   final IconData icon;
   final bool selected;
@@ -1841,63 +2104,23 @@ class _BottomNavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = highlighted
-        ? gdOnDark
-        : selected
-            ? gdPrimary
-            : gdMuted;
-
+    final color = highlighted ? gdOnDark : selected ? gdPrimary : gdMuted;
     return InkWell(
       borderRadius: BorderRadius.circular(22),
       onTap: onTap,
       child: SizedBox(
         height: 70,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              width: highlighted ? 48 : 38,
-              height: highlighted ? 48 : 38,
-              decoration: BoxDecoration(
-                color: highlighted
-                    ? gdPrimary
-                    : selected
-                        ? gdPrimarySoft
-                        : Colors.transparent,
-                shape: BoxShape.circle,
-                border: highlighted && !selected
-                    ? Border.all(color: gdPrimaryDark.withOpacity(0.2), width: 2)
-                    : null,
-                boxShadow: highlighted
-                    ? [
-                        BoxShadow(
-                          color: gdPrimary.withOpacity(0.34),
-                          blurRadius: 14,
-                          offset: const Offset(0, 7),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Icon(icon, color: color, size: highlighted ? 28 : 23),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: highlighted
-                    ? gdPrimaryDark
-                    : selected
-                        ? gdPrimary
-                        : gdMuted,
-                fontSize: 11,
-                fontWeight: highlighted || selected ? FontWeight.w900 : FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: highlighted ? 48 : 38,
+            height: highlighted ? 48 : 38,
+            decoration: BoxDecoration(color: highlighted ? gdPrimary : selected ? gdPrimarySoft : Colors.transparent, shape: BoxShape.circle, boxShadow: highlighted ? [BoxShadow(color: gdPrimary.withOpacity(0.25), blurRadius: 12, offset: const Offset(0, 6))] : null),
+            child: Icon(icon, color: color, size: highlighted ? 28 : 23),
+          ),
+          const SizedBox(height: 4),
+          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: highlighted ? gdPrimaryDark : selected ? gdPrimary : gdMuted, fontSize: 11, fontWeight: highlighted || selected ? FontWeight.w900 : FontWeight.w700)),
+        ]),
       ),
     );
   }
@@ -1947,98 +2170,34 @@ class _PlannerPage extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 112),
         children: [
           AppCard(
-            color: gdPrimaryDark,
+            color: const Color(0xFFEAF1FF),
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'What goal do you want to make progress on?',
-                              style: TextStyle(
-                                color: gdOnDark,
-                                fontSize: 26,
-                                height: 1.1,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Add one goal. Goal Digger will break it into small, scheduled steps.',
-                              style: TextStyle(
-                                color: gdOnDarkMuted,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      PetAvatar(pet: defaultPet, size: 76),
-                    ],
-                  ),
+                  Row(children: const [
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Create a goal', style: TextStyle(color: gdInk, fontSize: 26, height: 1.1, fontWeight: FontWeight.w900)),
+                      SizedBox(height: 8),
+                      Text('Pick a clear category, then review AI subtasks before they are scheduled.', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                    ])),
+                  ]),
                   const SizedBox(height: 18),
                   Theme(
-                    data: Theme.of(context).copyWith(
-                      inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
-                            fillColor: gdSurface,
-                          ),
-                    ),
+                    data: Theme.of(context).copyWith(inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(fillColor: gdSurface)),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        TextField(
-                          controller: goalController,
-                          textInputAction: TextInputAction.done,
-                          decoration: const InputDecoration(
-                            labelText: 'Goal',
-                            hintText: 'Example: Prepare for midterm',
-                          ),
-                          onSubmitted: (_) => onCreateGoal(),
-                        ),
+                        TextField(controller: goalController, textInputAction: TextInputAction.done, decoration: const InputDecoration(labelText: 'Goal', hintText: 'Example: Prepare for midterm'), onSubmitted: (_) => onCreateGoal()),
                         const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                backgroundColor: gdSurface,
-                              ),
-                              onPressed: onDeadlinePick,
-                              icon: const Icon(Icons.event_rounded),
-                              label: Text('Deadline: ${shortDate(deadline)}'),
-                            ),
-                            DropdownMenu<String>(
-                              initialSelection: category,
-                              label: const Text('Category'),
-                              onSelected: (value) {
-                                if (value != null) onCategoryChanged(value);
-                              },
-                              dropdownMenuEntries: [
-                                for (final item in categories)
-                                  DropdownMenuEntry(value: item, label: item),
-                              ],
-                            ),
-                          ],
-                        ),
+                        OutlinedButton.icon(style: OutlinedButton.styleFrom(backgroundColor: gdSurface), onPressed: onDeadlinePick, icon: const Icon(Icons.event_rounded), label: Text('Deadline: ${shortDate(deadline)}')),
+                        const SizedBox(height: 14),
+                        CategorySelector(selected: category, onChanged: onCategoryChanged),
                         const SizedBox(height: 12),
                         PrioritySelector(value: priority, onChanged: onPriorityChanged),
                         const SizedBox(height: 14),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: isProcessing ? null : onCreateGoal,
-                            icon: const Icon(Icons.auto_awesome_rounded),
-                            label: const Text('Break down my goal'),
-                          ),
-                        ),
+                        FilledButton.icon(onPressed: isProcessing ? null : onCreateGoal, icon: const Icon(Icons.auto_awesome_rounded), label: const Text('Break down my goal')),
                       ],
                     ),
                   ),
@@ -2048,33 +2207,15 @@ class _PlannerPage extends StatelessWidget {
           ),
           if (isProcessing) ...[
             const SizedBox(height: 14),
-            ProcessingProgressCard(
-              progress: processingProgress,
-              label: 'Creating your task plan',
-            ),
+            ProcessingProgressCard(progress: processingProgress, label: 'Creating your task plan'),
           ],
-          const SizedBox(height: 22),
-          const HowItWorksSimple(),
           const SizedBox(height: 22),
           SectionTitle(title: 'Active goals', trailing: '${goals.length}'),
           const SizedBox(height: 10),
           if (goals.isEmpty)
-            EmptyStateCard(
-              icon: Icons.flag_circle_rounded,
-              title: 'No goals yet',
-              message:
-                  'Create your first project and Goal Digger will turn it into small, scheduled actions.',
-              cta: 'Create your first project',
-              onPressed: onCreateFirstGoal,
-            )
+            EmptyStateCard(icon: Icons.flag_circle_rounded, title: 'No goals yet', message: 'Create your first project and Goal Digger will turn it into small, scheduled actions.', cta: 'Create your first project', onPressed: onCreateFirstGoal)
           else
-            ...goals.map(
-              (goal) => GoalCard(
-                goal: goal,
-                today: today,
-                onDelete: () => onDeleteGoal(goal),
-              ),
-            ),
+            ...goals.map((goal) => GoalCard(goal: goal, today: today, onDelete: () => onDeleteGoal(goal))),
         ],
       ),
     );
@@ -2157,14 +2298,12 @@ class _CalendarPage extends StatefulWidget {
     required this.tasks,
     required this.goalForTask,
     required this.today,
-    required this.onToggleTask,
     required this.onCreateGoal,
   });
 
   final List<MicroTask> tasks;
   final GoalProject Function(MicroTask task) goalForTask;
   final DateTime today;
-  final ValueChanged<MicroTask> onToggleTask;
   final VoidCallback onCreateGoal;
 
   @override
@@ -2175,13 +2314,21 @@ class _CalendarPageState extends State<_CalendarPage> {
   late DateTime _visibleMonth;
   late DateTime _selectedDate;
   final TextEditingController _routineController = TextEditingController();
-  final List<String> _routines = ['Morning goal review', 'Evening reflection'];
+  final List<RoutineItem> _routines = [];
+  DateTime _routineDate = DateTime.now();
+  TimeOfDay _routineTime = const TimeOfDay(hour: 8, minute: 0);
+  RoutineRepeat _routineRepeat = RoutineRepeat.daily;
 
   @override
   void initState() {
     super.initState();
     _visibleMonth = DateTime(widget.today.year, widget.today.month);
     _selectedDate = widget.today;
+    _routineDate = widget.today;
+    _routines.addAll([
+      RoutineItem(title: 'Morning goal review', startsAt: DateTime(widget.today.year, widget.today.month, widget.today.day, 8), repeat: RoutineRepeat.daily),
+      RoutineItem(title: 'Evening reflection', startsAt: DateTime(widget.today.year, widget.today.month, widget.today.day, 20), repeat: RoutineRepeat.weekly),
+    ]);
   }
 
   @override
@@ -2190,62 +2337,60 @@ class _CalendarPageState extends State<_CalendarPage> {
     super.dispose();
   }
 
+  Future<void> _pickRoutineDate() async {
+    final picked = await showDatePicker(context: context, initialDate: _routineDate, firstDate: DateTime(widget.today.year - 1), lastDate: DateTime(widget.today.year + 5));
+    if (picked != null) setState(() => _routineDate = picked);
+  }
+
+  Future<void> _pickRoutineTime() async {
+    final picked = await showTimePicker(context: context, initialTime: _routineTime);
+    if (picked != null) setState(() => _routineTime = picked);
+  }
+
   void _addRoutine() {
     final routine = _routineController.text.trim();
     if (routine.isEmpty) return;
     setState(() {
-      _routines.add(routine);
+      _routines.add(RoutineItem(
+        title: routine,
+        startsAt: DateTime(_routineDate.year, _routineDate.month, _routineDate.day, _routineTime.hour, _routineTime.minute),
+        repeat: _routineRepeat,
+      ));
       _routineController.clear();
     });
+  }
+
+  void _viewAllRoutines() {
+    Navigator.of(context).push(MaterialPageRoute(builder: (context) => RoutinesListPage(routines: _routines)));
   }
 
   void _changeMonth(int offset) {
     setState(() {
       _visibleMonth = DateTime(_visibleMonth.year, _visibleMonth.month + offset);
       final daysInNewMonth = DateTime(_visibleMonth.year, _visibleMonth.month + 1, 0).day;
-      _selectedDate = DateTime(
-        _visibleMonth.year,
-        _visibleMonth.month,
-        min(_selectedDate.day, daysInNewMonth),
-      );
+      _selectedDate = DateTime(_visibleMonth.year, _visibleMonth.month, min(_selectedDate.day, daysInNewMonth));
     });
   }
 
   List<DateTime?> _buildMonthCells() {
     final firstDay = DateTime(_visibleMonth.year, _visibleMonth.month);
     final daysInMonth = DateTime(_visibleMonth.year, _visibleMonth.month + 1, 0).day;
-    final leadingEmptyCells = firstDay.weekday % 7; // Sunday = 0, Monday = 1.
-    final cells = <DateTime?>[
-      ...List<DateTime?>.filled(leadingEmptyCells, null),
-      for (var day = 1; day <= daysInMonth; day++)
-        DateTime(_visibleMonth.year, _visibleMonth.month, day),
-    ];
-    while (cells.length % 7 != 0) {
-      cells.add(null);
-    }
+    final leadingEmptyCells = firstDay.weekday % 7;
+    final cells = <DateTime?>[...List<DateTime?>.filled(leadingEmptyCells, null), for (var day = 1; day <= daysInMonth; day++) DateTime(_visibleMonth.year, _visibleMonth.month, day)];
+    while (cells.length % 7 != 0) cells.add(null);
     return cells;
   }
 
   List<MicroTask> _tasksForDay(DateTime date) {
     final day = dateOnly(date);
-    final dayTasks = widget.tasks
-        .where((task) => dateOnly(task.scheduledDate) == day)
-        .toList()
-      ..sort((a, b) => a.durationMinutes.compareTo(b.durationMinutes));
-    return dayTasks;
+    return widget.tasks.where((task) => dateOnly(task.scheduledDate) == day).toList()..sort((a, b) => a.durationMinutes.compareTo(b.durationMinutes));
   }
 
   int _taskCountForDay(DateTime date) => _tasksForDay(date).length;
 
   @override
   Widget build(BuildContext context) {
-    final monthTasks = widget.tasks
-        .where(
-          (task) =>
-              task.scheduledDate.year == _visibleMonth.year &&
-              task.scheduledDate.month == _visibleMonth.month,
-        )
-        .toList();
+    final monthTasks = widget.tasks.where((task) => task.scheduledDate.year == _visibleMonth.year && task.scheduledDate.month == _visibleMonth.month).toList();
     final completedThisMonth = monthTasks.where((task) => task.done).length;
     final selectedTasks = _tasksForDay(_selectedDate);
 
@@ -2253,204 +2398,78 @@ class _CalendarPageState extends State<_CalendarPage> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 112),
         children: [
-          const PageHero(
-            icon: Icons.calendar_month_rounded,
-            title: 'Calendar',
-            subtitle:
-                'See your goal tasks inside a month view. Open Home when you want to work on today’s goals.',
-          ),
+          const PageHero(icon: Icons.calendar_month_rounded, title: 'Calendar', subtitle: 'View scheduled goal tasks and add flexible routines. Tasks are view-only here.', compact: true),
           const SizedBox(height: 18),
           AppCard(
             child: Padding(
               padding: const EdgeInsets.all(18),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      IconButton.filledTonal(
-                        onPressed: () => _changeMonth(-1),
-                        icon: const Icon(Icons.chevron_left_rounded),
-                      ),
-                      Expanded(
-                        child: Column(
-                          children: [
-                            Text(
-                              '${monthNames[_visibleMonth.month - 1]} ${_visibleMonth.year}',
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.headlineMedium,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${monthTasks.length} tasks · $completedThisMonth done',
-                              style: const TextStyle(
-                                color: gdMuted,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton.filledTonal(
-                        onPressed: () => _changeMonth(1),
-                        icon: const Icon(Icons.chevron_right_rounded),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Row(
-                    children: [
-                      _WeekdayLabel('S'),
-                      _WeekdayLabel('M'),
-                      _WeekdayLabel('T'),
-                      _WeekdayLabel('W'),
-                      _WeekdayLabel('T'),
-                      _WeekdayLabel('F'),
-                      _WeekdayLabel('S'),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  GridView.builder(
-                    itemCount: _buildMonthCells().length,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 7,
-                      mainAxisSpacing: 8,
-                      crossAxisSpacing: 8,
-                    ),
-                    itemBuilder: (context, index) {
-                      final date = _buildMonthCells()[index];
-                      if (date == null) return const SizedBox.shrink();
-                      final taskCount = _taskCountForDay(date);
-                      return _CalendarDayCell(
-                        date: date,
-                        taskCount: taskCount,
-                        completedCount: _tasksForDay(date).where((task) => task.done).length,
-                        selected: dateOnly(date) == dateOnly(_selectedDate),
-                        today: dateOnly(date) == widget.today,
-                        onTap: () => setState(() => _selectedDate = date),
-                      );
-                    },
-                  ),
-                ],
-              ),
+              child: Column(children: [
+                Row(children: [
+                  IconButton.filledTonal(onPressed: () => _changeMonth(-1), icon: const Icon(Icons.chevron_left_rounded)),
+                  Expanded(child: Column(children: [Text('${monthNames[_visibleMonth.month - 1]} ${_visibleMonth.year}', textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineMedium), const SizedBox(height: 4), Text('${monthTasks.length} tasks · $completedThisMonth done', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800))])),
+                  IconButton.filledTonal(onPressed: () => _changeMonth(1), icon: const Icon(Icons.chevron_right_rounded)),
+                ]),
+                const SizedBox(height: 16),
+                const Row(children: [_WeekdayLabel('S'), _WeekdayLabel('M'), _WeekdayLabel('T'), _WeekdayLabel('W'), _WeekdayLabel('T'), _WeekdayLabel('F'), _WeekdayLabel('S')]),
+                const SizedBox(height: 8),
+                GridView.builder(
+                  itemCount: _buildMonthCells().length,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 7, mainAxisSpacing: 8, crossAxisSpacing: 8),
+                  itemBuilder: (context, index) {
+                    final date = _buildMonthCells()[index];
+                    if (date == null) return const SizedBox.shrink();
+                    return _CalendarDayCell(date: date, taskCount: _taskCountForDay(date), completedCount: _tasksForDay(date).where((task) => task.done).length, selected: dateOnly(date) == dateOnly(_selectedDate), today: dateOnly(date) == widget.today, onTap: () => setState(() => _selectedDate = date));
+                  },
+                ),
+              ]),
             ),
           ),
           const SizedBox(height: 18),
           AppCard(
-            color: const Color(0xFFFFF7ED),
+            color: const Color(0xFFFFFBEB),
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: selectedTasks.isEmpty ? const Color(0xFFE2E8F0) : gdPrimarySoft,
-                    child: Icon(
-                      selectedTasks.isEmpty ? Icons.event_available_rounded : Icons.task_alt_rounded,
-                      color: selectedTasks.isEmpty ? gdMuted : gdPrimary,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          longDate(_selectedDate),
-                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          selectedTasks.isEmpty
-                              ? 'No goals scheduled on this date.'
-                              : '${selectedTasks.length} scheduled goal actions on this date.',
-                          style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+              child: Row(children: [
+                CircleAvatar(backgroundColor: selectedTasks.isEmpty ? const Color(0xFFE2E8F0) : gdPrimarySoft, child: Icon(selectedTasks.isEmpty ? Icons.event_available_rounded : Icons.task_alt_rounded, color: selectedTasks.isEmpty ? gdMuted : gdPrimary)),
+                const SizedBox(width: 12),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(longDate(_selectedDate), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)), const SizedBox(height: 3), Text(selectedTasks.isEmpty ? 'No goals scheduled on this date.' : '${selectedTasks.length} scheduled goal actions. Open Home to check them off.', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800))])),
+              ]),
             ),
           ),
           const SizedBox(height: 12),
           if (selectedTasks.isEmpty)
-            EmptyStateCard(
-              icon: Icons.event_available_rounded,
-              title: 'No goals on this date',
-              message: 'Pick another date with a dot, or create a new goal and Goal Digger will schedule it for you.',
-              cta: 'Create goal',
-              onPressed: widget.onCreateGoal,
-            )
+            EmptyStateCard(icon: Icons.event_available_rounded, title: 'No goals on this date', message: 'Pick another date with a dot, or create a new goal and Goal Digger will schedule it for you.', cta: 'Create goal', onPressed: widget.onCreateGoal)
           else
-            ...selectedTasks.map(
-              (task) => _CalendarTaskDetailTile(
-                task: task,
-                goal: widget.goalForTask(task),
-                onToggle: () => widget.onToggleTask(task),
-              ),
-            ),
+            ...selectedTasks.map((task) => _CalendarTaskDetailTile(task: task, goal: widget.goalForTask(task))),
           const SizedBox(height: 18),
           SectionTitle(title: 'Routines', trailing: '${_routines.length}'),
           const SizedBox(height: 10),
           AppCard(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Add a routine below the calendar',
-                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Use routines for repeated habits like morning review, study blocks, or bedtime planning.',
-                    style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _routineController,
-                    textInputAction: TextInputAction.done,
-                    decoration: const InputDecoration(
-                      labelText: 'Routine name',
-                      hintText: 'Example: 25-minute coding review',
-                    ),
-                    onSubmitted: (_) => _addRoutine(),
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _addRoutine,
-                      icon: const Icon(Icons.add_task_rounded),
-                      label: const Text('Add routine'),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  for (final routine in _routines)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: gdPrimarySoft,
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.repeat_rounded, size: 20, color: gdPrimary),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              routine,
-                              style: const TextStyle(fontWeight: FontWeight.w900, color: gdInk),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Add a routine', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                const SizedBox(height: 6),
+                const Text('Choose the name, date, time, and repeat pattern yourself.', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 12),
+                TextField(controller: _routineController, textInputAction: TextInputAction.done, decoration: const InputDecoration(labelText: 'Routine name', hintText: 'Example: 25-minute coding review'), onSubmitted: (_) => _addRoutine()),
+                const SizedBox(height: 10),
+                Wrap(spacing: 8, runSpacing: 8, children: [
+                  OutlinedButton.icon(onPressed: _pickRoutineDate, icon: const Icon(Icons.event_rounded), label: Text(longDate(_routineDate))),
+                  OutlinedButton.icon(onPressed: _pickRoutineTime, icon: const Icon(Icons.schedule_rounded), label: Text(_routineTime.format(context))),
+                  DropdownMenu<RoutineRepeat>(initialSelection: _routineRepeat, label: const Text('Repeat'), onSelected: (value) { if (value != null) setState(() => _routineRepeat = value); }, dropdownMenuEntries: [for (final repeat in RoutineRepeat.values) DropdownMenuEntry(value: repeat, label: repeat.label)]),
+                ]),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(child: FilledButton.icon(onPressed: _addRoutine, icon: const Icon(Icons.add_task_rounded), label: const Text('Add routine'))),
+                  const SizedBox(width: 10),
+                  Expanded(child: OutlinedButton.icon(onPressed: _viewAllRoutines, icon: const Icon(Icons.view_list_rounded), label: const Text('View routines'))),
+                ]),
+                const SizedBox(height: 12),
+                for (final routine in _routines.take(3)) RoutineTile(routine: routine),
+              ]),
             ),
           ),
         ],
@@ -2460,15 +2479,9 @@ class _CalendarPageState extends State<_CalendarPage> {
 }
 
 class _CalendarTaskDetailTile extends StatelessWidget {
-  const _CalendarTaskDetailTile({
-    required this.task,
-    required this.goal,
-    required this.onToggle,
-  });
-
+  const _CalendarTaskDetailTile({required this.task, required this.goal});
   final MicroTask task;
   final GoalProject goal;
-  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -2476,27 +2489,48 @@ class _CalendarTaskDetailTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
         minVerticalPadding: 12,
-        leading: Checkbox(value: task.done, onChanged: (_) => onToggle()),
-        title: Text(
-          task.title,
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            decoration: task.done ? TextDecoration.lineThrough : null,
-          ),
+        leading: CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(task.load.icon, color: gdPrimary)),
+        title: Text(task.title, style: const TextStyle(fontWeight: FontWeight.w900)),
+        subtitle: Text('${goal.title} · ${shortDate(task.scheduledDate)} · ${task.durationMinutes} min · ${task.load.label}', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+        trailing: const Chip(label: Text('View only')),
+      ),
+    );
+  }
+}
+
+class RoutinesListPage extends StatelessWidget {
+  const RoutinesListPage({super.key, required this.routines});
+  final List<RoutineItem> routines;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('All routines')),
+      body: PageScaffold(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+          children: routines.isEmpty
+              ? [EmptyStateCard(icon: Icons.repeat_rounded, title: 'No routines yet', message: 'Add routines from Calendar first.', cta: 'Back to calendar', onPressed: () => Navigator.of(context).pop())]
+              : [for (final routine in routines) RoutineTile(routine: routine)],
         ),
-        subtitle: Text(
-          '${goal.title} · ${task.durationMinutes} min · ${task.load.label}',
-          style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
-        ),
-        trailing: CircleAvatar(
-          backgroundColor: task.done ? gdPrimary : gdPrimarySoft,
-          child: Icon(
-            task.done ? Icons.check_rounded : task.load.icon,
-            color: task.done ? gdSurface : gdPrimary,
-            size: 20,
-          ),
-        ),
-        onTap: onToggle,
+      ),
+    );
+  }
+}
+
+class RoutineTile extends StatelessWidget {
+  const RoutineTile({super.key, required this.routine});
+  final RoutineItem routine;
+
+  @override
+  Widget build(BuildContext context) {
+    final time = TimeOfDay(hour: routine.startsAt.hour, minute: routine.startsAt.minute).format(context);
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: const CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.repeat_rounded, color: gdPrimary)),
+        title: Text(routine.title, style: const TextStyle(fontWeight: FontWeight.w900)),
+        subtitle: Text('${longDate(routine.startsAt)} · $time · ${routine.repeat.label}', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
       ),
     );
   }
@@ -2649,14 +2683,17 @@ class _CommunityPage extends StatelessWidget {
     required this.controller,
     required this.communities,
     required this.onAddCommunity,
+    required this.onJoinCommunity,
   });
 
   final TextEditingController controller;
   final List<CommunityGroup> communities;
   final VoidCallback onAddCommunity;
+  final ValueChanged<CommunityGroup> onJoinCommunity;
 
   @override
   Widget build(BuildContext context) {
+    final recommended = [...communities]..sort((a, b) => b.similarity.compareTo(a.similarity));
     return PageScaffold(
       child: ListView(
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 112),
@@ -2664,74 +2701,66 @@ class _CommunityPage extends StatelessWidget {
           AppCard(
             child: Padding(
               padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const PageHero(
-                    icon: Icons.groups_rounded,
-                    title: 'Find accountability',
-                    subtitle:
-                        'Join or create a group so progress feels social instead of lonely.',
-                    compact: true,
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: controller,
-                    decoration: const InputDecoration(
-                      labelText: 'Create a community',
-                      hintText: 'Example: Midterm study group',
-                    ),
-                    onSubmitted: (_) => onAddCommunity(),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: onAddCommunity,
-                      icon: const Icon(Icons.add_rounded),
-                      label: const Text('Create community'),
-                    ),
-                  ),
-                ],
-              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const PageHero(icon: Icons.groups_rounded, title: 'Community', subtitle: 'Create a new group, join one that matches your interests, or compare similarity before joining.', compact: true),
+                const SizedBox(height: 14),
+                TextField(controller: controller, decoration: const InputDecoration(labelText: 'Create a community', hintText: 'Example: Midterm study group'), onSubmitted: (_) => onAddCommunity()),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(child: FilledButton.icon(onPressed: onAddCommunity, icon: const Icon(Icons.add_rounded), label: const Text('Create'))),
+                  const SizedBox(width: 10),
+                  Expanded(child: OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.login_rounded), label: const Text('Join with code'))),
+                ]),
+              ]),
             ),
           ),
           const SizedBox(height: 18),
-          SectionTitle(title: 'Suggested groups', trailing: '${communities.length}'),
+          SectionTitle(title: 'Best matches for you', trailing: '${recommended.length}'),
           const SizedBox(height: 10),
-          if (communities.isEmpty)
-            EmptyStateCard(
-              icon: Icons.groups_2_rounded,
-              title: 'No communities yet',
-              message:
-                  'Create your first group and invite people working toward similar goals.',
-              cta: 'Create group',
-              onPressed: onAddCommunity,
-            )
-          else
-            ...communities.map(
-              (group) => AppCard(
+          ...recommended.map((group) => CommunityMatchCard(group: group, onJoin: () => onJoinCommunity(group))),
+          const SizedBox(height: 10),
+          SectionTitle(title: 'All communities'),
+          const SizedBox(height: 10),
+          ...communities.map((group) => AppCard(
                 margin: const EdgeInsets.only(bottom: 12),
                 child: ListTile(
                   minVerticalPadding: 16,
-                  leading: const CircleAvatar(
-                    backgroundColor: gdPrimarySoft,
-                    child: Icon(Icons.groups_rounded, color: gdPrimary),
-                  ),
+                  leading: const CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.groups_rounded, color: gdPrimary)),
                   title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w900)),
-                  subtitle: Text(
-                    '${group.members} members · ${group.tag}\n${group.description}',
-                    style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w600),
-                  ),
+                  subtitle: Text('${group.members} members · ${group.tag}\n${group.description}', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w600)),
                   isThreeLine: true,
-                  trailing: OutlinedButton(
-                    onPressed: () {},
-                    child: const Text('View'),
-                  ),
+                  trailing: group.joined ? const Chip(label: Text('Joined')) : TextButton(onPressed: () => onJoinCommunity(group), child: const Text('Join')),
                 ),
-              ),
-            ),
+              )),
         ],
+      ),
+    );
+  }
+}
+
+class CommunityMatchCard extends StatelessWidget {
+  const CommunityMatchCard({super.key, required this.group, required this.onJoin});
+  final CommunityGroup group;
+  final VoidCallback onJoin;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Expanded(child: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
+            Chip(label: Text('${group.similarity}% match')),
+          ]),
+          const SizedBox(height: 6),
+          Text('${group.members} members · ${group.tag}', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          Text(group.description, style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 12),
+          SizedBox(width: double.infinity, child: group.joined ? const OutlinedButton(onPressed: null, child: Text('Already joined')) : FilledButton.icon(onPressed: onJoin, icon: const Icon(Icons.group_add_rounded), label: const Text('Join community'))),
+        ]),
       ),
     );
   }
@@ -3410,6 +3439,69 @@ class SectionTitle extends StatelessWidget {
   }
 }
 
+class CategorySelector extends StatelessWidget {
+  const CategorySelector({super.key, required this.selected, required this.onChanged});
+  final String selected;
+  final ValueChanged<String> onChanged;
+
+  IconData _iconFor(String category) {
+    switch (category) {
+      case 'Career': return Icons.work_rounded;
+      case 'Wellness': return Icons.favorite_rounded;
+      case 'Finance': return Icons.savings_rounded;
+      case 'Creative': return Icons.palette_rounded;
+      case 'Study': return Icons.school_rounded;
+      default: return Icons.more_horiz_rounded;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('Category', style: TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
+      const SizedBox(height: 8),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        for (final item in categories)
+          Builder(builder: (context) {
+            final isSelected = selected == item;
+            return ChoiceChip(
+              selected: isSelected,
+              selectedColor: gdPrimary,
+              backgroundColor: gdSurface,
+              side: BorderSide(color: isSelected ? gdPrimary : gdBorderStrong),
+              avatar: Icon(_iconFor(item), size: 18, color: isSelected ? Colors.white : gdPrimary),
+              label: Text(item, style: TextStyle(color: isSelected ? Colors.white : gdInk, fontWeight: FontWeight.w900)),
+              onSelected: (_) => onChanged(item),
+            );
+          }),
+      ]),
+    ]);
+  }
+}
+
+class StatMiniCard extends StatelessWidget {
+  const StatMiniCard({super.key, required this.icon, required this.label, required this.value});
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      color: gdCardLight,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(icon, color: gdPrimary),
+          const SizedBox(height: 8),
+          Text(value, style: Theme.of(context).textTheme.titleLarge),
+          Text(label, style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+        ]),
+      ),
+    );
+  }
+}
+
 class PrioritySelector extends StatelessWidget {
   const PrioritySelector({super.key, required this.value, required this.onChanged});
 
@@ -3422,7 +3514,7 @@ class PrioritySelector extends StatelessWidget {
       children: [
         const Text(
           'Priority',
-          style: TextStyle(color: gdOnDark, fontWeight: FontWeight.w900),
+          style: TextStyle(color: gdInk, fontWeight: FontWeight.w900),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -3435,7 +3527,7 @@ class PrioritySelector extends StatelessWidget {
                   onPressed: () => onChanged(star),
                   icon: Icon(
                     star <= value ? Icons.star_rounded : Icons.star_border_rounded,
-                    color: star <= value ? gdStarGold : gdOnDarkMuted.withOpacity(0.72),
+                    color: star <= value ? gdStarGold : gdMuted.withOpacity(0.55),
                   ),
                 ),
               );
@@ -3448,111 +3540,81 @@ class PrioritySelector extends StatelessWidget {
 }
 
 class GoalCard extends StatelessWidget {
-  const GoalCard({
-    super.key,
-    required this.goal,
-    required this.today,
-    required this.onDelete,
-  });
+  const GoalCard({super.key, required this.goal, required this.today, required this.onDelete});
 
   final GoalProject goal;
   final DateTime today;
   final VoidCallback onDelete;
 
+  void _showTaskDetail(BuildContext context, MicroTask task) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: gdSurface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(task.title, style: Theme.of(context).textTheme.headlineMedium),
+              const SizedBox(height: 10),
+              Text(goal.title, style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 16),
+              AppCard(color: gdCardLight, child: ListTile(leading: Icon(task.load.icon), title: Text('${task.durationMinutes} minutes · ${task.load.label}', style: const TextStyle(fontWeight: FontWeight.w900)), subtitle: Text('Scheduled on ${longDate(task.scheduledDate)}', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)))),
+              const SizedBox(height: 12),
+              Text(task.done ? 'Status: completed' : 'Status: not completed yet', style: const TextStyle(color: gdInk, fontWeight: FontWeight.w800)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final completed = goal.tasks.where((task) => task.done).length;
     final daysLeft = daysBetween(today, goal.deadline);
-
     return AppCard(
       margin: const EdgeInsets.only(bottom: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            height: 8,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [goal.from, goal.to]),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(goal.title, style: Theme.of(context).textTheme.titleLarge),
-                    ),
-                    Chip(label: Text(goal.category)),
-                    IconButton(
-                      tooltip: 'Remove goal',
-                      onPressed: onDelete,
-                      icon: const Icon(Icons.close_rounded, color: gdError),
-                    ),
-                  ],
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(height: 8, decoration: BoxDecoration(gradient: LinearGradient(colors: [goal.from.withOpacity(0.72), goal.to.withOpacity(0.72)]))),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: Text(goal.title, style: Theme.of(context).textTheme.titleLarge)),
+              Chip(backgroundColor: gdPrimarySoft, label: Text(goal.category, style: const TextStyle(color: gdPrimary, fontWeight: FontWeight.w900))),
+              IconButton(tooltip: 'Remove goal', onPressed: onDelete, icon: const Icon(Icons.close_rounded, color: gdError)),
+            ]),
+            const SizedBox(height: 10),
+            Row(children: [
+              CircularProgressBadge(progress: goal.progress, label: '${(goal.progress * 100).round()}%', size: 72, strokeWidth: 7),
+              const SizedBox(width: 14),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('$completed/${goal.tasks.length} tasks done', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                Row(children: [Icon(daysLeft <= 2 ? Icons.warning_amber_rounded : Icons.event_rounded, size: 18, color: daysLeft <= 2 ? gdWarning : gdPrimary), const SizedBox(width: 4), Text(daysLeft < 0 ? 'Overdue' : '$daysLeft days left', style: TextStyle(color: daysLeft <= 2 ? gdWarning : gdMuted, fontWeight: FontWeight.w900))]),
+              ])),
+            ]),
+            const Divider(height: 26),
+            const Text('Subtasks', style: TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (var i = 0; i < goal.tasks.length; i++)
+                ActionChip(
+                  avatar: Icon(goal.tasks[i].load.icon, size: 18, color: gdPrimary),
+                  label: Text('Step ${i + 1}', style: const TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
+                  backgroundColor: goal.tasks[i].done ? gdPrimarySoft : const Color(0xFFF1F5F9),
+                  side: const BorderSide(color: gdBorder),
+                  onPressed: () => _showTaskDetail(context, goal.tasks[i]),
                 ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    CircularProgressBadge(
-                      progress: goal.progress,
-                      label: '${(goal.progress * 100).round()}%',
-                      size: 72,
-                      strokeWidth: 7,
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '$completed/${goal.tasks.length} tasks done',
-                            style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              Icon(
-                                daysLeft <= 2 ? Icons.warning_amber_rounded : Icons.event_rounded,
-                                size: 18,
-                                color: daysLeft <= 2 ? gdWarning : gdPrimary,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                daysLeft < 0 ? 'Overdue' : '$daysLeft days left',
-                                style: TextStyle(
-                                  color: daysLeft <= 2 ? gdWarning : gdMuted,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const Divider(height: 26),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final task in goal.tasks)
-                      Chip(
-                        avatar: Icon(task.load.icon, size: 18),
-                        label: Text(task.title),
-                        backgroundColor: task.done ? gdPrimarySoft : const Color(0xFFF1F5F9),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+            ]),
+          ]),
+        ),
+      ]),
     );
   }
 }
