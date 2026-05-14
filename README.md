@@ -16,29 +16,23 @@ AI-driven productivity app with adaptive task scheduling, unified pet companion,
 ```
 lib/
 ├── main.dart
-├── state/app_state.dart        # All state + ATS engine
+├── app/
+│   ├── goal_digger_app.dart
+│   └── goal_digger_root.dart
 ├── models/
-│   ├── sub_task.dart
-│   ├── goal_item.dart
-│   ├── pet_look.dart
-│   ├── routine.dart
-│   └── community_models.dart
-├── screens/
-│   ├── shell.dart              # Nav + global overlays (reminder, chat)
-│   ├── home_screen.dart        # Goal deconstructor + pet + My goals
-│   ├── task_screen.dart        # ATS card + mood + progress + task list
-│   ├── calendar_screen.dart    # Month grid + routines synced + view-only popup
-│   ├── community_screen.dart   # Friends + communities + finder
-│   └── shop_screen.dart        # Wallet + pet preview + item grid
-├── widgets/
-│   ├── pet_widget.dart         # Unified CustomPaint pet
-│   ├── glass_card.dart
-│   ├── ambient_background.dart
-│   ├── profile_button.dart
-│   └── settings_button.dart
-└── theme/
-    ├── colors.dart
-    └── text_styles.dart
+├── core/
+├── data/
+├── shared/
+│   └── widgets/
+└── features/
+    ├── onboarding/
+    ├── planner/
+    ├── calendar/
+    ├── tasks/
+    ├── community/
+    ├── companion/
+    ├── focus/
+    └── settings/
 ```
 
 ## Setup
