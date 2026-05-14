@@ -1,11 +1,12 @@
-part of goal_digger;
+import 'package:flutter/material.dart';
 
-/* -------------------------------------------------------------------------- */
-/* PAGES                                                                      */
-/* -------------------------------------------------------------------------- */
+import '../../core/theme/gd_colors.dart';
+import '../../core/utils/date_helpers.dart';
+import '../../models/models.dart';
+import '../../shared/widgets/shared_widgets.dart';
 
-class _PlannerPage extends StatelessWidget {
-  const _PlannerPage({
+class PlannerPage extends StatelessWidget {
+  const PlannerPage({
     required this.goals,
     required this.today,
     required this.goalController,

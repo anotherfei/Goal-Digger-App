@@ -1,8 +1,11 @@
-part of goal_digger;
+import 'dart:math';
 
-/* -------------------------------------------------------------------------- */
-/* REUSABLE UI                                                                */
-/* -------------------------------------------------------------------------- */
+import 'package:flutter/material.dart';
+
+import '../../core/constants/gd_constants.dart';
+import '../../core/theme/gd_colors.dart';
+import '../../core/utils/date_helpers.dart';
+import '../../models/models.dart';
 
 class PageScaffold extends StatelessWidget {
   const PageScaffold({super.key, required this.child});

@@ -1,4 +1,7 @@
-part of goal_digger;
+import 'package:flutter/material.dart';
+
+import '../../core/theme/gd_colors.dart';
+import '../../shared/widgets/shared_widgets.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});

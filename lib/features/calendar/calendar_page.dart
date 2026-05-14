@@ -1,7 +1,14 @@
-part of goal_digger;
+import 'dart:math';
 
-class _CalendarPage extends StatefulWidget {
-  const _CalendarPage({
+import 'package:flutter/material.dart';
+
+import '../../core/theme/gd_colors.dart';
+import '../../core/utils/date_helpers.dart';
+import '../../models/models.dart';
+import '../../shared/widgets/shared_widgets.dart';
+
+class CalendarPage extends StatefulWidget {
+  const CalendarPage({
     required this.tasks,
     required this.goalForTask,
     required this.today,
@@ -14,10 +21,10 @@ class _CalendarPage extends StatefulWidget {
   final VoidCallback onCreateGoal;
 
   @override
-  State<_CalendarPage> createState() => _CalendarPageState();
+  State<CalendarPage> createState() => _CalendarPageState();
 }
 
-class _CalendarPageState extends State<_CalendarPage> {
+class _CalendarPageState extends State<CalendarPage> {
   late DateTime _visibleMonth;
   late DateTime _selectedDate;
   final TextEditingController _routineController = TextEditingController();

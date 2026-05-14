@@ -1,7 +1,11 @@
-part of goal_digger;
+import 'package:flutter/material.dart';
 
-class _CompanionPage extends StatefulWidget {
-  const _CompanionPage({
+import '../../core/theme/gd_colors.dart';
+import '../../models/models.dart';
+import '../../shared/widgets/shared_widgets.dart';
+
+class CompanionPage extends StatefulWidget {
+  const CompanionPage({
     required this.coins,
     required this.happiness,
     required this.pet,
@@ -20,14 +24,14 @@ class _CompanionPage extends StatefulWidget {
   final VoidCallback onPetInteract;
 
   @override
-  State<_CompanionPage> createState() => _CompanionPageState();
+  State<CompanionPage> createState() => _CompanionPageState();
 }
 
-class _CompanionPageState extends State<_CompanionPage> {
+class _CompanionPageState extends State<CompanionPage> {
   String _selectedSkin = 'Mint';
 
   @override
-  void didUpdateWidget(covariant _CompanionPage oldWidget) {
+  void didUpdateWidget(covariant CompanionPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     _selectedSkin = widget.pet.name;
   }

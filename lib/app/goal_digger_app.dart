@@ -1,8 +1,7 @@
-part of goal_digger;
+import 'package:flutter/material.dart';
 
-/* -------------------------------------------------------------------------- */
-/* ROOT APP                                                                   */
-/* -------------------------------------------------------------------------- */
+import '../core/theme/gd_theme.dart';
+import 'goal_digger_root.dart';
 
 class GoalDiggerApp extends StatelessWidget {
   const GoalDiggerApp({super.key});

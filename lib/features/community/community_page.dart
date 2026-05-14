@@ -1,7 +1,13 @@
-part of goal_digger;
+import 'dart:math';
 
-class _CommunityPage extends StatefulWidget {
-  const _CommunityPage({
+import 'package:flutter/material.dart';
+
+import '../../core/theme/gd_colors.dart';
+import '../../models/models.dart';
+import '../../shared/widgets/shared_widgets.dart';
+
+class CommunityPage extends StatefulWidget {
+  const CommunityPage({
     required this.controller,
     required this.communities,
     required this.friends,
@@ -26,10 +32,10 @@ class _CommunityPage extends StatefulWidget {
   final ValueChanged<String> onDeleteFriend;
 
   @override
-  State<_CommunityPage> createState() => _CommunityPageState();
+  State<CommunityPage> createState() => _CommunityPageState();
 }
 
-class _CommunityPageState extends State<_CommunityPage> {
+class _CommunityPageState extends State<CommunityPage> {
   int _tab = 0;
   final TextEditingController _friendSearchController = TextEditingController();
   final TextEditingController _communitySearchController = TextEditingController();

@@ -1,7 +1,11 @@
-part of goal_digger;
+import 'package:flutter/material.dart';
 
-class _TasksPage extends StatelessWidget {
-  const _TasksPage({
+import '../../core/theme/gd_colors.dart';
+import '../../models/models.dart';
+import '../../shared/widgets/shared_widgets.dart';
+
+class TasksPage extends StatelessWidget {
+  const TasksPage({
     required this.mood,
     required this.todayTasks,
     required this.todayProgress,

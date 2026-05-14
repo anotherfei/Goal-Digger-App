@@ -1,4 +1,6 @@
-part of goal_digger;
+import '../core/theme/gd_colors.dart';
+import '../core/utils/date_helpers.dart';
+import '../models/models.dart';
 
 List<GoalProject> seedGoals(DateTime today) {
   return [
@@ -83,19 +85,3 @@ List<GoalProject> seedGoals(DateTime today) {
     ),
   ];
 }
-
-const List<String> categories = [
-  'Study',
-  'Career',
-  'Wellness',
-  'Finance',
-  'Creative',
-  'Other',
-];
-
-const PetSkin defaultPet = PetSkin(
-  name: 'Mint',
-  from: gdPetMintFrom,
-  to: gdPetMintTo,
-  accent: gdPetAccent,
-);

@@ -1,8 +1,7 @@
-part of goal_digger;
+import 'package:flutter/material.dart';
 
-/* -------------------------------------------------------------------------- */
-/* ONBOARDING / LANDING                                                       */
-/* -------------------------------------------------------------------------- */
+import '../../core/theme/gd_colors.dart';
+import '../../shared/widgets/shared_widgets.dart';
 
 class OnboardingScreen extends StatelessWidget {
   const OnboardingScreen({

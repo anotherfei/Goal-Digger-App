@@ -1,8 +1,4 @@
-part of goal_digger;
-
-/* -------------------------------------------------------------------------- */
-/* MODELS                                                                     */
-/* -------------------------------------------------------------------------- */
+import 'package:flutter/material.dart';
 
 enum TaskLoad { light, focus, stretch }
 

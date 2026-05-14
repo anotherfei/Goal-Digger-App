@@ -1,9 +1,3 @@
-part of goal_digger;
-
-/* -------------------------------------------------------------------------- */
-/* HELPERS                                                                    */
-/* -------------------------------------------------------------------------- */
-
 DateTime dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
 
 DateTime addDays(DateTime date, int days) {

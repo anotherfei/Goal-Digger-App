@@ -1,4 +1,23 @@
-part of goal_digger;
+import 'dart:async';
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+
+import '../core/constants/gd_constants.dart';
+import '../core/theme/gd_colors.dart';
+import '../core/utils/date_helpers.dart';
+import '../data/seed_data.dart';
+import '../features/calendar/calendar_page.dart';
+import '../features/community/community_page.dart';
+import '../features/companion/companion_page.dart';
+import '../features/focus/widgets/focus_widgets.dart';
+import '../features/onboarding/onboarding_screen.dart';
+import '../features/planner/planner_page.dart';
+import '../features/responsive/responsive_goal_shell.dart';
+import '../features/settings/settings_screen.dart';
+import '../features/tasks/tasks_page.dart';
+import '../models/models.dart';
+import '../shared/widgets/shared_widgets.dart';
 
 class GoalDiggerRoot extends StatefulWidget {
   const GoalDiggerRoot({super.key});
@@ -949,7 +968,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     }
 
     final pages = [
-      _PlannerPage(
+      PlannerPage(
         goals: _goals,
         today: today,
         goalController: _goalController,
@@ -967,13 +986,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         onEditGoalPriority: _editGoalPriority,
         onCreateFirstGoal: () => setState(() => _selectedIndex = 0),
       ),
-      _CalendarPage(
+      CalendarPage(
         tasks: _allTasks,
         goalForTask: _goalForTask,
         today: today,
         onCreateGoal: () => setState(() => _selectedIndex = 0),
       ),
-      _TasksPage(
+      TasksPage(
         mood: _selectedMood,
         todayTasks: _todayTasks,
         todayProgress: _todayProgress,
@@ -985,7 +1004,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         onToggleTask: _toggleTask,
         onCreateGoal: () => setState(() => _selectedIndex = 0),
       ),
-      _CommunityPage(
+      CommunityPage(
         controller: _communityController,
         communities: _communities,
         friends: _friends,
@@ -997,7 +1016,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         onAddFriend: _addFriend,
         onDeleteFriend: _deleteFriend,
       ),
-      _CompanionPage(
+      CompanionPage(
         coins: _coins,
         happiness: _petHappiness,
         pet: _activePetSkin,
