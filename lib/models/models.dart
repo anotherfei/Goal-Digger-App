@@ -1,0 +1,143 @@
+part of goal_digger;
+
+/* -------------------------------------------------------------------------- */
+/* MODELS                                                                     */
+/* -------------------------------------------------------------------------- */
+
+enum TaskLoad { light, focus, stretch }
+
+extension TaskLoadX on TaskLoad {
+  String get label {
+    switch (this) {
+      case TaskLoad.light:
+        return 'Light';
+      case TaskLoad.focus:
+        return 'Focus';
+      case TaskLoad.stretch:
+        return 'Stretch';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case TaskLoad.light:
+        return Icons.spa_rounded;
+      case TaskLoad.focus:
+        return Icons.track_changes_rounded;
+      case TaskLoad.stretch:
+        return Icons.local_fire_department_rounded;
+    }
+  }
+}
+
+class MicroTask {
+  MicroTask({
+    required this.id,
+    required this.goalId,
+    required this.title,
+    required this.durationMinutes,
+    required this.load,
+    required this.scheduledDate,
+    this.done = false,
+    this.points = 15,
+  });
+
+  final int id;
+  final int goalId;
+  final String title;
+  final int durationMinutes;
+  final TaskLoad load;
+  DateTime scheduledDate;
+  bool done;
+  final int points;
+}
+
+class GoalProject {
+  GoalProject({
+    required this.id,
+    required this.title,
+    required this.importance,
+    required this.category,
+    required this.deadline,
+    required this.from,
+    required this.to,
+    required this.tasks,
+  });
+
+  final int id;
+  String title;
+  int importance;
+  String category;
+  DateTime deadline;
+  Color from;
+  Color to;
+  List<MicroTask> tasks;
+
+  double get progress {
+    if (tasks.isEmpty) return 0;
+    return tasks.where((task) => task.done).length / tasks.length;
+  }
+}
+
+class CommunityGroup {
+  CommunityGroup({
+    required this.name,
+    required this.members,
+    required this.tag,
+    required this.description,
+    this.similarity = 82,
+    this.joined = false,
+  });
+
+  final String name;
+  final int members;
+  final String tag;
+  final String description;
+  final int similarity;
+  bool joined;
+}
+
+enum RoutineRepeat { yearly, monthly, weekly, daily, custom }
+
+extension RoutineRepeatX on RoutineRepeat {
+  String get label {
+    switch (this) {
+      case RoutineRepeat.yearly:
+        return 'Yearly';
+      case RoutineRepeat.monthly:
+        return 'Monthly';
+      case RoutineRepeat.weekly:
+        return 'Weekly';
+      case RoutineRepeat.daily:
+        return 'Daily';
+      case RoutineRepeat.custom:
+        return 'Custom';
+    }
+  }
+}
+
+class RoutineItem {
+  RoutineItem({
+    required this.title,
+    required this.startsAt,
+    required this.repeat,
+  });
+
+  final String title;
+  final DateTime startsAt;
+  final RoutineRepeat repeat;
+}
+
+class PetSkin {
+  const PetSkin({
+    required this.name,
+    required this.from,
+    required this.to,
+    required this.accent,
+  });
+
+  final String name;
+  final Color from;
+  final Color to;
+  final Color accent;
+}
