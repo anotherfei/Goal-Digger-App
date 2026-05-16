@@ -1,147 +1,208 @@
-# 🌱 Goal Digger — Product Overview
+# Goal Digger
 
-> *Stop planning. Start digging.*
+> An AI-driven productivity companion that combines intelligent task scheduling, personalized pet companions, and community features to help you achieve your goals.
 
-Goal Digger is an AI-powered productivity companion that turns overwhelming goals into small, honest daily actions — and adapts to your real life when it changes.
+[![Flutter](https://img.shields.io/badge/Flutter-%3E%3D3.3.0-02569B?logo=flutter)](https://flutter.dev)
+[![Dart](https://img.shields.io/badge/Dart-%3E%3D3.3.0-0175C2?logo=dart)](https://dart.dev)
+[![License](https://img.shields.io/badge/License-Proprietary-blue)](#license)
 
----
+## 📋 Table of Contents
 
-## What is Goal Digger?
+- [Features](#-features)
+- [Demo](#-demo)
+- [Installation](#-installation)
+- [Quick Start](#-quick-start)
+- [Project Structure](#-project-structure)
+- [Architecture](#-architecture)
+- [Development](#-development)
+- [Contributing](#-contributing)
+- [License](#-license)
 
-Most productivity apps expect you to show up perfectly every day. Goal Digger doesn't. It meets you where you are — tired, busy, or behind — and quietly rebuilds your day around what actually matters, without guilt or punishment.
+## ✨ Features
 
-You tell it your goals. It figures out the steps, schedules them across your calendar, reads your mood, and gives you the next right action to take. That's it. No endless setup, no overwhelming task lists.
+- **📊 Intelligent Task Scheduling** - Adaptive Task Scheduling (ATS) engine that prioritizes tasks based on importance, urgency, schedule fit, and energy levels
+- **📅 Calendar Integration** - Visual calendar with task distribution, day popups, and routine management
+- **🐕 Pet Companion System** - Personalized pet character that syncs across all pages and responds to your progress
+- **👥 Community Features** - Create/join groups, connect with friends, and get suggestions
+- **💡 AI-Powered Goal Breakdown** - Chat-based goal decomposition with intelligent planning assistance
+- **⚙️ Customization** - Personalize your pet, themes, and productivity settings
+- **🎮 Focus Mode** - Distraction-free productivity timer for deep work sessions
+- **📱 Multi-Platform** - Works on Android, iOS, Web, Windows, macOS, and Linux
 
----
+## 🚀 Installation
 
-## The Problem It Solves
+### Prerequisites
 
-People set goals but lose momentum because:
+- Flutter SDK `>=3.3.0 <4.0.0`
+- Dart SDK (included with Flutter)
+- Git
 
-- Planning is exhausting and takes longer than doing
-- Task lists don't adapt when life gets in the way
-- Missing a day feels like failing, so people give up
-- There is no one to check in with, celebrate small wins, or offer a nudge
+### Clone Repository
 
-Goal Digger solves each of these directly.
-
----
-
-## Core Philosophy
-
-| Principle | How it shows up |
-|---|---|
-| **Bite-sized actions** | Every goal is broken into micro-tasks of 5–25 minutes |
-| **Mood-aware scheduling** | Tap your mood and the daily plan reshapes in real time |
-| **No punishment** | Deadline pressure is detected; the app adjusts, not accuses |
-| **Urgency-first** | The AI scores tasks by importance × deadline × energy match |
-| **Friendly accountability** | A companion pet, friends, and communities keep you going |
-
----
-
-## The 5 Screens
-
-### 🏠 Home
-The starting point. Your AI companion pet lives here. Tell it your goal — it breaks it down into steps using a conversational chat, assigns each step to a day on your calendar, and shows you your active goals with sliders for priority and deadline.
-
-### ✅ Task
-Your daily plan, built by the AI based on your goals, deadlines, and today's mood. Tap any task to see a short guide on how to actually start it. Swap a task if you'd rather do something else. Add more when you've finished everything. Each completed task feeds your pet and earns coins.
-
-### 🗓️ Calendar
-Your full month view, populated automatically with every step from every goal. Routines appear differently from tasks so you can tell them apart at a glance. Tap any day to see a view-only preview of what's scheduled. Add recurring routines as reminders, not as more tasks to complete.
-
-### 👥 Community
-Find people working on similar goals. Add friends, join or create groups, see a weekly kind-mode leaderboard. The Community Finder suggests groups based on what role they're missing — if a team needs a designer and you're building a portfolio, you'll see it.
-
-### 🛍️ Customize Pet
-Spend coins earned from completing tasks on costumes, furniture, and accessories for your companion. Your pet's appearance syncs across every page of the app.
-
----
-
-## The AI Engine (ATS — Adaptive Task Suggestions)
-
-Goal Digger uses a scoring algorithm to decide which tasks appear in your daily list:
-
-```
-score = (goal importance × 2)
-      + (10 ÷ days until deadline)      ← urgency
-      + day match bonus                  ← prefers today's scheduled tasks
-      + energy match                     ← light/focus/stretch vs your mood
+```bash
+git clone https://github.com/yourusername/goal-digger.git
+cd Goal-Digger-App
 ```
 
-**Mood guard:** If you say you're tired but a deadline is tomorrow with 3+ tasks remaining, the system keeps those tasks and gently softens the approach instead of removing them.
+### Get Dependencies
 
-**Slot count adapts to energy:**
-- 😔 Tired → 2 tasks
-- 😐 Okay → 4 tasks
-- 😊 Great → 5 tasks
+```bash
+flutter pub get
+```
 
----
+## 🎯 Quick Start
 
-## Companion Pet System
+### Run Development Version
 
-Your pet is more than decoration. It:
+```bash
+flutter run
+```
 
-- **Grows hungrier** if you don't complete tasks (each task completion raises pet energy by 15%)
-- **Earns you coins** — every completed task is worth points redeemable in the pet shop
-- **Syncs to your chosen skin** — Mint, Peach, or Lunar — across every page of the app
-- **Lives on the Home screen** and the navigation bar so it's always with you
+### Build for Production
 
-Feeding the pet costs 10 coins and requires you to have earned at least 10 points from tasks first. You can't buy your way to a happy pet — you have to do the work.
+```bash
+# Android
+flutter build apk
+flutter build appbundle
 
----
+# iOS
+flutter build ios
 
-## Routines vs Tasks
+# Web
+flutter build web
 
-| | Tasks | Routines |
-|---|---|---|
-| Source | Created from goals via AI | Created manually |
-| Purpose | Move a goal forward | Remind you of habits |
-| Completable | Yes, earns points | No, reminder only |
-| Calendar | Yes, scheduled per day | Yes, shown with dashed amber style |
-| Frequency | Assigned per step | Daily, Weekly, Monthly, Once, Custom |
+# Desktop (Windows/macOS/Linux)
+flutter build windows
+flutter build macos
+flutter build linux
+```
 
----
+## 📁 Project Structure
 
-## Who It's For
+```
+lib/
+├── main.dart                          # Application entry point
+├── app/
+│   ├── goal_digger_app.dart          # App configuration & theme
+│   └── goal_digger_root.dart         # Root navigation widget
+├── core/
+│   ├── constants/                     # App-wide constants
+│   ├── theme/                         # Design system & theming
+│   └── utils/                         # Utility functions & helpers
+├── models/                            # Data models & entities
+├── data/                              # Data layer (API, local storage, repositories)
+├── shared/
+│   └── widgets/                       # Reusable UI components
+└── features/
+    ├── onboarding/                    # User onboarding & authentication
+    ├── planner/                       # Goal creation & management
+    ├── calendar/                      # Calendar UI & scheduling
+    ├── tasks/                         # Task management & display
+    ├── community/                     # Social & community features
+    ├── companion/                     # Pet companion system
+    ├── focus/                         # Focus/timer functionality
+    ├── responsive/                    # Responsive design utilities
+    └── settings/                      # App settings & preferences
+```
 
-Goal Digger is designed for anyone who:
+## 🏗️ Architecture
 
-- Sets goals but struggles with follow-through
-- Experiences procrastination or inconsistency
-- Has tried productivity apps but abandoned them
-- Wants accountability without shame
-- Is a student, freelancer, career-changer, or anyone building something on the side
+### Navigation Structure (5-Tab Interface)
 
----
+1. **Home** - Dashboard with daily overview and quick stats
+2. **Planner** - Goal creation, breakdown, and task planning
+3. **Calendar** - Visual calendar with scheduled tasks and routines
+4. **Community** - Friends, groups, and social interactions
+5. **Companion** - Pet customization and companion settings
 
-## Tech Stack
+### Core Systems
 
-| Layer | Web | Mobile |
-|---|---|---|
-| Framework | React 19 + Vite | Flutter 3 |
-| Styling | Tailwind CSS v4 | Custom theme + Google Fonts |
-| State | React useState / useCallback | Provider (ChangeNotifier) |
-| Charts | SVG (inline) | CustomPaint |
-| Navigation | Tab-based (5 tabs) | Bottom nav bar |
-| Platform | Browser (PWA-ready) | iOS + Android + Web |
+#### Adaptive Task Scheduling (ATS) Engine
+The ATS engine intelligently prioritizes subtasks using:
+- **Importance Score** - Based on parent goal priority
+- **Urgency Score** - Based on deadline proximity
+- **Schedule Compatibility** - Matches available time slots
+- **Energy Level** - Adjusts difficulty based on user energy
 
----
+#### Pet Companion System
+- Unified pet character synced across all pages
+- Responds to user progress and activity
+- Multiple pet skins and customization options
+- Persistent state management
 
-## Design Language
+#### Community System
+- Friends management (add/remove/block)
+- Group creation and membership
+- Suggestion system with smart filtering
+- Activity sharing and notifications
 
-- **Warm off-white background** (`#F7F1E8`) — feels like paper, not a screen
-- **Frosted glass cards** — depth without heaviness
-- **Ambient gradient blobs** — alive, breathing, never static
-- **One unified pet character** — reused across all pages, reflects your skin choice
-- **No punitive red states** — overdue feels gentle amber, not alarming red
-- **Dark nav pill** — the active tab is always clear
+## 💻 Development
 
----
+### Code Style
 
-## Current Version
+- Follow [Dart Style Guide](https://dart.dev/guides/language/effective-dart/style)
+- Use meaningful names for variables, functions, and classes
+- Write comments for complex logic
+- Maintain feature-module separation
 
-- Version: `1.0.0`
-- Status: Prototype / MVP
-- Web preview: React + Vite (see `README.md in branch web-version`)
-- Mobile source: Flutter (see `README.md in branch app-version`)
+### Project Conventions
+
+- **Models** store data structures and business entities
+- **Services** handle API calls and external integrations
+- **Widgets** are UI components (stateless/stateful)
+- **State Management** centralized in respective features
+- **Constants** defined in `core/constants`
+- **Themes & Styles** configured in `core/theme`
+
+### Running Tests
+
+```bash
+flutter test
+```
+
+### Code Analysis
+
+```bash
+flutter analyze
+```
+
+### Formatting Code
+
+```bash
+dart format lib/
+```
+
+## 🤝 Contributing
+
+Contributions are welcome! Please follow these steps:
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+Please ensure:
+- Code follows project style guidelines
+- Tests are updated/added as needed
+- README is updated if needed
+- No breaking changes without discussion
+
+## 📝 License
+
+This project is proprietary software. All rights reserved. Unauthorized copying, modification, or distribution of this software is strictly prohibited.
+
+For licensing inquiries, please contact the project maintainers.
+
+## 🙋 Support
+
+For questions and support:
+- Open an issue on GitHub
+- Contact the development team
+- Check existing documentation
+
+## 🔗 Links
+
+- [Flutter Documentation](https://flutter.dev/docs)
+- [Dart Documentation](https://dart.dev/guides)
+- [Material Design 3](https://m3.material.io)
