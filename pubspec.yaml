@@ -1,18 +1,37 @@
-name: goal_digger_flutter
-description: Flutter remake of Goal Digger productivity companion.
-publish_to: "none"
+name: goal_digger
+description: "Goal Digger – productivity app with Firebase sync and Gemma 4 AI."
+publish_to: 'none'
+version: 1.0.0+1
 
 environment:
-  sdk: ">=3.3.0 <4.0.0"
+  sdk: '>=3.4.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
 
+  # ── Firebase ────────────────────────────────────────────────────────────────
+  firebase_core: ^3.6.0
+  cloud_firestore: ^5.4.4
+  firebase_auth: ^5.3.1
+
+  # ── Google Cloud / Vertex AI (Gemma 4) ────────────────────────────────────
+  googleapis_auth: ^1.6.0
+  http: ^1.2.2
+
+  # ── UI ──────────────────────────────────────────────────────────────────────
+  cupertino_icons: ^1.0.8
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
+  flutter_lints: ^4.0.0
 
 flutter:
   uses-material-design: true
+
+  assets:
+    # ⚠ Place your Google Cloud service-account JSON here.
+    # Download from GCP Console → IAM → Service Accounts → Keys.
+    # Add this file to .gitignore — never commit it to source control.
+    - assets/service_account.json
