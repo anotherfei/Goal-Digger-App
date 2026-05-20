@@ -1,30 +1,46 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// lib/main.dart  (replaces the original)
+//
+// Drop-in replacement for the existing main.dart.
+// Adds Firebase initialisation before runApp().
+// All original app logic remains untouched in GoalDiggerApp / GoalDiggerRoot.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import 'app/goal_digger_app.dart';
-import 'services/firebase/firebase_config.dart';
-import 'services/ai/gemma_service.dart';
-import 'services/ai/goal_ai_assistant.dart';
-
-// ── Global service singletons ─────────────────────────────────────────────────
-late final GemmaService gemmaService;
-late final GoalAiAssistant goalAI;
+import 'firebase/auth/auth_service.dart';
+import 'firebase/auth/auth_state.dart';
+import 'firebase/firebase_initializer.dart';
+import 'genkit/genkit_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 1. Firebase (Firestore + Auth)
-  await initFirebase();
+  // Initialise Firebase (core + App Check)
+  await FirebaseInitializer.init();
 
-  // 2. Gemma 4 via Vertex AI
-  //    Replace 'YOUR_GCP_PROJECT_ID' and add assets/service_account.json.
-  //    See docs/SETUP.md for full instructions.
-  gemmaService = GemmaService(
-    projectId: 'YOUR_GCP_PROJECT_ID',
-    location: 'us-central1',
-    modelId: 'gemma-4-27b-it',
+  // Wire services
+  final authService = AuthService();
+
+  runApp(
+    MultiProvider(
+      providers: [
+        // Auth state – drives sign-in UI and guards Firestore/Genkit access
+        ChangeNotifierProvider<AuthState>(
+          create: (_) => AuthState(authService),
+        ),
+
+        // Genkit AI service – available anywhere in the tree
+        Provider<GenkitService>(
+          create: (_) => GenkitService(authService: authService),
+        ),
+
+        // AuthService itself (for lower-level token access)
+        Provider<AuthService>.value(value: authService),
+      ],
+      child: const GoalDiggerApp(),
+    ),
   );
-  await gemmaService.init();
-  goalAI = GoalAiAssistant(gemmaService);
-
-  runApp(const GoalDiggerApp());
 }

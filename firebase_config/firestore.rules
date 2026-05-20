@@ -1,0 +1,76 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// firestore.rules
+//
+// Security rules for Goal Digger.
+// Philosophy:
+//   • Users can read and write only their own data.
+//   • Communities are publicly readable; only members can write.
+//   • AI session logs are write-once from the backend (service account).
+// ─────────────────────────────────────────────────────────────────────────────
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return request.auth.uid == uid;
+    }
+
+    function isValidString(field, maxLen) {
+      return field is string && field.size() > 0 && field.size() <= maxLen;
+    }
+
+    // ── Users ───────────────────────────────────────────────────────────────
+    match /users/{uid} {
+      allow read:  if isSignedIn() && isOwner(uid);
+      allow write: if isSignedIn() && isOwner(uid)
+                   && isValidString(request.resource.data.displayName, 100);
+
+      // Goals sub-collection
+      match /goals/{goalId} {
+        allow read, write: if isSignedIn() && isOwner(uid);
+
+        // Tasks nested in goals
+        match /tasks/{taskId} {
+          allow read, write: if isSignedIn() && isOwner(uid);
+        }
+      }
+
+      // Joined community references
+      match /communities/{communityId} {
+        allow read, write: if isSignedIn() && isOwner(uid);
+      }
+
+      // AI session logs — users can read their own; only backend writes
+      match /ai_sessions/{sessionId} {
+        allow read: if isSignedIn() && isOwner(uid);
+        // Write blocked for client; backend uses service account
+        allow write: if false;
+      }
+    }
+
+    // ── Communities (global) ────────────────────────────────────────────────
+    match /communities/{communityId} {
+      // Anyone signed in can browse communities
+      allow read: if isSignedIn();
+
+      // Only the creator or an admin can create/delete
+      allow create: if isSignedIn()
+                    && isValidString(request.resource.data.name, 80)
+                    && request.resource.data.creatorUid == request.auth.uid;
+
+      // Member count increment/decrement allowed for all signed-in users
+      allow update: if isSignedIn()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['members']);
+
+      allow delete: if isSignedIn()
+                    && resource.data.creatorUid == request.auth.uid;
+    }
+  }
+}

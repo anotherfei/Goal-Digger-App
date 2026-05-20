@@ -87,5 +87,4 @@ class DefaultFirebaseOptions {
     storageBucket: 'goaldigger-2026.firebasestorage.app',
     measurementId: 'G-J6ZNV7MPY6',
   );
-
 }

@@ -1,37 +1,55 @@
 name: goal_digger
-description: "Goal Digger – productivity app with Firebase sync and Gemma 4 AI."
-publish_to: 'none'
+description: Goal Digger – Firebase + Genkit (Gemma 4) powered goal tracking app.
+publish_to: "none"
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.4.0 <4.0.0'
+  sdk: ">=3.4.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
 
-  # ── Firebase ────────────────────────────────────────────────────────────────
-  firebase_core: ^3.6.0
-  cloud_firestore: ^5.4.4
-  firebase_auth: ^5.3.1
-
-  # ── Google Cloud / Vertex AI (Gemma 4) ────────────────────────────────────
-  googleapis_auth: ^1.6.0
-  http: ^1.2.2
-
-  # ── UI ──────────────────────────────────────────────────────────────────────
+  # ── Core UI ─────────────────────────────────────────────────────────────────
   cupertino_icons: ^1.0.8
+
+  # ── Firebase ─────────────────────────────────────────────────────────────────
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.0
+  cloud_firestore: ^5.4.0
+  firebase_storage: ^12.3.0
+  firebase_app_check: ^0.3.1
+
+  # ── Google Sign-In ────────────────────────────────────────────────────────────
+  google_sign_in: ^6.2.1
+
+  # ── State Management ─────────────────────────────────────────────────────────
+  provider: ^6.1.2
+  rxdart: ^0.28.0
+
+  # ── Networking / Utilities ────────────────────────────────────────────────────
+  http: ^1.2.2
+  dio: ^5.7.0
+  connectivity_plus: ^6.0.5
+  shared_preferences: ^2.3.2
+  flutter_secure_storage: ^9.2.2
+  uuid: ^4.4.2
+  intl: ^0.19.0
+
+  # ── Serialisation ─────────────────────────────────────────────────────────────
+  json_annotation: ^4.9.0
+  freezed_annotation: ^2.4.4
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  build_runner: ^2.4.12
+  json_serializable: ^6.8.0
+  freezed: ^2.5.2
 
 flutter:
   uses-material-design: true
-
   assets:
-    # ⚠ Place your Google Cloud service-account JSON here.
-    # Download from GCP Console → IAM → Service Accounts → Keys.
-    # Add this file to .gitignore — never commit it to source control.
-    - assets/service_account.json
+    - assets/images/
+    - assets/lottie/
