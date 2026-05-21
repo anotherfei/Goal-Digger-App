@@ -1,209 +1,185 @@
-// ─────────────────────────────────────────────────────────────────────────────
 // lib/genkit/genkit_client.dart
 //
-// FIX: Retry back-off was linear (500ms × attempt).  Changed to exponential
-//      (500ms, 1000ms, 2000ms …) so the server isn't hammered on a slow day.
+// Wraps Firebase Cloud Functions callable + streaming calls.
 //
-// FIX: A 401 response (expired Firebase ID token) now triggers one forced
-//      token refresh and a single retry before giving up.  Previously a 401
-//      was surfaced as an error with no automatic recovery.
+// For callable functions (goalCoach, taskGenerator, moodAdvisor, focusInsight):
+//   Uses the `cloud_functions` Flutter package, which automatically:
+//     • Attaches the signed-in user's Firebase ID token
+//     • Refreshes expired tokens
+//     • Retries on network errors
+//     • Throws typed FirebaseFunctionsException on errors
+//   No manual HTTP, no manual auth headers, no JWT handling.
 //
-// ENHANCE: `_safeBody` now surfaces the HTTP status in the error message so
-//          callers can distinguish a 503 from a 400.
-//
-// ENHANCE: `callFlow` records how long each request took (debug builds only)
-//          so performance regressions are visible in the Flutter console.
-// ─────────────────────────────────────────────────────────────────────────────
+// For streaming (goalCoachStream):
+//   Uses plain HTTP with a manually attached token since Firebase callable
+//   functions do not support SSE streaming responses.
 
+import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math;
 
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
-import '../firebase/auth/auth_service.dart';
 import 'genkit_config.dart';
 import 'models/ai_models.dart';
 
 class GenkitClient {
   GenkitClient({
-    required AuthService authService,
+    FirebaseFunctions? functions,
+    FirebaseAuth? auth,
     http.Client? httpClient,
-  })  : _auth = authService,
+  })  : _functions = functions ??
+            FirebaseFunctions.instanceFor(region: GenkitConfig.region),
+        _auth = auth ?? FirebaseAuth.instance,
         _http = httpClient ?? http.Client();
 
-  final AuthService _auth;
+  final FirebaseFunctions _functions;
+  final FirebaseAuth _auth;
   final http.Client _http;
 
-  // ── Core call ──────────────────────────────────────────────────────────────
+  // ── Callable flow ─────────────────────────────────────────────────────────
+  //
+  // Calls a Firebase Cloud Function (onCall) and returns a FlowResponse.
+  // The cloud_functions package handles auth token + retries automatically.
 
-  /// Calls a Genkit flow endpoint and returns the decoded [FlowResponse].
-  ///
-  /// [endpoint] must be one of the [GenkitConfig.flow*] constants.
-  /// [payload]  is the flow's input data (will be wrapped in `{ data: ... }`).
   Future<FlowResponse> callFlow(
-    String endpoint,
+    String functionName,
     Map<String, dynamic> payload,
   ) async {
-    final uri  = Uri.parse('${GenkitConfig.baseUrl}$endpoint');
-    final body = json.encode(FlowRequest(data: payload).toJson());
-
-    final sw = Stopwatch()..start();
-
-    int attempt    = 0;
-    bool didRefresh = false; // ensure we only force-refresh the token once
-    http.Response? response;
-    Object? lastError;
-
-    while (attempt <= GenkitConfig.maxRetries) {
-      attempt++;
-      try {
-        // FIX: force-refresh token if we previously got a 401
-        final token = await _auth.getIdToken(forceRefresh: didRefresh);
-
-        final headers = _buildHeaders(token);
-        response = await _http
-            .post(uri, headers: headers, body: body)
-            .timeout(GenkitConfig.requestTimeout);
-
-        // FIX: on 401 — refresh token and retry once
-        if (response.statusCode == 401 && !didRefresh) {
-          debugPrint('🔄  Genkit 401 — refreshing Firebase token and retrying…');
-          didRefresh = true;
-          response   = null; // force retry loop
-          continue;
-        }
-
-        break; // any non-401 response ends the loop
-      } catch (e) {
-        lastError = e;
-        debugPrint(
-            '⚠️   Genkit attempt $attempt/${GenkitConfig.maxRetries + 1} failed: $e');
-        if (attempt <= GenkitConfig.maxRetries) {
-          // FIX: exponential back-off (500ms, 1s, 2s …) instead of linear
-          final delay = Duration(
-              milliseconds: (500 * math.pow(2, attempt - 1)).toInt());
-          await Future<void>.delayed(delay);
-        }
-      }
-    }
-
-    debugPrint(
-        '⏱   Genkit $endpoint took ${sw.elapsedMilliseconds}ms (attempt $attempt)');
-
-    if (response == null) {
-      return FlowResponse(
-        result: null,
-        error:
-            'Network error after ${GenkitConfig.maxRetries + 1} attempts: $lastError',
-      );
-    }
-
-    if (response.statusCode != 200) {
-      debugPrint('❌  Genkit HTTP ${response.statusCode}: ${response.body}');
-      return FlowResponse(
-        result: null,
-        // ENHANCE: include the HTTP status code in the error
-        error: 'Server error ${response.statusCode}: ${_safeBody(response)}',
-      );
-    }
-
     try {
-      final decoded = json.decode(response.body) as Map<String, dynamic>;
-      return FlowResponse.fromJson(decoded);
+      final callable = _functions.httpsCallable(
+        functionName,
+        options: HttpsCallableOptions(timeout: GenkitConfig.callTimeout),
+      );
+
+      debugPrint('▶️  Calling function: $functionName');
+      final result = await callable.call<Map<Object?, Object?>>(payload);
+
+      // Callable functions return data directly (no { result: ... } wrapper)
+      final data = _deepCast(result.data);
+      return FlowResponse(result: data);
+    } on FirebaseFunctionsException catch (e) {
+      debugPrint('❌  Function $functionName error [${e.code}]: ${e.message}');
+      return FlowResponse(
+        result: null,
+        error: '${e.code}: ${e.message}',
+      );
     } catch (e) {
-      return FlowResponse(result: null, error: 'Response parse error: $e');
+      debugPrint('❌  Unexpected error calling $functionName: $e');
+      return FlowResponse(result: null, error: e.toString());
     }
   }
 
-  // ── Streaming call (SSE) ──────────────────────────────────────────────────
+  // ── Streaming (SSE) ───────────────────────────────────────────────────────
+  //
+  // Calls the goalCoachStream onRequest function with SSE.
+  // Manually attaches the Firebase ID token because onCall doesn't
+  // support streaming responses.
 
-  /// Streams tokens from a Genkit streaming flow endpoint.
-  /// Expects the server to respond with SSE (text/event-stream).
-  /// Each emitted [String] is a partial token chunk.
   Stream<String> streamFlow(
-    String endpoint,
+    String functionName,
     Map<String, dynamic> payload,
   ) async* {
-    final uri   = Uri.parse('${GenkitConfig.baseUrl}$endpoint/stream');
-    final token = await _auth.getIdToken();
+    // Build the Cloud Functions URL manually for the onRequest endpoint.
+    // Format: https://<region>-<projectId>.cloudfunctions.net/<functionName>
+    final projectId = await _getProjectId();
+    final url = Uri.parse(
+      'https://${GenkitConfig.region}-$projectId.cloudfunctions.net/$functionName',
+    );
 
-    final request = http.Request('POST', uri)
+    final token = await _auth.currentUser?.getIdToken();
+    if (token == null) {
+      throw GenkitStreamException('User is not signed in');
+    }
+
+    final request = http.Request('POST', url)
       ..headers['Content-Type']  = 'application/json'
       ..headers['Accept']        = 'text/event-stream'
-      ..headers['Cache-Control'] = 'no-cache';
+      ..headers['Cache-Control'] = 'no-cache'
+      ..headers['Authorization'] = 'Bearer $token'
+      ..body = jsonEncode(payload);
 
-    if (token != null) request.headers['Authorization'] = 'Bearer $token';
-    if (GenkitConfig.apiKey.isNotEmpty) {
-      request.headers['X-Genkit-Api-Key'] = GenkitConfig.apiKey;
+    final streamed = await _http
+        .send(request)
+        .timeout(GenkitConfig.streamTimeout);
+
+    if (streamed.statusCode == 401) {
+      throw GenkitStreamException('Unauthorised — please sign in again');
     }
-    request.body = json.encode(FlowRequest(data: payload).toJson());
+    if (streamed.statusCode != 200) {
+      throw GenkitStreamException(
+          'Stream request failed (HTTP ${streamed.statusCode})');
+    }
 
-    try {
-      final streamed = await _http.send(request);
-      // Buffer partial SSE lines across chunks
-      final buffer = StringBuffer();
+    // Buffer partial SSE lines across TCP chunks
+    final buf = StringBuffer();
 
-      await for (final chunk in streamed.stream.transform(utf8.decoder)) {
-        buffer.write(chunk);
-        final text = buffer.toString();
-        final lines = text.split('\n');
+    await for (final chunk in streamed.stream.transform(utf8.decoder)) {
+      buf.write(chunk);
+      final text  = buf.toString();
+      final lines = text.split('\n');
 
-        // Keep the last (possibly incomplete) line in the buffer
-        buffer
-          ..clear()
-          ..write(lines.last);
+      // Keep the last (possibly incomplete) line in the buffer
+      buf
+        ..clear()
+        ..write(lines.last);
 
-        for (final line in lines.sublist(0, lines.length - 1)) {
-          if (line.startsWith('data: ')) {
-            final raw = line.substring(6).trim();
-            if (raw.isEmpty || raw == '[DONE]') continue;
-            try {
-              final parsed = json.decode(raw) as Map<String, dynamic>;
-              if (parsed.containsKey('error')) {
-                throw GenkitStreamException(
-                    parsed['error']?.toString() ?? 'Unknown stream error');
-              }
-              final text = parsed['chunk'] as String? ?? '';
-              if (text.isNotEmpty) yield text;
-            } catch (e) {
-              if (e is GenkitStreamException) rethrow;
-              // Non-JSON SSE line — yield raw text as fallback
-              if (raw.isNotEmpty) yield raw;
-            }
+      for (final line in lines.sublist(0, lines.length - 1)) {
+        if (!line.startsWith('data: ')) continue;
+        final raw = line.substring(6).trim();
+        if (raw.isEmpty || raw == '[DONE]') continue;
+
+        try {
+          final parsed = jsonDecode(raw) as Map<String, dynamic>;
+          if (parsed.containsKey('error')) {
+            throw GenkitStreamException(
+                parsed['error']?.toString() ?? 'Unknown stream error');
           }
+          final token = parsed['chunk'] as String? ?? '';
+          if (token.isNotEmpty) yield token;
+        } catch (e) {
+          if (e is GenkitStreamException) rethrow;
         }
       }
-    } catch (e) {
-      debugPrint('❌  Genkit stream error: $e');
-      rethrow;
     }
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
-  Map<String, String> _buildHeaders(String? token) => {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        if (token != null) 'Authorization': 'Bearer $token',
-        if (GenkitConfig.apiKey.isNotEmpty)
-          'X-Genkit-Api-Key': GenkitConfig.apiKey,
-      };
-
-  String _safeBody(http.Response r) {
-    try {
-      final decoded = json.decode(r.body) as Map<String, dynamic>;
-      return decoded['error']?.toString() ?? r.body;
-    } catch (_) {
-      final truncated = r.body.length > 200
-          ? '${r.body.substring(0, 200)}…'
-          : r.body;
-      return truncated;
+  // Firebase callable returns Map<Object?, Object?> — recursively cast to
+  // Map<String, dynamic> so FlowResponse.fromJson works correctly.
+  Map<String, dynamic> _deepCast(Object? raw) {
+    if (raw is Map) {
+      return raw.map((k, v) {
+        if (v is Map) return MapEntry(k.toString(), _deepCast(v));
+        if (v is List) return MapEntry(k.toString(), _castList(v));
+        return MapEntry(k.toString(), v);
+      });
     }
+    return {};
+  }
+
+  List<dynamic> _castList(List<dynamic> list) => list.map((item) {
+        if (item is Map) return _deepCast(item);
+        if (item is List) return _castList(item);
+        return item;
+      }).toList();
+
+  // Cache project ID so we don't fetch it on every streaming call.
+  String? _cachedProjectId;
+  Future<String> _getProjectId() async {
+    if (_cachedProjectId != null) return _cachedProjectId!;
+    // The project ID is embedded in the current user's token or can be read
+    // from the Firebase app options.
+    final app = _auth.app;
+    _cachedProjectId = app.options.projectId;
+    return _cachedProjectId!;
   }
 }
 
-/// Thrown when the streaming SSE response contains an error event.
+/// Thrown when the SSE stream endpoint returns an error event or bad status.
 class GenkitStreamException implements Exception {
   const GenkitStreamException(this.message);
   final String message;
