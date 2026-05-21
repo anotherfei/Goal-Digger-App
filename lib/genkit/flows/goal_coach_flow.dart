@@ -1,119 +1,85 @@
-// ─────────────────────────────────────────────────────────────────────────────
 // lib/genkit/flows/goal_coach_flow.dart
 //
-// Typed wrapper around the `goalCoach` Genkit flow.
-// Provides streaming and single-shot coaching conversations.
-// ─────────────────────────────────────────────────────────────────────────────
+// Typed wrappers for every Firebase Function AI flow.
+// Each class passes the Firebase Function name (from GenkitConfig) to
+// GenkitClient, which calls it via the cloud_functions package.
 
 import '../genkit_client.dart';
 import '../genkit_config.dart';
 import '../models/ai_models.dart';
 
+// ── Goal Coach ────────────────────────────────────────────────────────────────
+
 class GoalCoachFlow {
   const GoalCoachFlow(this._client);
-
   final GenkitClient _client;
-
-  // ── Single response ───────────────────────────────────────────────────────────
 
   Future<GoalCoachResponse> ask(GoalCoachRequest request) async {
     final response = await _client.callFlow(
-      GenkitConfig.flowGoalCoach,
+      GenkitConfig.fnGoalCoach,   // ← Firebase Function name
       request.toJson(),
     );
-
     if (!response.isSuccess) {
-      throw GenkitFlowException(
-        flow: 'goalCoach',
-        message: response.error ?? 'Unknown error',
-      );
+      throw GenkitFlowException(flow: 'goalCoach', message: response.error ?? 'Unknown error');
     }
-
     return GoalCoachResponse.fromJson(response.result!);
   }
 
-  // ── Streaming response ────────────────────────────────────────────────────────
-
-  /// Streams partial reply tokens for live typing animation in the UI.
+  /// Streams partial tokens via the goalCoachStream onRequest SSE function.
   Stream<String> stream(GoalCoachRequest request) =>
-      _client.streamFlow(GenkitConfig.flowGoalCoach, request.toJson());
+      _client.streamFlow(GenkitConfig.fnGoalCoachStream, request.toJson());
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// lib/genkit/flows/task_generator_flow.dart
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Task Generator ────────────────────────────────────────────────────────────
 
 class TaskGeneratorFlow {
   const TaskGeneratorFlow(this._client);
-
   final GenkitClient _client;
 
-  /// Generates a breakdown of [MicroTask]-compatible tasks for a goal.
   Future<TaskGeneratorResponse> generate(TaskGeneratorRequest request) async {
     final response = await _client.callFlow(
-      GenkitConfig.flowTaskGen,
+      GenkitConfig.fnTaskGenerator,
       request.toJson(),
     );
-
     if (!response.isSuccess) {
-      throw GenkitFlowException(
-        flow: 'taskGenerator',
-        message: response.error ?? 'Unknown error',
-      );
+      throw GenkitFlowException(flow: 'taskGenerator', message: response.error ?? 'Unknown error');
     }
-
     return TaskGeneratorResponse.fromJson(response.result!);
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// lib/genkit/flows/mood_advisor_flow.dart
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Mood Advisor ──────────────────────────────────────────────────────────────
 
 class MoodAdvisorFlow {
   const MoodAdvisorFlow(this._client);
-
   final GenkitClient _client;
 
   Future<MoodAdvisorResponse> advise(MoodAdvisorRequest request) async {
     final response = await _client.callFlow(
-      GenkitConfig.flowMoodAdvisor,
+      GenkitConfig.fnMoodAdvisor,
       request.toJson(),
     );
-
     if (!response.isSuccess) {
-      throw GenkitFlowException(
-        flow: 'moodAdvisor',
-        message: response.error ?? 'Unknown error',
-      );
+      throw GenkitFlowException(flow: 'moodAdvisor', message: response.error ?? 'Unknown error');
     }
-
     return MoodAdvisorResponse.fromJson(response.result!);
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// lib/genkit/flows/focus_insight_flow.dart
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Focus Insight ─────────────────────────────────────────────────────────────
 
 class FocusInsightFlow {
   const FocusInsightFlow(this._client);
-
   final GenkitClient _client;
 
   Future<FocusInsightResponse> analyse(FocusInsightRequest request) async {
     final response = await _client.callFlow(
-      GenkitConfig.flowFocusInsight,
+      GenkitConfig.fnFocusInsight,
       request.toJson(),
     );
-
     if (!response.isSuccess) {
-      throw GenkitFlowException(
-        flow: 'focusInsight',
-        message: response.error ?? 'Unknown error',
-      );
+      throw GenkitFlowException(flow: 'focusInsight', message: response.error ?? 'Unknown error');
     }
-
     return FocusInsightResponse.fromJson(response.result!);
   }
 }
@@ -122,10 +88,8 @@ class FocusInsightFlow {
 
 class GenkitFlowException implements Exception {
   const GenkitFlowException({required this.flow, required this.message});
-
   final String flow;
   final String message;
-
   @override
   String toString() => 'GenkitFlowException[$flow]: $message';
 }
