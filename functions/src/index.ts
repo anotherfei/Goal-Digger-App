@@ -34,7 +34,7 @@ const fnOptions = {
   secrets: [geminiApiKey],
   timeoutSeconds: 60,
   memory: "256MiB" as const,
-} as const;
+};
 
 // Only allow authenticated Firebase users
 const requireAuth = (auth: { uid?: string } | undefined) => {

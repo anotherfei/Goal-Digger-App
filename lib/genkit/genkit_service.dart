@@ -1,11 +1,9 @@
 // lib/genkit/genkit_service.dart
 //
 // Single injectable service exposing all four AI flows.
-//
-// No AuthService needed — GenkitClient reads the signed-in user directly
-// from FirebaseAuth.instance (the cloud_functions package does the same
-// for callable functions automatically).
+// AuthService is injected from main.dart and passed into GenkitClient.
 
+import '../firebase/auth/auth_service.dart';
 import 'flows/goal_coach_flow.dart';
 import 'genkit_client.dart';
 
@@ -16,18 +14,21 @@ export 'flows/goal_coach_flow.dart'
         MoodAdvisorFlow,
         FocusInsightFlow,
         GenkitFlowException;
+
 export 'models/ai_models.dart';
 
 class GenkitService {
-  GenkitService() {
-    _client       = GenkitClient();
-    goalCoach     = GoalCoachFlow(_client);
+  GenkitService({required AuthService authService}) {
+    _client = GenkitClient(authService: authService);
+
+    goalCoach = GoalCoachFlow(_client);
     taskGenerator = TaskGeneratorFlow(_client);
-    moodAdvisor   = MoodAdvisorFlow(_client);
-    focusInsight  = FocusInsightFlow(_client);
+    moodAdvisor = MoodAdvisorFlow(_client);
+    focusInsight = FocusInsightFlow(_client);
   }
 
   late final GenkitClient _client;
+
   late final GoalCoachFlow goalCoach;
   late final TaskGeneratorFlow taskGenerator;
   late final MoodAdvisorFlow moodAdvisor;
