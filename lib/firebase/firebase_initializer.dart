@@ -24,15 +24,25 @@ import 'firebase_options.dart';
 class FirebaseInitializer {
   FirebaseInitializer._();
 
-  static bool _initialized = false;
-
   static Future<void> init() async {
-    if (_initialized) return;
 
     // 1. Core
-    await Firebase.initializeApp(
-      options: currentPlatformFirebaseOptions,
-    );
+    try {
+      await Firebase.initializeApp(
+        options: currentPlatformFirebaseOptions,
+      );
+      debugPrint('✅ Firebase initialised successfully');
+    } 
+    on FirebaseException catch (e) {
+      if (e.code == 'duplicate-app') {
+        debugPrint('ℹ️  Firebase already initialised — continuing.');
+        // Do NOT rethrow — this is expected on hot-restart and when
+        // google-services.json causes native auto-init before Dart boots.
+      } 
+      else {
+        rethrow; // Real error, surface it
+      }
+    }
 
     // 2. App Check – protects your backend from abuse
     await FirebaseAppCheck.instance.activate(
@@ -47,7 +57,6 @@ class FirebaseInitializer {
       webProvider: ReCaptchaV3Provider('YOUR_RECAPTCHA_SITE_KEY'),
     );
 
-    _initialized = true;
     debugPrint('✅ Firebase initialised successfully');
   }
 }
