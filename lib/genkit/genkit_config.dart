@@ -4,7 +4,7 @@
 //
 // No secrets, no URLs needed in Flutter — the cloud_functions package
 // resolves function URLs automatically from your Firebase project config.
-// The only thing to configure is the region if you deployed outside us-central1.
+// The only thing to configure is the region if you deployed outside .
 
 class GenkitConfig {
   GenkitConfig._();
@@ -20,7 +20,7 @@ class GenkitConfig {
 
   // ── Region ────────────────────────────────────────────────────────────────
   // Change this if you deploy to a different region.
-  static const String region = "us-central1";
+  static const String region = "asia-east1";
 
   // ── Timeouts ──────────────────────────────────────────────────────────────
   static const Duration callTimeout   = Duration(seconds: 60);

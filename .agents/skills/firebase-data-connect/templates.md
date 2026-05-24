@@ -176,7 +176,7 @@ mutation RemoveTagFromArticle($articleId: UUID!, $tagId: UUID!) @auth(level: USE
 ```yaml
 specVersion: "v1"
 serviceId: "my-service"
-location: "us-central1"
+location: "asia-east1"
 schema:
   source: "./schema"
   datasource:

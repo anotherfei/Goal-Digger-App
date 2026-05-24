@@ -167,7 +167,7 @@ export const onUserCreate = onMutationExecuted(
     service: "myService",
     connector: "default",
     operation: "CreateUser",
-    region: "us-central1"  # Must match SQL Connect location
+    region: "asia-east1"  # Must match SQL Connect location
   },
   (event) => {
     const variables = event.data.payload.variables;
@@ -274,7 +274,7 @@ import { initializeApp } from 'firebase-admin/app';
 import { getDataConnect } from 'firebase-admin/data-connect';
 
 const app = initializeApp();
-const dc = getDataConnect({ location: "us-central1", serviceId: "my-service" });
+const dc = getDataConnect({ location: "asia-east1", serviceId: "my-service" });
 
 const movies = [
   { id: "uuid-1", title: "Movie 1", genre: "Action" },

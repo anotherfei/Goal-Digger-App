@@ -30,7 +30,7 @@ admin.initializeApp();
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
 
 const fnOptions = {
-  region: "us-central1",
+  region: "asia-east1",
   secrets: [geminiApiKey],
   timeoutSeconds: 60,
   memory: "256MiB" as const,
