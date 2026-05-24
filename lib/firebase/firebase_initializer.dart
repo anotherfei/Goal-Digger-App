@@ -5,6 +5,9 @@
 // Called once from main.dart before runApp().
 // ─────────────────────────────────────────────────────────────────────────────
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
@@ -25,38 +28,78 @@ class FirebaseInitializer {
   FirebaseInitializer._();
 
   static Future<void> init() async {
-
-    // 1. Core
     try {
       await Firebase.initializeApp(
         options: currentPlatformFirebaseOptions,
       );
-      debugPrint('✅ Firebase initialised successfully');
-    } 
-    on FirebaseException catch (e) {
+
+      debugPrint('✅ Firebase Core initialized');
+    } on FirebaseException catch (e) {
       if (e.code == 'duplicate-app') {
-        debugPrint('ℹ️  Firebase already initialised — continuing.');
-        // Do NOT rethrow — this is expected on hot-restart and when
-        // google-services.json causes native auto-init before Dart boots.
-      } 
-      else {
-        rethrow; // Real error, surface it
+        debugPrint(
+          'ℹ️ Firebase already initialized',
+        );
+      } else {
+        rethrow;
       }
     }
 
-    // 2. App Check – protects your backend from abuse
-    await FirebaseAppCheck.instance.activate(
-      // Use debug provider only in debug builds; swap for reCAPTCHA / Play
-      // Integrity / DeviceCheck in production.
-      androidProvider: kDebugMode
-          ? AndroidProvider.debug
-          : AndroidProvider.playIntegrity,
-      appleProvider: kDebugMode
-          ? AppleProvider.debug
-          : AppleProvider.deviceCheck,
-      webProvider: ReCaptchaV3Provider('YOUR_RECAPTCHA_SITE_KEY'),
-    );
+    if (!kReleaseMode) {
+      String host;
 
-    debugPrint('✅ Firebase initialised successfully');
+      if (kIsWeb) {
+        host = 'localhost';
+      } else if (defaultTargetPlatform == TargetPlatform.android) {
+        host = '10.0.2.2';
+      } else {
+        host = 'localhost';
+      }
+
+      FirebaseFirestore.instance.useFirestoreEmulator(
+        host,
+        8080,
+      );
+
+      FirebaseFunctions.instanceFor(
+        region: 'us-central1',
+      ).useFunctionsEmulator(
+        host,
+        5001,
+      );
+
+      try {
+        await FirebaseAuth.instance.useAuthEmulator(
+          host,
+          9099,
+        );
+      } catch (_) {}
+
+      await FirebaseFirestore.instance.enableNetwork();
+
+      await FirebaseAppCheck.instance.activate(
+        androidProvider: AndroidProvider.debug,
+        appleProvider: AppleProvider.debug,
+      );
+
+      debugPrint(
+        '🧪 Connected to Firebase emulators',
+      );
+    } else {
+      await FirebaseAppCheck.instance.activate(
+        androidProvider:
+            AndroidProvider.playIntegrity,
+        appleProvider:
+            AppleProvider.deviceCheck,
+        webProvider: ReCaptchaV3Provider(
+          const String.fromEnvironment(
+            'RECAPTCHA_SITE_KEY',
+          ),
+        ),
+      );
+
+      debugPrint(
+        '✅ Firebase App Check activated',
+      );
+    }
   }
 }
