@@ -61,7 +61,7 @@ class FirebaseInitializer {
       );
 
       FirebaseFunctions.instanceFor(
-        region: 'us-central1',
+        region: 'asia-east1',
       ).useFunctionsEmulator(
         host,
         5001,
@@ -76,10 +76,12 @@ class FirebaseInitializer {
 
       await FirebaseFirestore.instance.enableNetwork();
 
-      await FirebaseAppCheck.instance.activate(
-        androidProvider: AndroidProvider.debug,
-        appleProvider: AppleProvider.debug,
-      );
+      if (!kIsWeb) {
+        await FirebaseAppCheck.instance.activate(
+          androidProvider: AndroidProvider.debug,
+          appleProvider: AppleProvider.debug,
+        );
+      }
 
       debugPrint(
         '🧪 Connected to Firebase emulators',
