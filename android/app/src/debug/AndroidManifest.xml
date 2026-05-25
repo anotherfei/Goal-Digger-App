@@ -1,7 +1,19 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- The INTERNET permission is required for development. Specifically,
-         the Flutter tool needs it to communicate with the running application
-         to allow setting breakpoints, to provide hot reload, etc.
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Required for Flutter hot reload, Firebase emulators, and local dev. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      Debug-only Firebase Emulator Suite support.
+
+      Android emulator reaches the host machine through 10.0.2.2.
+      Firebase Auth/Firestore/Functions emulators use plain HTTP, so debug
+      builds must allow cleartext traffic to these local development hosts.
+
+      This file lives under src/debug, so it is NOT included in release APKs.
     -->
-    <uses-permission android:name="android.permission.INTERNET"/>
+    <application
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/debug_network_security_config"
+        tools:replace="android:usesCleartextTraffic,android:networkSecurityConfig" />
 </manifest>
