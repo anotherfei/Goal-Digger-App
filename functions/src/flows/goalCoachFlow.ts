@@ -2,6 +2,7 @@
 
 import { z } from "genkit";
 import { getAI, defaultModel } from "../ai";
+import { parseModelJson } from "../json";
 
 const inputSchema = z.object({
   userMessage:     z.string(),
@@ -39,13 +40,14 @@ ${historyBlock ? `Conversation so far:\n${historyBlock}\n` : ""}
 User: ${input.userMessage}
 
 Reply as the coach (1–3 sentences max unless detail is explicitly requested).
-Then list 1–3 specific suggested actions (short imperative phrases).
+If the user asks to adjust the plan, return a complete revised micro-task list in suggestedActions, not just extra tips. Keep it to 4–6 short imperative tasks.
+If no plan change is needed, return the current best 4–6 tasks in suggestedActions.
 Score your motivational impact 1–10.
 
 Respond ONLY with valid JSON:
 {
   "reply": "...",
-  "suggestedActions": ["...", "..."],
+  "suggestedActions": ["Complete task 1", "Complete task 2", "Complete task 3", "Complete task 4"],
   "motivationalScore": 8
 }`.trim();
 
@@ -59,7 +61,7 @@ Respond ONLY with valid JSON:
         },
       });
 
-      const parsed = JSON.parse(text) as GoalCoachOutput;
+      const parsed = parseModelJson<GoalCoachOutput>(text);
       return {
         reply:             parsed.reply             ?? "",
         suggestedActions:  parsed.suggestedActions  ?? [],

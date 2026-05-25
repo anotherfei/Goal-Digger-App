@@ -84,6 +84,25 @@ class FocusInsightFlow {
   }
 }
 
+
+// ── Agent Planner ────────────────────────────────────────────────────────────
+
+class AgentPlannerFlow {
+  const AgentPlannerFlow(this._client);
+  final GenkitClient _client;
+
+  Future<AgentPlannerResponse> plan(AgentPlannerRequest request) async {
+    final response = await _client.callFlow(
+      GenkitConfig.fnAgentPlanner,
+      request.toJson(),
+    );
+    if (!response.isSuccess) {
+      throw GenkitFlowException(flow: 'agentPlanner', message: response.error ?? 'Unknown error');
+    }
+    return AgentPlannerResponse.fromJson(response.result!);
+  }
+}
+
 // ── Shared exception ──────────────────────────────────────────────────────────
 
 class GenkitFlowException implements Exception {

@@ -64,14 +64,23 @@ class CommunityRepository {
       'name': community.name,
       'tag': community.tag,
       'description': community.description,
-      'members': 1,
+      'members': 0,
       'similarity': community.similarity,
       'creatorUid': creatorUid,
       'createdAt': FirestoreService.serverTimestamp,
     });
-    // Auto-join creator
+    // Auto-join creator. The document starts at 0 members so join() increments
+    // it to exactly 1 instead of accidentally showing 2 members.
     await join(creatorUid, id);
-    return community;
+    return CommunityGroup(
+      name: community.name,
+      members: 1,
+      tag: community.tag,
+      description: community.description,
+      similarity: community.similarity,
+      joined: true,
+      backendId: id,
+    );
   }
 
   // ── Join / Leave ─────────────────────────────────────────────────────────────
@@ -129,6 +138,7 @@ class CommunityRepository {
         tag: d['tag'] as String,
         description: d['description'] as String,
         similarity: (d['similarity'] as num?)?.toInt() ?? 80,
+        backendId: doc.id,
       );
     } catch (e) {
       debugPrint('⚠️  Failed to parse community ${doc.id}: $e');

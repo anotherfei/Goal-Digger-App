@@ -15,6 +15,7 @@ class GenkitConfig {
   static const String fnTaskGenerator = "taskGenerator";
   static const String fnMoodAdvisor   = "moodAdvisor";
   static const String fnFocusInsight  = "focusInsight";
+  static const String fnAgentPlanner  = "agentPlanner";
   // onRequest SSE streaming endpoint (goalCoachStream in index.ts)
   static const String fnGoalCoachStream = "goalCoachStream";
 

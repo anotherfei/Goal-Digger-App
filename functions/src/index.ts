@@ -21,6 +21,7 @@ import { defineTaskGeneratorFlow } from "./flows/taskGeneratorFlow";
 import { defineMoodAdvisorFlow }   from "./flows/moodAdvisorFlow";
 import { defineFocusInsightFlow }  from "./flows/focusInsightFlow";
 import { getAI, defaultModel }     from "./ai";
+import { runAgent }                from "./agent/runtime";
 
 // ── Initialise Admin SDK ──────────────────────────────────────────────────────
 admin.initializeApp();
@@ -67,6 +68,20 @@ export const focusInsight = onCall(fnOptions, async (req) => {
   requireAuth(req.auth);
   const flow = defineFocusInsightFlow();
   return await flow(req.data);
+});
+
+
+export const agentPlanner = onCall(fnOptions, async (req) => {
+  requireAuth(req.auth);
+  const goal = String(req.data?.goal ?? "").trim();
+  if (!goal) {
+    throw new HttpsError("invalid-argument", "goal is required.");
+  }
+  return await runAgent({
+    userId: req.auth!.uid,
+    goal,
+    context: req.data?.context ?? {},
+  });
 });
 
 // ── Streaming endpoint (SSE) ──────────────────────────────────────────────────

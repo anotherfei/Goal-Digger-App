@@ -24,6 +24,9 @@ class UserProfile {
     required this.activePetSkin,
     required this.activeAccessory,
     required this.selectedMood,
+    required this.goalReminders,
+    required this.friendProgressSharing,
+    required this.friends,
     required this.onboarded,
     required this.createdAt,
     required this.updatedAt,
@@ -39,6 +42,9 @@ class UserProfile {
   final PetSkin activePetSkin;
   final String activeAccessory;
   final String selectedMood;
+  final bool goalReminders;
+  final bool friendProgressSharing;
+  final List<String> friends;
   final bool onboarded;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -75,32 +81,41 @@ class UserRepository {
     String? email,
     String? photoUrl,
   }) async {
-    await _svc.setDoc(
-      FirestorePaths.userDoc(uid),
-      {
-        'uid': uid,
-        'displayName': displayName,
-        'email': email ?? '',
-        'photoUrl': photoUrl,
-        'createdAt': FirestoreService.serverTimestamp,
-        'updatedAt': FirestoreService.serverTimestamp,
-        // Default values – only written on first create (merge=true keeps
-        // existing values on subsequent calls)
-        'streak': 0,
-        'coins': 140,
-        'petHappiness': 62,
-        'activeAccessory': 'Cap',
-        'selectedMood': 'Okay',
-        'onboarded': false,
-        'petSkin': {
-          'name': 'Mint',
-          'colorFrom': Colors.teal.shade200.value,
-          'colorTo': Colors.teal.shade400.value,
-          'accent': Colors.tealAccent.value,
-        },
+    final path = FirestorePaths.userDoc(uid);
+    final existing = await _svc.getDoc(path);
+
+    final identityData = {
+      'uid': uid,
+      'displayName': displayName,
+      'email': email ?? '',
+      'photoUrl': photoUrl,
+      'updatedAt': FirestoreService.serverTimestamp,
+    };
+
+    if (existing.exists) {
+      await _svc.setDoc(path, identityData, merge: true);
+      return;
+    }
+
+    await _svc.setDoc(path, {
+      ...identityData,
+      'createdAt': FirestoreService.serverTimestamp,
+      'streak': 0,
+      'coins': 140,
+      'petHappiness': 62,
+      'activeAccessory': 'Cap',
+      'selectedMood': 'Okay',
+      'goalReminders': true,
+      'friendProgressSharing': true,
+      'friends': <String>[],
+      'onboarded': false,
+      'petSkin': {
+        'name': 'Mint',
+        'colorFrom': Colors.teal.shade200.value,
+        'colorTo': Colors.teal.shade400.value,
+        'accent': Colors.tealAccent.value,
       },
-      merge: true,
-    );
+    });
   }
 
   // ── Partial updates ──────────────────────────────────────────────────────────
@@ -155,6 +170,32 @@ class UserRepository {
     });
   }
 
+  Future<void> updatePreferences({
+    required String uid,
+    required bool goalReminders,
+    required bool friendProgressSharing,
+  }) async {
+    await _svc.updateDoc(FirestorePaths.userDoc(uid), {
+      'goalReminders': goalReminders,
+      'friendProgressSharing': friendProgressSharing,
+      'updatedAt': FirestoreService.serverTimestamp,
+    });
+  }
+
+  Future<void> updateFriends(String uid, List<String> friends) async {
+    final cleaned = friends
+        .map((friend) => friend.trim())
+        .where((friend) => friend.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+
+    await _svc.updateDoc(FirestorePaths.userDoc(uid), {
+      'friends': cleaned,
+      'updatedAt': FirestoreService.serverTimestamp,
+    });
+  }
+
   // ── Serialisation ─────────────────────────────────────────────────────────────
 
   UserProfile _profileFromDoc(
@@ -179,6 +220,12 @@ class UserRepository {
       ),
       activeAccessory: d['activeAccessory'] as String? ?? 'Cap',
       selectedMood: d['selectedMood'] as String? ?? 'Okay',
+      goalReminders: d['goalReminders'] as bool? ?? true,
+      friendProgressSharing: d['friendProgressSharing'] as bool? ?? true,
+      friends: (d['friends'] as List<dynamic>? ?? [])
+          .map((friend) => friend.toString())
+          .where((friend) => friend.trim().isNotEmpty)
+          .toList(),
       onboarded: d['onboarded'] as bool? ?? false,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (d['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),

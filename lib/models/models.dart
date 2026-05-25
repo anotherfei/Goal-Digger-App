@@ -57,8 +57,9 @@ class GoalProject {
     required this.deadline,
     required this.from,
     required this.to,
+    double? progress,
     required this.tasks,
-  });
+  }) : _savedProgress = progress;
 
   final int id;
   String title;
@@ -68,9 +69,10 @@ class GoalProject {
   Color from;
   Color to;
   List<MicroTask> tasks;
+  final double? _savedProgress;
 
   double get progress {
-    if (tasks.isEmpty) return 0;
+    if (tasks.isEmpty) return (_savedProgress ?? 0).clamp(0.0, 1.0).toDouble();
     return tasks.where((task) => task.done).length / tasks.length;
   }
 }
@@ -83,6 +85,7 @@ class CommunityGroup {
     required this.description,
     this.similarity = 82,
     this.joined = false,
+    this.backendId,
   });
 
   final String name;
@@ -91,6 +94,10 @@ class CommunityGroup {
   final String description;
   final int similarity;
   bool joined;
+
+  /// Firestore document id for persisted community groups.
+  /// Seed/demo communities may keep this null and still work locally.
+  final String? backendId;
 }
 
 enum RoutineRepeat { yearly, monthly, weekly, daily, custom }
@@ -114,11 +121,13 @@ extension RoutineRepeatX on RoutineRepeat {
 
 class RoutineItem {
   RoutineItem({
+    String? id,
     required this.title,
     required this.startsAt,
     required this.repeat,
-  });
+  }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString();
 
+  final String id;
   final String title;
   final DateTime startsAt;
   final RoutineRepeat repeat;

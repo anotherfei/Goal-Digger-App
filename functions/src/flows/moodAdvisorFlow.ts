@@ -2,6 +2,7 @@
 
 import { z } from "genkit";
 import { getAI, defaultModel } from "../ai";
+import { parseModelJson } from "../json";
 
 const inputSchema = z.object({
   mood:           z.string(),
@@ -48,7 +49,7 @@ Respond ONLY with valid JSON:
         config: { temperature: 0.8, maxOutputTokens: 256, responseMimeType: "application/json" },
       });
 
-      const parsed = JSON.parse(text) as z.infer<typeof outputSchema>;
+      const parsed = parseModelJson<z.infer<typeof outputSchema>>(text);
       return {
         message:    parsed.message    ?? "",
         emoji:      parsed.emoji      ?? "✨",

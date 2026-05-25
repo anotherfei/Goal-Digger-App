@@ -259,3 +259,41 @@ class ChatMessage {
         content: json['content'] as String,
       );
 }
+
+// ── Agent Planner ────────────────────────────────────────────────────────────
+
+class AgentPlannerRequest {
+  const AgentPlannerRequest({required this.goal, this.context = const {}});
+
+  final String goal;
+  final Map<String, dynamic> context;
+
+  Map<String, dynamic> toJson() => {
+        'goal': goal,
+        'context': context,
+      };
+}
+
+class AgentPlannerResponse {
+  const AgentPlannerResponse({
+    required this.plan,
+    required this.reflections,
+    required this.memoryUpdated,
+  });
+
+  final Map<String, dynamic> plan;
+  final List<Map<String, dynamic>> reflections;
+  final bool memoryUpdated;
+
+  factory AgentPlannerResponse.fromJson(Map<String, dynamic> json) {
+    return AgentPlannerResponse(
+      plan: (json['plan'] as Map<dynamic, dynamic>? ?? {})
+          .map((key, value) => MapEntry(key.toString(), value)),
+      reflections: (json['reflections'] as List<dynamic>? ?? [])
+          .whereType<Map<dynamic, dynamic>>()
+          .map((entry) => entry.map((key, value) => MapEntry(key.toString(), value)))
+          .toList(),
+      memoryUpdated: json['memoryUpdated'] as bool? ?? false,
+    );
+  }
+}

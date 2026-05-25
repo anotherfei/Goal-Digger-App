@@ -22,6 +22,7 @@ import 'package:flutter/foundation.dart';
 import '../../models/models.dart';
 import '../firestore/repositories/community_repository.dart';
 import '../firestore/repositories/goal_repository.dart';
+import '../firestore/repositories/routine_repository.dart';
 import '../firestore/repositories/user_repository.dart';
 
 class AppSyncService {
@@ -30,14 +31,17 @@ class AppSyncService {
     GoalRepository? goalRepo,
     UserRepository? userRepo,
     CommunityRepository? communityRepo,
+    RoutineRepository? routineRepo,
   })  : _goalRepo = goalRepo ?? GoalRepository(),
         _userRepo = userRepo ?? UserRepository(),
-        _communityRepo = communityRepo ?? CommunityRepository();
+        _communityRepo = communityRepo ?? CommunityRepository(),
+        _routineRepo = routineRepo ?? RoutineRepository();
 
   final String uid;
   final GoalRepository _goalRepo;
   final UserRepository _userRepo;
   final CommunityRepository _communityRepo;
+  final RoutineRepository _routineRepo;
 
   final List<StreamSubscription<dynamic>> _subs = [];
 
@@ -52,6 +56,9 @@ class AppSyncService {
 
   Stream<Set<String>> get joinedCommunityIdsStream =>
       _communityRepo.watchJoinedIds(uid);
+
+  Stream<List<RoutineItem>> get routinesStream =>
+      _routineRepo.watchRoutines(uid);
 
   // ── Convenience write delegates ──────────────────────────────────────────────
 
@@ -75,6 +82,17 @@ class AppSyncService {
   Future<void> updateStreak(int streak) => _userRepo.updateStreak(uid, streak);
   Future<void> addCoins(int amount) => _userRepo.addCoins(uid, amount);
   Future<void> updateMood(String mood) => _userRepo.updateMood(uid, mood);
+  Future<void> updatePreferences({
+    required bool goalReminders,
+    required bool friendProgressSharing,
+  }) =>
+      _userRepo.updatePreferences(
+        uid: uid,
+        goalReminders: goalReminders,
+        friendProgressSharing: friendProgressSharing,
+      );
+  Future<void> updateFriends(List<String> friends) =>
+      _userRepo.updateFriends(uid, friends);
   Future<void> updatePetState(
           int happiness, PetSkin skin, String accessory) =>
       _userRepo.updatePetState(uid, happiness, skin, accessory);
@@ -87,6 +105,12 @@ class AppSyncService {
       _communityRepo.leave(uid, communityId);
   Future<CommunityGroup> createCommunity(CommunityGroup group) =>
       _communityRepo.createCommunity(group, uid);
+
+  // Routines
+  Future<RoutineItem> createRoutine(RoutineItem routine) =>
+      _routineRepo.createRoutine(uid, routine);
+  Future<void> deleteRoutine(String routineId) =>
+      _routineRepo.deleteRoutine(uid, routineId);
 
   // ── Cleanup ─────────────────────────────────────────────────────────────────
 

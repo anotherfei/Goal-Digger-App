@@ -32,6 +32,13 @@ class FirestorePaths {
   static String taskDoc(String uid, String goalId, String taskId) =>
       'users/$uid/goals/$goalId/tasks/$taskId';
 
+
+  // ── Routines ────────────────────────────────────────────────────────────────
+
+  static String routinesCol(String uid) => 'users/$uid/routines';
+  static String routineDoc(String uid, String routineId) =>
+      'users/$uid/routines/$routineId';
+
   // ── Community ────────────────────────────────────────────────────────────────
 
   /// Global community groups (not per-user)

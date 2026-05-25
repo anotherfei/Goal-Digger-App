@@ -2,6 +2,7 @@
 
 import { z } from "genkit";
 import { getAI, defaultModel } from "../ai";
+import { parseModelJson } from "../json";
 
 const inputSchema = z.object({
   goalTitle:          z.string(),
@@ -63,7 +64,7 @@ Respond ONLY with valid JSON:
         config: { temperature: 0.6, maxOutputTokens: 1024, responseMimeType: "application/json" },
       });
 
-      const parsed = JSON.parse(text) as TaskGeneratorOutput;
+      const parsed = parseModelJson<TaskGeneratorOutput>(text);
       const tasks = (parsed.tasks ?? []).map((t) => ({ ...t, tags: t.tags ?? [] }));
       return { tasks, explanation: parsed.explanation ?? "" };
     }

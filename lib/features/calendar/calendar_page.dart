@@ -10,15 +10,21 @@ import '../../shared/widgets/shared_widgets.dart';
 class CalendarPage extends StatefulWidget {
   const CalendarPage({
     required this.tasks,
+    required this.routines,
     required this.goalForTask,
     required this.today,
     required this.onCreateGoal,
+    required this.onAddRoutine,
+    required this.onDeleteRoutine,
   });
 
   final List<MicroTask> tasks;
+  final List<RoutineItem> routines;
   final GoalProject Function(MicroTask task) goalForTask;
   final DateTime today;
   final VoidCallback onCreateGoal;
+  final ValueChanged<RoutineItem> onAddRoutine;
+  final ValueChanged<RoutineItem> onDeleteRoutine;
 
   @override
   State<CalendarPage> createState() => _CalendarPageState();
@@ -28,7 +34,6 @@ class _CalendarPageState extends State<CalendarPage> {
   late DateTime _visibleMonth;
   late DateTime _selectedDate;
   final TextEditingController _routineController = TextEditingController();
-  final List<RoutineItem> _routines = [];
   DateTime _routineDate = DateTime.now();
   TimeOfDay _routineTime = const TimeOfDay(hour: 8, minute: 0);
   RoutineRepeat _routineRepeat = RoutineRepeat.daily;
@@ -39,10 +44,6 @@ class _CalendarPageState extends State<CalendarPage> {
     _visibleMonth = DateTime(widget.today.year, widget.today.month);
     _selectedDate = widget.today;
     _routineDate = widget.today;
-    _routines.addAll([
-      RoutineItem(title: 'Morning goal review', startsAt: DateTime(widget.today.year, widget.today.month, widget.today.day, 8), repeat: RoutineRepeat.daily),
-      RoutineItem(title: 'Evening reflection', startsAt: DateTime(widget.today.year, widget.today.month, widget.today.day, 20), repeat: RoutineRepeat.weekly),
-    ]);
   }
 
   @override
@@ -64,18 +65,23 @@ class _CalendarPageState extends State<CalendarPage> {
   void _addRoutine() {
     final routine = _routineController.text.trim();
     if (routine.isEmpty) return;
-    setState(() {
-      _routines.add(RoutineItem(
-        title: routine,
-        startsAt: DateTime(_routineDate.year, _routineDate.month, _routineDate.day, _routineTime.hour, _routineTime.minute),
-        repeat: _routineRepeat,
-      ));
-      _routineController.clear();
-    });
+    widget.onAddRoutine(RoutineItem(
+      title: routine,
+      startsAt: DateTime(_routineDate.year, _routineDate.month, _routineDate.day, _routineTime.hour, _routineTime.minute),
+      repeat: _routineRepeat,
+    ));
+    _routineController.clear();
   }
 
   void _viewAllRoutines() {
-    Navigator.of(context).push(MaterialPageRoute(builder: (context) => RoutinesListPage(routines: _routines)));
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => RoutinesListPage(
+          routines: widget.routines,
+          onDeleteRoutine: widget.onDeleteRoutine,
+        ),
+      ),
+    );
   }
 
   void _changeMonth(int offset) {
@@ -158,7 +164,7 @@ class _CalendarPageState extends State<CalendarPage> {
           else
             ...selectedTasks.map((task) => _CalendarTaskDetailTile(task: task, goal: widget.goalForTask(task))),
           const SizedBox(height: 18),
-          SectionTitle(title: 'Routines', trailing: '${_routines.length}'),
+          SectionTitle(title: 'Routines', trailing: '${widget.routines.length}'),
           const SizedBox(height: 10),
           AppCard(
             child: Padding(
@@ -182,7 +188,11 @@ class _CalendarPageState extends State<CalendarPage> {
                   Expanded(child: OutlinedButton.icon(onPressed: _viewAllRoutines, icon: const Icon(Icons.view_list_rounded), label: const Text('View routines'))),
                 ]),
                 const SizedBox(height: 12),
-                for (final routine in _routines.take(3)) RoutineTile(routine: routine),
+                for (final routine in widget.routines.take(3))
+                  RoutineTile(
+                    routine: routine,
+                    onDelete: () => widget.onDeleteRoutine(routine),
+                  ),
               ]),
             ),
           ),
@@ -213,8 +223,13 @@ class _CalendarTaskDetailTile extends StatelessWidget {
 }
 
 class RoutinesListPage extends StatelessWidget {
-  const RoutinesListPage({super.key, required this.routines});
+  const RoutinesListPage({
+    super.key,
+    required this.routines,
+    required this.onDeleteRoutine,
+  });
   final List<RoutineItem> routines;
+  final ValueChanged<RoutineItem> onDeleteRoutine;
 
   @override
   Widget build(BuildContext context) {
@@ -225,7 +240,13 @@ class RoutinesListPage extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
           children: routines.isEmpty
               ? [EmptyStateCard(icon: Icons.repeat_rounded, title: 'No routines yet', message: 'Add routines from Calendar first.', cta: 'Back to calendar', onPressed: () => Navigator.of(context).pop())]
-              : [for (final routine in routines) RoutineTile(routine: routine)],
+              : [
+                  for (final routine in routines)
+                    RoutineTile(
+                      routine: routine,
+                      onDelete: () => onDeleteRoutine(routine),
+                    ),
+                ],
         ),
       ),
     );
@@ -233,8 +254,9 @@ class RoutinesListPage extends StatelessWidget {
 }
 
 class RoutineTile extends StatelessWidget {
-  const RoutineTile({super.key, required this.routine});
+  const RoutineTile({super.key, required this.routine, this.onDelete});
   final RoutineItem routine;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -245,6 +267,13 @@ class RoutineTile extends StatelessWidget {
         leading: const CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.repeat_rounded, color: gdPrimary)),
         title: Text(routine.title, style: const TextStyle(fontWeight: FontWeight.w900)),
         subtitle: Text('${longDate(routine.startsAt)} · $time · ${routine.repeat.label}', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+        trailing: onDelete == null
+            ? null
+            : IconButton(
+                tooltip: 'Delete routine',
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline_rounded, color: gdError),
+              ),
       ),
     );
   }

@@ -23,6 +23,7 @@ export async function runAgent(request: AgentRequest): Promise<AgentResponse> {
     goal: request.goal,
     memory,
     tools: toolRegistry.listTools(),
+    context: request.context ?? {},
   });
 
   const executionResults = [];

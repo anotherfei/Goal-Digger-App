@@ -2,7 +2,10 @@
 // lib/firebase/firebase_initializer.dart
 //
 // Single entry-point that initialises every Firebase service the app needs.
-// Called once from main.dart before runApp().
+// Uses the real FlutterFire-generated options in lib/firebase_options.dart.
+//
+// Local emulators are opt-in:
+//   flutter run --dart-define=USE_FIREBASE_EMULATORS=true
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -12,96 +15,80 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 
-import 'firebase_options.dart';
+import '../firebase_options.dart';
 
-/// Initialises Firebase Core, then activates App Check.
-///
-/// Call this in `main()` before `runApp()`:
-/// ```dart
-/// void main() async {
-///   WidgetsFlutterBinding.ensureInitialized();
-///   await FirebaseInitializer.init();
-///   runApp(const GoalDiggerApp());
-/// }
-/// ```
 class FirebaseInitializer {
   FirebaseInitializer._();
+
+  static const bool _useEmulators =
+      bool.fromEnvironment('USE_FIREBASE_EMULATORS');
 
   static Future<void> init() async {
     try {
       await Firebase.initializeApp(
-        options: currentPlatformFirebaseOptions,
+        options: DefaultFirebaseOptions.currentPlatform,
       );
-
       debugPrint('✅ Firebase Core initialized');
     } on FirebaseException catch (e) {
       if (e.code == 'duplicate-app') {
-        debugPrint(
-          'ℹ️ Firebase already initialized',
-        );
+        debugPrint('ℹ️ Firebase already initialized');
       } else {
         rethrow;
       }
     }
 
-    if (!kReleaseMode) {
-      String host;
+    if (_useEmulators) {
+      await _connectToEmulators();
+      return;
+    }
 
-      if (kIsWeb) {
-        host = 'localhost';
-      } else if (defaultTargetPlatform == TargetPlatform.android) {
-        host = '10.0.2.2';
-      } else {
-        host = 'localhost';
-      }
+    await _activateAppCheckWhenConfigured();
+  }
 
-      FirebaseFirestore.instance.useFirestoreEmulator(
-        host,
-        8080,
-      );
+  static Future<void> _connectToEmulators() async {
+    final host = kIsWeb
+        ? 'localhost'
+        : defaultTargetPlatform == TargetPlatform.android
+            ? '10.0.2.2'
+            : 'localhost';
 
-      FirebaseFunctions.instanceFor(
-        region: 'asia-east1',
-      ).useFunctionsEmulator(
-        host,
-        5001,
-      );
+    FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
+    FirebaseFunctions.instanceFor(region: 'asia-east1')
+        .useFunctionsEmulator(host, 5001);
 
-      try {
-        await FirebaseAuth.instance.useAuthEmulator(
-          host,
-          9099,
-        );
-      } catch (_) {}
+    try {
+      await FirebaseAuth.instance.useAuthEmulator(host, 9099);
+    } catch (_) {
+      // Firebase Auth emulator can only be attached once per process.
+    }
 
-      await FirebaseFirestore.instance.enableNetwork();
+    await FirebaseFirestore.instance.enableNetwork();
 
-      if (!kIsWeb) {
-        await FirebaseAppCheck.instance.activate(
-          androidProvider: AndroidProvider.debug,
-          appleProvider: AppleProvider.debug,
-        );
-      }
-
-      debugPrint(
-        '🧪 Connected to Firebase emulators',
-      );
-    } else {
+    if (!kIsWeb) {
       await FirebaseAppCheck.instance.activate(
-        androidProvider:
-            AndroidProvider.playIntegrity,
-        appleProvider:
-            AppleProvider.deviceCheck,
-        webProvider: ReCaptchaV3Provider(
-          const String.fromEnvironment(
-            'RECAPTCHA_SITE_KEY',
-          ),
-        ),
-      );
-
-      debugPrint(
-        '✅ Firebase App Check activated',
+        androidProvider: AndroidProvider.debug,
+        appleProvider: AppleProvider.debug,
       );
     }
+
+    debugPrint('🧪 Connected to Firebase emulators at $host');
+  }
+
+  static Future<void> _activateAppCheckWhenConfigured() async {
+    // Do not force App Check during normal debug runs. This keeps Firebase Auth,
+    // Firestore, and Functions usable for classroom demos without emulator setup.
+    if (!kReleaseMode) return;
+
+    const recaptchaSiteKey = String.fromEnvironment('RECAPTCHA_SITE_KEY');
+
+    await FirebaseAppCheck.instance.activate(
+      androidProvider: AndroidProvider.playIntegrity,
+      appleProvider: AppleProvider.deviceCheck,
+      webProvider: recaptchaSiteKey.isEmpty
+          ? null
+          : ReCaptchaV3Provider(recaptchaSiteKey),
+    );
+
+    debugPrint('✅ Firebase App Check activated');
   }
 }

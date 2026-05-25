@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../core/constants/gd_constants.dart';
 import '../core/theme/gd_colors.dart';
@@ -16,8 +17,32 @@ import '../features/planner/planner_page.dart';
 import '../features/responsive/responsive_goal_shell.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/tasks/tasks_page.dart';
+import '../firebase/auth/auth_service.dart';
+import '../firebase/auth/auth_state.dart';
+import '../firebase/firestore/repositories/user_repository.dart';
+import '../firebase/sync/app_sync_service.dart';
+import '../genkit/genkit_service.dart';
+import '../genkit/models/ai_models.dart';
 import '../models/models.dart';
 import '../shared/widgets/shared_widgets.dart';
+
+
+class _DraftTaskSpec {
+  const _DraftTaskSpec({
+    required this.title,
+    required this.durationMinutes,
+    required this.load,
+    required this.dayOffset,
+  });
+
+  final String title;
+  final int durationMinutes;
+  final TaskLoad load;
+  final int dayOffset;
+
+  String get previewLabel =>
+      '$title · $durationMinutes min · ${load.label} · Day ${dayOffset + 1}';
+}
 
 class GoalDiggerRoot extends StatefulWidget {
   const GoalDiggerRoot({super.key});
@@ -34,10 +59,19 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   bool _onboarded = false;
   String _signedInWith = 'Guest';
   int _selectedIndex = 2;
-  int _nextGoalId = 3;
-  int _nextTaskId = 300;
   late List<GoalProject> _goals;
   late List<CommunityGroup> _communities;
+
+  final UserRepository _userRepository = UserRepository();
+  AppSyncService? _sync;
+  StreamSubscription<List<GoalProject>>? _goalsSub;
+  StreamSubscription<UserProfile?>? _profileSub;
+  StreamSubscription<List<CommunityGroup>>? _communitiesSub;
+  StreamSubscription<Set<String>>? _joinedCommunitiesSub;
+  StreamSubscription<List<RoutineItem>>? _routinesSub;
+  String? _activeUid;
+  Set<String> _joinedCommunityIds = {};
+  List<RoutineItem> _routines = [];
 
   DateTime _newGoalDeadline = addDays(DateTime.now(), 14);
   int _newGoalPriority = 3;
@@ -51,7 +85,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   int _petHappiness = 62;
   int _coins = 140;
   int _streak = 7;
-  final List<String> _friends = ['Maya Chen', 'Leo Tan', 'Ari Putra'];
+  bool _goalReminders = true;
+  bool _friendProgressSharing = true;
+  List<String> _friends = ['Maya Chen', 'Leo Tan', 'Ari Putra'];
   final List<String> _friendSuggestions = ['Nina Rahman', 'Jay Lim', 'Sofia Hart'];
   PetSkin _activePetSkin = defaultPet;
   String _activeAccessory = 'Cap';
@@ -68,6 +104,18 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   void initState() {
     super.initState();
     _goals = seedGoals(today);
+    _routines = [
+      RoutineItem(
+        title: 'Morning goal review',
+        startsAt: DateTime(today.year, today.month, today.day, 8),
+        repeat: RoutineRepeat.daily,
+      ),
+      RoutineItem(
+        title: 'Evening reflection',
+        startsAt: DateTime(today.year, today.month, today.day, 20),
+        repeat: RoutineRepeat.weekly,
+      ),
+    ];
     _communities = [
       CommunityGroup(
         name: 'Study Sprint Club',
@@ -97,9 +145,271 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   void dispose() {
     _processingTimer?.cancel();
     _focusTimer?.cancel();
+    _disposeSync();
     _goalController.dispose();
     _communityController.dispose();
     super.dispose();
+  }
+
+  void _disposeSync() {
+    _goalsSub?.cancel();
+    _profileSub?.cancel();
+    _communitiesSub?.cancel();
+    _joinedCommunitiesSub?.cancel();
+    _routinesSub?.cancel();
+    _goalsSub = null;
+    _profileSub = null;
+    _communitiesSub = null;
+    _joinedCommunitiesSub = null;
+    _routinesSub = null;
+    _sync?.dispose();
+    _sync = null;
+  }
+
+  void _bindAuthState(AuthState authState) {
+    final uid = authState.uid;
+    if (uid.isEmpty) {
+      if (_activeUid != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _activeUid == null) return;
+          _resetForSignedOutState();
+        });
+      }
+      return;
+    }
+
+    if (_activeUid == uid) return;
+    _activeUid = uid;
+    _activateSync(uid);
+    unawaited(_ensureUserProfile(authState));
+  }
+
+  void _resetForSignedOutState() {
+    _activeUid = null;
+    _disposeSync();
+    setState(() {
+      _onboarded = false;
+      _signedInWith = 'Guest';
+      _selectedIndex = 2;
+      _goals = seedGoals(today);
+      _routines = [
+        RoutineItem(
+          title: 'Morning goal review',
+          startsAt: DateTime(today.year, today.month, today.day, 8),
+          repeat: RoutineRepeat.daily,
+        ),
+        RoutineItem(
+          title: 'Evening reflection',
+          startsAt: DateTime(today.year, today.month, today.day, 20),
+          repeat: RoutineRepeat.weekly,
+        ),
+      ];
+      _friends = ['Maya Chen', 'Leo Tan', 'Ari Putra'];
+    });
+  }
+
+  Future<void> _ensureUserProfile(AuthState authState) async {
+    final user = authState.user ?? context.read<AuthService>().currentUser;
+    if (user == null) return;
+    try {
+      await _userRepository.createOrUpdateProfile(
+        uid: user.uid,
+        displayName: user.displayName?.trim().isNotEmpty == true
+            ? user.displayName!.trim()
+            : user.isAnonymous
+                ? 'Guest User'
+                : 'Goal Digger User',
+        email: user.email,
+        photoUrl: user.photoURL,
+      );
+    } catch (e) {
+      debugPrint('Could not ensure user profile: $e');
+    }
+  }
+
+  void _activateSync(String uid) {
+    _disposeSync();
+    final sync = AppSyncService(uid: uid);
+    _sync = sync;
+
+    _goalsSub = sync.goalsStream.listen(
+      (goals) {
+        if (!mounted) return;
+        setState(() => _goals = goals);
+      },
+      onError: (Object error) => debugPrint('Goal sync error: $error'),
+    );
+
+    _profileSub = sync.profileStream.listen(
+      (profile) {
+        if (!mounted || profile == null) return;
+        setState(() {
+          _coins = profile.coins;
+          _streak = profile.streak;
+          _petHappiness = profile.petHappiness;
+          _activePetSkin = profile.activePetSkin;
+          _activeAccessory = profile.activeAccessory;
+          _selectedMood = profile.selectedMood;
+          _goalReminders = profile.goalReminders;
+          _friendProgressSharing = profile.friendProgressSharing;
+          _friends = profile.friends.isEmpty
+              ? ['Maya Chen', 'Leo Tan', 'Ari Putra']
+              : List<String>.from(profile.friends);
+          _onboarded = profile.onboarded;
+          final user = context.read<AuthService>().currentUser;
+          final providerId = user?.providerData.isNotEmpty == true
+              ? user!.providerData.first.providerId
+              : null;
+          _signedInWith = user?.isAnonymous == true
+              ? 'Guest'
+              : providerId == 'google.com'
+                  ? 'Google'
+                  : 'Firebase';
+        });
+      },
+      onError: (Object error) => debugPrint('Profile sync error: $error'),
+    );
+
+    _communitiesSub = sync.communitiesStream.listen(
+      (communities) {
+        if (!mounted || communities.isEmpty) return;
+        setState(() => _communities = _withJoinedCommunityState(communities));
+      },
+      onError: (Object error) => debugPrint('Community sync error: $error'),
+    );
+
+    _joinedCommunitiesSub = sync.joinedCommunityIdsStream.listen(
+      (ids) {
+        if (!mounted) return;
+        setState(() {
+          _joinedCommunityIds = ids;
+          _communities = _withJoinedCommunityState(_communities);
+        });
+      },
+      onError: (Object error) => debugPrint('Membership sync error: $error'),
+    );
+
+    _routinesSub = sync.routinesStream.listen(
+      (routines) {
+        if (!mounted) return;
+        setState(() => _routines = routines);
+      },
+      onError: (Object error) => debugPrint('Routine sync error: $error'),
+    );
+  }
+
+  List<CommunityGroup> _withJoinedCommunityState(List<CommunityGroup> groups) {
+    for (final group in groups) {
+      final id = group.backendId;
+      if (id != null) group.joined = _joinedCommunityIds.contains(id);
+    }
+    return groups;
+  }
+
+  Future<void> _persistProfileStats() async {
+    final uid = _activeUid;
+    if (uid == null) return;
+    try {
+      await _userRepository.updateCoins(uid, _coins);
+      await _userRepository.updateStreak(uid, _streak);
+      await _userRepository.updateMood(uid, _selectedMood);
+      await _userRepository.updatePetState(
+        uid,
+        _petHappiness,
+        _activePetSkin,
+        _activeAccessory,
+      );
+    } catch (e) {
+      debugPrint('Profile write failed: $e');
+    }
+  }
+
+  Future<void> _persistPreferences() async {
+    final sync = _sync;
+    if (sync == null) return;
+    try {
+      await sync.updatePreferences(
+        goalReminders: _goalReminders,
+        friendProgressSharing: _friendProgressSharing,
+      );
+    } catch (e) {
+      debugPrint('Preference write failed: $e');
+    }
+  }
+
+  void _setGoalReminders(bool value) {
+    setState(() => _goalReminders = value);
+    unawaited(_persistPreferences());
+  }
+
+  void _setFriendProgressSharing(bool value) {
+    setState(() => _friendProgressSharing = value);
+    unawaited(_persistPreferences());
+  }
+
+  Future<void> _handleSignOut() async {
+    unawaited(Navigator.of(context).maybePop());
+    try {
+      await context.read<AuthState>().signOut();
+    } catch (e) {
+      debugPrint('Sign out failed: $e');
+    }
+    if (!mounted) return;
+    _resetForSignedOutState();
+  }
+
+  Future<void> _completeOnboardingWithAuth(String provider) async {
+    final authState = context.read<AuthState>();
+    try {
+      if (provider == 'Google') {
+        await authState.signInWithGoogle();
+      } else {
+        await authState.signInAsGuest();
+      }
+
+      final user = context.read<AuthService>().currentUser ?? authState.user;
+      if (user == null) {
+        throw StateError('Firebase did not return a signed-in user.');
+      }
+
+      await _userRepository.createOrUpdateProfile(
+        uid: user.uid,
+        displayName: user.displayName?.trim().isNotEmpty == true
+            ? user.displayName!.trim()
+            : provider == 'Guest'
+                ? 'Guest User'
+                : 'Goal Digger User',
+        email: user.email,
+        photoUrl: user.photoURL,
+      );
+      await _userRepository.markOnboarded(user.uid);
+      _activeUid = user.uid;
+      _activateSync(user.uid);
+
+      if (!mounted) return;
+      setState(() {
+        _signedInWith = provider;
+        _onboarded = true;
+      });
+      _showMessage('Welcome! You signed in with $provider.');
+    } catch (e) {
+      if (!mounted) return;
+      _showHelpfulError(
+        title: '$provider sign-in failed',
+        message: 'Firebase could not complete sign-in. Check that Firebase Auth is enabled and your app uses the correct Firebase project. Details: $e',
+        actionLabel: 'Continue as guest',
+        onAction: () => unawaited(_completeOnboardingWithAuth('Guest')),
+      );
+    }
+  }
+
+  void _showLinkedInUnavailable() {
+    _showHelpfulError(
+      title: 'LinkedIn is not configured yet',
+      message: 'The backend currently supports Firebase Google sign-in and anonymous guest preview. LinkedIn needs an OAuth provider setup before it can be a real login method.',
+      actionLabel: 'Preview as guest',
+      onAction: () => unawaited(_completeOnboardingWithAuth('Guest')),
+    );
   }
 
   List<MicroTask> get _allTasks => _goals.expand((goal) => goal.tasks).toList();
@@ -124,14 +434,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     final minutes = seconds ~/ 60;
     final remaining = seconds % 60;
     return '${minutes.toString().padLeft(2, '0')}:${remaining.toString().padLeft(2, '0')}';
-  }
-
-  void _completeOnboarding(String provider) {
-    setState(() {
-      _signedInWith = provider;
-      _onboarded = true;
-    });
-    _showMessage('Welcome! You signed in with $provider.');
   }
 
   void _showMessage(String message) {
@@ -196,36 +498,135 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   Future<void> _openGoalBreakdownDialog(String title) async {
     final chatController = TextEditingController();
-    var draftTitles = _generateTaskTitles(title).toList();
+    final ai = context.read<GenkitService>();
+    final fallbackSpecs = _draftSpecsFromTitles(_generateTaskTitles(title));
+    final deadlineDays = max(1, dateOnly(_newGoalDeadline).difference(today).inDays);
+    var draftSpecs = List<_DraftTaskSpec>.from(fallbackSpecs);
+    var aiAvailable = false;
+    String? agentStrategy;
+
+    try {
+      final agentPlan = await ai.agentPlanner.plan(
+        AgentPlannerRequest(
+          goal: title,
+          context: {
+            'category': _newGoalCategory,
+            'priority': _newGoalPriority,
+            'deadlineDays': deadlineDays,
+            'completedToday': _todayCompleted,
+            'totalToday': _todayTasks.length,
+            'mood': _selectedMood,
+          },
+        ),
+      );
+      agentStrategy = agentPlan.plan['strategy']?.toString();
+    } catch (e) {
+      debugPrint('Agent planner unavailable: $e');
+    }
+
+    try {
+      final generated = await ai.taskGenerator.generate(
+        TaskGeneratorRequest(
+          goalTitle: title,
+          category: _newGoalCategory,
+          priority: _newGoalPriority,
+          deadlineDays: deadlineDays,
+        ),
+      );
+      final aiSpecs = _draftSpecsFromGeneratedTasks(generated.tasks).take(6).toList();
+      if (aiSpecs.isNotEmpty) {
+        draftSpecs = aiSpecs;
+        aiAvailable = true;
+      }
+    } catch (e) {
+      debugPrint('AI task generation fallback used: $e');
+    }
+
+    final agentSuffix = agentStrategy == null ? '' : ' and agent planner ($agentStrategy)';
     final messages = <Map<String, dynamic>>[
       {
         'role': 'assistant',
-        'text':
-            "Great! Let\'s break down \"$title\" into actionable steps. I\'ve drafted ${draftTitles.length} micro-tasks below. If you want, ask me to make them easier, more detailed, or change the order.",
-        'tasks': List<String>.from(draftTitles),
+        'text': aiAvailable
+            ? 'Great! I used the backend AI task generator$agentSuffix to break "$title" into ${draftSpecs.length} micro-tasks. You can ask me to make the plan easier, more detailed, or reorder it before scheduling.'
+            : 'I could not reach the backend AI task generator, so I prepared a local fallback plan for "$title". You can still adjust it before scheduling.',
+        'tasks': _draftPreviewLabels(draftSpecs),
       },
     ];
 
-    final result = await showDialog<List<String>>(
+    final result = await showDialog<List<_DraftTaskSpec>>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
+        var isAiThinking = false;
         return StatefulBuilder(
           builder: (dialogContext, setLocalState) {
             Future<void> sendMessage() async {
               final request = chatController.text.trim();
-              if (request.isEmpty) return;
+              if (request.isEmpty || isAiThinking) return;
+
+              final history = messages
+                  .where((message) => message['text'] is String)
+                  .map(
+                    (message) => ChatMessage(
+                      role: message['role'] == 'user' ? 'user' : 'model',
+                      content: message['text'] as String,
+                    ),
+                  )
+                  .toList();
+
               setLocalState(() {
+                isAiThinking = true;
                 messages.add({'role': 'user', 'text': request});
-                draftTitles = _refineTaskTitlesFromPrompt(draftTitles, request, title);
-                messages.add({
-                  'role': 'assistant',
-                  'text':
-                      "Absolutely — I refined the plan. Here\'s an updated version you can review before scheduling.",
-                  'tasks': List<String>.from(draftTitles),
-                });
                 chatController.clear();
               });
+
+              try {
+                final reply = await ai.goalCoach.ask(
+                  GoalCoachRequest(
+                    userMessage: "$request\nCurrent draft tasks: ${draftSpecs.map((task) => task.previewLabel).join('; ')}",
+                    goalTitle: title,
+                    conversationHistory: history,
+                    progressPercent: 0,
+                  ),
+                );
+
+                final suggested = reply.suggestedActions
+                    .map((task) => task.trim())
+                    .where((task) => task.isNotEmpty)
+                    .take(6)
+                    .toList();
+                if (suggested.isNotEmpty) {
+                  draftSpecs = _draftSpecsFromTitles(suggested).take(6).toList();
+                }
+
+                if (!dialogContext.mounted) return;
+                setLocalState(() {
+                  messages.add({
+                    'role': 'assistant',
+                    'text': reply.reply.trim().isEmpty
+                        ? 'I refined the plan based on your request.'
+                        : reply.reply.trim(),
+                    'tasks': _draftPreviewLabels(draftSpecs),
+                  });
+                  isAiThinking = false;
+                });
+              } catch (e) {
+                final refined = _refineTaskTitlesFromPrompt(
+                  draftSpecs.map((task) => task.title).toList(),
+                  request,
+                  title,
+                );
+                draftSpecs = _draftSpecsFromTitles(refined).take(6).toList();
+                if (!dialogContext.mounted) return;
+                setLocalState(() {
+                  messages.add({
+                    'role': 'assistant',
+                    'text': 'The AI coach endpoint is unavailable right now, so I refined the plan locally. You can still finalize this draft.',
+                    'tasks': _draftPreviewLabels(draftSpecs),
+                  });
+                  isAiThinking = false;
+                });
+              }
             }
 
             Widget buildMessageBubble(Map<String, dynamic> message) {
@@ -263,7 +664,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                             ),
                             SizedBox(width: 8),
                             Text(
-                              'Assistant',
+                              'AI Assistant',
                               style: TextStyle(color: gdMuted, fontWeight: FontWeight.w900),
                             ),
                           ],
@@ -404,9 +805,24 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                             ),
                             padding: const EdgeInsets.all(16),
                             child: ListView.separated(
-                              itemCount: messages.length,
+                              itemCount: messages.length + (isAiThinking ? 1 : 0),
                               separatorBuilder: (_, __) => const SizedBox(height: 12),
-                              itemBuilder: (context, index) => buildMessageBubble(messages[index]),
+                              itemBuilder: (context, index) {
+                                if (index < messages.length) {
+                                  return buildMessageBubble(messages[index]);
+                                }
+                                return const Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Chip(
+                                    avatar: SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    ),
+                                    label: Text('AI is thinking...'),
+                                  ),
+                                );
+                              },
                             ),
                           ),
                         ),
@@ -422,7 +838,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                 textInputAction: TextInputAction.send,
                                 onSubmitted: (_) => sendMessage(),
                                 decoration: InputDecoration(
-                                  hintText: 'Adjust the plan...',
+                                  hintText: 'Adjust the AI plan...',
                                   filled: true,
                                   fillColor: const Color(0xFFF7F5EF),
                                   contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
@@ -447,7 +863,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                   padding: const EdgeInsets.symmetric(horizontal: 24),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                                 ),
-                                onPressed: sendMessage,
+                                onPressed: isAiThinking ? null : sendMessage,
                                 child: const Text('Send'),
                               ),
                             ),
@@ -463,7 +879,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                               minimumSize: const Size.fromHeight(64),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                             ),
-                            onPressed: () => Navigator.pop(dialogContext, List<String>.from(draftTitles)),
+                            onPressed: isAiThinking
+                                ? null
+                                : () => Navigator.pop(
+                                      dialogContext,
+                                      List<_DraftTaskSpec>.from(draftSpecs),
+                                    ),
                             child: const Text('Looks good, finalize!'),
                           ),
                         ),
@@ -477,38 +898,34 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         );
       },
     );
-    // Dispose after the dialog has fully unmounted.
     WidgetsBinding.instance.addPostFrameCallback((_) => chatController.dispose());
     if (result != null) {
-      // Let Flutter finish removing the dialog route before rebuilding this page.
-      // This prevents the framework `_dependents.isEmpty` assertion on finalize.
       await WidgetsBinding.instance.endOfFrame;
       await Future<void>.delayed(const Duration(milliseconds: 120));
       if (!mounted) return;
-      _finishCreateGoal(title, approvedTaskTitles: result);
+      await _finishCreateGoal(title, approvedTaskSpecs: result);
     }
   }
 
-  void _finishCreateGoal(String title, {List<String>? approvedTaskTitles}) {
-    final goalId = _nextGoalId++;
+  Future<void> _finishCreateGoal(String title, {List<_DraftTaskSpec>? approvedTaskSpecs}) async {
+    final goalId = DateTime.now().microsecondsSinceEpoch;
     final colors = _categoryColors(_newGoalCategory);
-    final steps = approvedTaskTitles == null
+    final steps = approvedTaskSpecs == null
         ? _generateMicroTasks(title, goalId)
-        : _generateMicroTasksFromTitles(approvedTaskTitles, goalId);
+        : _generateMicroTasksFromSpecs(approvedTaskSpecs, goalId);
+    final goal = GoalProject(
+      id: goalId,
+      title: title,
+      importance: _newGoalPriority,
+      category: _newGoalCategory,
+      deadline: _newGoalDeadline,
+      from: colors[0],
+      to: colors[1],
+      tasks: steps,
+    );
+
     setState(() {
-      _goals.insert(
-        0,
-        GoalProject(
-          id: goalId,
-          title: title,
-          importance: _newGoalPriority,
-          category: _newGoalCategory,
-          deadline: _newGoalDeadline,
-          from: colors[0],
-          to: colors[1],
-          tasks: steps,
-        ),
-      );
+      _goals.insert(0, goal);
       _isProcessing = false;
       _processingProgress = 0;
       _goalController.clear();
@@ -516,7 +933,18 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _newGoalCategory = 'Study';
       _newGoalDeadline = addDays(today, 14);
     });
-    _showMessage('Goal created. Your subtasks are scheduled.');
+
+    final sync = _sync;
+    if (sync != null) {
+      try {
+        await sync.createGoal(goal);
+      } catch (e) {
+        debugPrint('Goal persistence failed: $e');
+        _showMessage('Goal created locally, but Firebase save failed. Check Firestore rules/network.');
+        return;
+      }
+    }
+    _showMessage('Goal created. AI subtasks are scheduled and synced.');
   }
 
   List<Color> _categoryColors(String category) {
@@ -607,25 +1035,88 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     return updated;
   }
 
+
+  List<String> _draftPreviewLabels(List<_DraftTaskSpec> specs) {
+    return specs.map((task) => task.previewLabel).toList();
+  }
+
+  List<_DraftTaskSpec> _draftSpecsFromGeneratedTasks(List<GeneratedTask> tasks) {
+    final deadlineDays = max(1, dateOnly(_newGoalDeadline).difference(today).inDays);
+    return tasks
+        .where((task) => task.title.trim().isNotEmpty)
+        .map((task) {
+      final duration = task.durationMinutes.clamp(5, 90).toInt();
+      return _DraftTaskSpec(
+        title: task.title.trim(),
+        durationMinutes: duration,
+        load: _taskLoadFromAi(task.load, duration),
+        dayOffset: task.dayOffset.clamp(0, deadlineDays).toInt(),
+      );
+    }).toList();
+  }
+
+  List<_DraftTaskSpec> _draftSpecsFromTitles(Iterable<String> titles) {
+    final cleaned = titles
+        .map((title) => title.trim())
+        .where((title) => title.isNotEmpty)
+        .toList();
+
+    return List.generate(cleaned.length, (index) {
+      final duration = index == 0 ? 10 : 15 + index * 5;
+      final load = index == 0
+          ? TaskLoad.light
+          : index == cleaned.length - 1
+              ? TaskLoad.stretch
+              : TaskLoad.focus;
+      return _DraftTaskSpec(
+        title: cleaned[index],
+        durationMinutes: duration,
+        load: load,
+        dayOffset: index,
+      );
+    });
+  }
+
+  TaskLoad _taskLoadFromAi(String load, int durationMinutes) {
+    switch (load.toLowerCase().trim()) {
+      case 'light':
+        return TaskLoad.light;
+      case 'stretch':
+        return TaskLoad.stretch;
+      case 'focus':
+        return TaskLoad.focus;
+    }
+    if (durationMinutes <= 15) return TaskLoad.light;
+    if (durationMinutes > 30) return TaskLoad.stretch;
+    return TaskLoad.focus;
+  }
+
   List<MicroTask> _generateMicroTasks(String title, int goalId) {
     return _generateMicroTasksFromTitles(_generateTaskTitles(title), goalId);
   }
 
   List<MicroTask> _generateMicroTasksFromTitles(List<String> taskTitles, int goalId) {
-    return List.generate(taskTitles.length, (index) {
+    return _generateMicroTasksFromSpecs(_draftSpecsFromTitles(taskTitles), goalId);
+  }
+
+  List<MicroTask> _generateMicroTasksFromSpecs(List<_DraftTaskSpec> taskSpecs, int goalId) {
+    final baseTaskId = DateTime.now().microsecondsSinceEpoch;
+    return List.generate(taskSpecs.length, (index) {
+      final spec = taskSpecs[index];
       return MicroTask(
-        id: _nextTaskId++,
+        id: baseTaskId + index,
         goalId: goalId,
-        title: taskTitles[index],
-        durationMinutes: index == 0 ? 8 : 15 + index * 5,
-        load: index == 0 ? TaskLoad.light : index == taskTitles.length - 1 ? TaskLoad.stretch : TaskLoad.focus,
-        scheduledDate: addDays(today, index),
-        points: 10 + index * 5,
+        title: spec.title,
+        durationMinutes: spec.durationMinutes,
+        load: spec.load,
+        scheduledDate: addDays(today, spec.dayOffset),
+        points: max(8, (spec.durationMinutes / 2).round() + index * 3),
       );
     });
   }
 
   void _toggleTask(MicroTask task) {
+    final goal = _goalForTask(task);
     setState(() {
       task.done = !task.done;
       if (task.done) {
@@ -636,10 +1127,33 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         _petHappiness = max(0, _petHappiness - 8);
       }
     });
+    unawaited(_persistTaskToggle(goal, task));
+    unawaited(_persistProfileStats());
+  }
+
+  Future<void> _persistTaskToggle(GoalProject goal, MicroTask task) async {
+    final sync = _sync;
+    if (sync == null) return;
+    try {
+      await sync.toggleTask(
+        goal.id.toString(),
+        task.id.toString(),
+        task.done,
+      );
+      await sync.updateGoal(goal);
+    } catch (e) {
+      debugPrint('Task sync failed: $e');
+    }
   }
 
   void _deleteGoal(GoalProject goal) {
     setState(() => _goals.removeWhere((item) => item.id == goal.id));
+    final sync = _sync;
+    if (sync != null) {
+      unawaited(sync.deleteGoal(goal.id.toString()).catchError((Object e) {
+        debugPrint('Delete goal sync failed: $e');
+      }));
+    }
     _showMessage('Removed ${goal.title}.');
   }
 
@@ -654,38 +1168,79 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       );
       return;
     }
+
+    final community = CommunityGroup(
+      name: title,
+      members: 1,
+      tag: 'Created by you',
+      similarity: 100,
+      joined: true,
+      description: 'A new accountability group for people working on similar goals.',
+    );
     setState(() {
-      _communities.insert(0, CommunityGroup(
-        name: title,
-        members: 1,
-        tag: 'Created by you',
-        similarity: 100,
-        joined: true,
-        description: 'A new accountability group for people working on similar goals.',
-      ));
+      _communities.insert(0, community);
       _communityController.clear();
     });
+
+    final sync = _sync;
+    if (sync != null) {
+      unawaited(sync.createCommunity(community).then((persisted) {
+        if (!mounted) return;
+        setState(() {
+          _communities.remove(community);
+          _communities.insert(0, persisted);
+        });
+      }).catchError((Object e) {
+        debugPrint('Create community sync failed: $e');
+        _showMessage('Community created locally, but Firebase save failed.');
+      }));
+    }
     _showMessage('Community created.');
   }
 
   void _joinCommunity(CommunityGroup group) {
     setState(() => group.joined = true);
+    final id = group.backendId;
+    final sync = _sync;
+    if (sync != null && id != null) {
+      unawaited(sync.joinCommunity(id).catchError((Object e) {
+        debugPrint('Join community sync failed: $e');
+      }));
+    }
     _showMessage('Joined ${group.name}.');
   }
 
   void _deleteCommunity(CommunityGroup group) {
-    setState(() => _communities.remove(group));
-    _showMessage('Removed ${group.name}.');
+    setState(() => group.joined = false);
+    final id = group.backendId;
+    final sync = _sync;
+    if (sync != null && id != null) {
+      unawaited(sync.leaveCommunity(id).catchError((Object e) {
+        debugPrint('Leave community sync failed: $e');
+      }));
+    }
+    _showMessage('Left ${group.name}.');
+  }
+
+  void _persistFriends() {
+    final sync = _sync;
+    if (sync == null) return;
+    unawaited(sync.updateFriends(_friends).catchError((Object e) {
+      debugPrint('Friend sync failed: $e');
+    }));
   }
 
   void _addFriend(String name) {
-    if (_friends.contains(name)) return;
-    setState(() => _friends.add(name));
-    _showMessage('$name added as a friend.');
+    final cleaned = name.trim();
+    if (cleaned.isEmpty || _friends.contains(cleaned)) return;
+    setState(() => _friends.add(cleaned));
+    _persistFriends();
+    _showMessage('$cleaned added as a friend.');
   }
 
   void _deleteFriend(String name) {
     setState(() => _friends.remove(name));
+    _persistFriends();
     _showMessage('Removed $name from friends.');
   }
 
@@ -713,6 +1268,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _activeAccessory = accessory;
       _petHappiness = min(100, _petHappiness + 6);
     });
+    unawaited(_persistProfileStats());
     _showMessage('Chest opened: ${skin.name} skin + $accessory unlocked!');
   }
 
@@ -730,6 +1286,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _coins -= 10;
       _petHappiness = min(100, _petHappiness + 12);
     });
+    unawaited(_persistProfileStats());
   }
 
   void _interactWithPet() {
@@ -740,6 +1297,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       '${_activePetSkin.name} feels closer to you.',
     ];
     setState(() => _petHappiness = min(100, _petHappiness + 2));
+    unawaited(_persistProfileStats());
     _showMessage(reactions[Random().nextInt(reactions.length)]);
   }
 
@@ -759,6 +1317,29 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     );
     if (!mounted || config == null) return;
     _startFocusSession(config);
+  }
+
+  void _handleMoodChanged(String value) {
+    setState(() => _selectedMood = value);
+    unawaited(_persistProfileStats());
+    unawaited(_requestMoodAdvice(value));
+  }
+
+  Future<void> _requestMoodAdvice(String mood) async {
+    try {
+      final advice = await context.read<GenkitService>().moodAdvisor.advise(
+            MoodAdvisorRequest(
+              mood: mood,
+              completedToday: _todayCompleted,
+              totalToday: _todayTasks.length,
+              streak: _streak,
+            ),
+          );
+      if (!mounted) return;
+      _showMessage('AI mood plan: ${advice.message}');
+    } catch (e) {
+      debugPrint('Mood advisor unavailable: $e');
+    }
   }
 
   void _startFocusSession(FocusSessionConfig config) {
@@ -805,16 +1386,58 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   void _toggleFocusPause() => setState(() => _focusPaused = !_focusPaused);
 
   void _stopFocusSession() {
+    final config = _activeFocusConfig;
+    final completed = _focusRemainingSeconds <= 0;
     _focusTimer?.cancel();
+
+    if (completed && config?.task != null && config!.task!.done == false) {
+      _toggleTask(config.task!);
+    }
+
     setState(() {
       _activeFocusConfig = null;
       _focusRemainingSeconds = 0;
       _focusPaused = false;
     });
     Navigator.of(context, rootNavigator: true).maybePop();
+
+    if (config != null) {
+      unawaited(_requestFocusInsight(config, completed: completed));
+    }
+  }
+
+  Future<void> _requestFocusInsight(
+    FocusSessionConfig config, {
+    required bool completed,
+  }) async {
+    try {
+      final task = config.task;
+      final goal = task == null ? null : _goalForTask(task);
+      final insight = await context.read<GenkitService>().focusInsight.analyse(
+            FocusInsightRequest(
+              taskTitle: config.title,
+              goalTitle: goal?.title ?? 'Custom focus session',
+              durationMinutes: config.durationMinutes,
+              completed: completed,
+            ),
+          );
+      if (!mounted) return;
+      if (completed && insight.coinsEarned > 0) {
+        setState(() {
+          _coins += insight.coinsEarned;
+          _petHappiness = min(100, _petHappiness + 4);
+        });
+        unawaited(_persistProfileStats());
+      }
+      _showMessage('AI focus insight: ${insight.insight}');
+    } catch (e) {
+      debugPrint('Focus insight unavailable: $e');
+    }
   }
 
   void _openProfile() {
+    final authState = context.read<AuthState>();
+    final displayName = authState.displayName;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
@@ -852,7 +1475,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text('Goal Digger User', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: gdInk)),
+                                  Text(displayName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: gdInk)),
                                   const SizedBox(height: 4),
                                   Text('Signed in with $_signedInWith', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
                                 ],
@@ -904,11 +1527,40 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     );
   }
 
+  void _addRoutine(RoutineItem routine) {
+    setState(() => _routines.add(routine));
+    final sync = _sync;
+    if (sync != null) {
+      unawaited(sync.createRoutine(routine).catchError((Object e) {
+        debugPrint('Routine sync failed: $e');
+        _showMessage('Routine added locally, but Firebase save failed.');
+      }));
+    }
+    _showMessage('Routine added.');
+  }
+
+  void _deleteRoutine(RoutineItem routine) {
+    setState(() => _routines.removeWhere((item) => item.id == routine.id));
+    final sync = _sync;
+    if (sync != null) {
+      unawaited(sync.deleteRoutine(routine.id).catchError((Object e) {
+        debugPrint('Routine delete sync failed: $e');
+      }));
+    }
+    _showMessage('Routine deleted.');
+  }
+
   void _openSettings() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
-        builder: (context) => const SettingsScreen(),
+        builder: (context) => SettingsScreen(
+          goalReminders: _goalReminders,
+          friendProgressSharing: _friendProgressSharing,
+          onGoalRemindersChanged: _setGoalReminders,
+          onFriendProgressSharingChanged: _setFriendProgressSharing,
+          onSignOut: () => unawaited(_handleSignOut()),
+        ),
       ),
     );
   }
@@ -922,6 +1574,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     );
     if (picked == null) return;
     setState(() => goal.deadline = picked);
+    final sync = _sync;
+    if (sync != null) {
+      unawaited(sync.updateGoal(goal).catchError((Object e) {
+        debugPrint('Deadline sync failed: $e');
+      }));
+    }
     _showMessage('Deadline updated to ${shortDate(picked)}.');
   }
 
@@ -954,16 +1612,32 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     );
     if (result == null) return;
     setState(() => goal.importance = result);
+    final sync = _sync;
+    if (sync != null) {
+      unawaited(sync.updateGoal(goal).catchError((Object e) {
+        debugPrint('Priority sync failed: $e');
+      }));
+    }
     _showMessage('Priority updated.');
   }
 
   @override
   Widget build(BuildContext context) {
+    final authState = context.watch<AuthState>();
+    _bindAuthState(authState);
+
+    if (!authState.isKnown) {
+      return const Scaffold(
+        backgroundColor: gdBackground,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     if (!_onboarded) {
       return OnboardingScreen(
-        onGoogle: () => _completeOnboarding('Google'),
-        onLinkedIn: () => _completeOnboarding('LinkedIn'),
-        onGuest: () => _completeOnboarding('Guest'),
+        onGoogle: () => unawaited(_completeOnboardingWithAuth('Google')),
+        onLinkedIn: _showLinkedInUnavailable,
+        onGuest: () => unawaited(_completeOnboardingWithAuth('Guest')),
       );
     }
 
@@ -988,9 +1662,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       ),
       CalendarPage(
         tasks: _allTasks,
+        routines: _routines,
         goalForTask: _goalForTask,
         today: today,
         onCreateGoal: () => setState(() => _selectedIndex = 0),
+        onAddRoutine: _addRoutine,
+        onDeleteRoutine: _deleteRoutine,
       ),
       TasksPage(
         mood: _selectedMood,
@@ -1000,7 +1677,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         todayTotal: _todayTasks.length,
         remainingMinutes: _remainingMinutes,
         goalForTask: _goalForTask,
-        onMoodChanged: (value) => setState(() => _selectedMood = value),
+        onMoodChanged: _handleMoodChanged,
         onToggleTask: _toggleTask,
         onCreateGoal: () => setState(() => _selectedIndex = 0),
       ),

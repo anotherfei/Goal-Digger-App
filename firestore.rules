@@ -46,11 +46,22 @@ service cloud.firestore {
         allow read, write: if isSignedIn() && isOwner(uid);
       }
 
+      // Calendar routines
+      match /routines/{routineId} {
+        allow read, write: if isSignedIn() && isOwner(uid);
+      }
+
       // AI session logs — users can read their own; only backend writes
       match /ai_sessions/{sessionId} {
         allow read: if isSignedIn() && isOwner(uid);
         // Write blocked for client; backend uses service account
         allow write: if false;
+      }
+
+      // Agent memory summaries written by Cloud Functions.
+      // Client access is limited to the signed-in owner.
+      match /aiMemory/{memoryDoc} {
+        allow read, write: if isSignedIn() && isOwner(uid);
       }
     }
 

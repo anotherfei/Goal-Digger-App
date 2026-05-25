@@ -2,6 +2,7 @@
 
 import { z } from "genkit";
 import { getAI, defaultModel } from "../ai";
+import { parseModelJson } from "../json";
 
 const inputSchema = z.object({
   taskTitle:       z.string(),
@@ -47,7 +48,7 @@ Respond ONLY with valid JSON:
         config: { temperature: 0.7, maxOutputTokens: 256, responseMimeType: "application/json" },
       });
 
-      const parsed = JSON.parse(text) as z.infer<typeof outputSchema>;
+      const parsed = parseModelJson<z.infer<typeof outputSchema>>(text);
       const coins  = Math.min(coinMax, Math.max(coinMin, parsed.coinsEarned ?? coinBase));
       return {
         insight:      parsed.insight      ?? "",
