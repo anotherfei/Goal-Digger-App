@@ -1,0 +1,5 @@
+<resources>
+    <string name="focus_block_accessibility_label">Goal Digger App Block</string>
+    <string name="focus_block_notification_label">Goal Digger App Block</string>
+    <string name="focus_block_accessibility_description">Blocks selected apps while a Goal Digger focus session is running.</string>
+</resources>
