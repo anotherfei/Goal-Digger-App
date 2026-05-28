@@ -15,6 +15,11 @@ import '../../shared/widgets/shared_widgets.dart';
 
 const bool kDebugAllowGuestSocialAccess = true;
 
+// DEBUG TOGGLE:
+// false = use the real joined community list
+// true  = fill "My community list" with dummy joined communities
+const bool kDebugUseDummyJoinedCommunities = true;
+
 class CommunityPage extends StatefulWidget {
   const CommunityPage({
     super.key,
@@ -466,11 +471,70 @@ class _CommunityPageState extends State<CommunityPage> {
     );
   }
 
+
+  List<CommunityGroup> _debugDummyJoinedCommunities() {
+    return [
+      CommunityGroup(
+        name: 'Portfolio Builders',
+        members: 142,
+        tag: 'Career',
+        description: 'Build portfolio projects, share progress, and keep each other accountable.',
+        similarity: 88,
+        joined: true,
+      ),
+      CommunityGroup(
+        name: 'Study Sprint Club',
+        members: 89,
+        tag: 'Exam prep',
+        description: 'Daily study check-ins, sprint sessions, and exam preparation support.',
+        similarity: 94,
+        joined: true,
+      ),
+      CommunityGroup(
+        name: 'Calm Wellness Crew',
+        members: 76,
+        tag: 'Wellness',
+        description: 'A supportive group for routines, reflection, and balanced productivity.',
+        similarity: 81,
+        joined: true,
+      ),
+      CommunityGroup(
+        name: 'Code Every Day',
+        members: 118,
+        tag: 'Programming',
+        description: 'Practice coding daily, finish side projects, and review each others work.',
+        similarity: 91,
+        joined: true,
+      ),
+      CommunityGroup(
+        name: 'Focus Mode Squad',
+        members: 64,
+        tag: 'Productivity',
+        description: 'Use focus sessions together and report completed tasks at the end of the day.',
+        similarity: 86,
+        joined: true,
+      ),
+      CommunityGroup(
+        name: 'AI App Makers',
+        members: 53,
+        tag: 'AI apps',
+        description: 'Build small AI-powered apps and ship demos fast.',
+        similarity: 90,
+        joined: true,
+      ),
+    ];
+  }
+
   Widget _buildCommunitiesTab(BuildContext context) {
     final groups = widget.communities;
-    final joined = groups.where((group) => group.joined).toList();
-    final suggested = [...groups]..sort((a, b) => b.similarity.compareTo(a.similarity));
+    final joined = kDebugUseDummyJoinedCommunities
+        ? _debugDummyJoinedCommunities()
+        : groups.where((group) => group.joined).toList();
     final leaderboard = [...groups]..sort((a, b) => b.members.compareTo(a.members));
+
+    final topThree = leaderboard.take(3).toList();
+    final communityPreview = joined.length > 5 ? joined.take(5).toList() : joined;
+    final hasJoinedCommunities = joined.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -507,7 +571,7 @@ class _CommunityPageState extends State<CommunityPage> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: () {},
+                        onPressed: () => _showSnack('Join with code is not configured yet.'),
                         icon: const Icon(Icons.login_rounded),
                         label: const Text('Join with code'),
                       ),
@@ -518,7 +582,9 @@ class _CommunityPageState extends State<CommunityPage> {
             ),
           ),
         ),
+
         const SizedBox(height: 18),
+
         SectionTitle(title: 'Community streak leaderboard', trailing: 'TOP 3'),
         const SizedBox(height: 10),
         AppCard(
@@ -526,84 +592,77 @@ class _CommunityPageState extends State<CommunityPage> {
             padding: const EdgeInsets.all(14),
             child: Column(
               children: [
-                for (var i = 0; i < min(3, leaderboard.length); i++)
-                  ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: gdPrimarySoft,
-                      child: Text('#${i + 1}', style: const TextStyle(fontWeight: FontWeight.w900)),
+                if (topThree.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: Text(
+                      'No communities yet.',
+                      style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
                     ),
-                    title: Text(leaderboard[i].name, style: const TextStyle(fontWeight: FontWeight.w900)),
-                    subtitle: Text(
-                      '${leaderboard[i].members} members',
-                      style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
-                    ),
-                    trailing: Chip(label: Text('${leaderboard[i].similarity}% fit')),
+                  )
+                else
+                  for (var i = 0; i < topThree.length; i++)
+                    _CommunityLeaderboardTile(rank: i + 1, group: topThree[i]),
+                const Divider(height: 22),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _openCommunityLeaderboardPage(context, leaderboard),
+                    icon: const Icon(Icons.emoji_events_rounded),
+                    label: const Text('View full leaderboard'),
                   ),
+                ),
               ],
             ),
           ),
         ),
+
         const SizedBox(height: 18),
+
         SectionTitle(title: 'My community list', trailing: '${joined.length}'),
         const SizedBox(height: 10),
-        if (joined.isEmpty)
+        if (joined.isEmpty) ...[
           const HelpfulErrorBox(
             title: 'No joined communities yet',
-            message: 'Join a suggested community below or create your own group.',
+            message: 'Find a community that matches your goals or create your own group above.',
             actionLabel: 'Got it',
             showAction: false,
-          )
-        else
-          for (final group in joined.take(3))
-            AppCard(
-              margin: const EdgeInsets.only(bottom: 10),
-              child: ListTile(
-                leading: const CircleAvatar(
-                  backgroundColor: gdPrimarySoft,
-                  child: Icon(Icons.groups_rounded, color: gdPrimary),
-                ),
-                title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w900)),
-                subtitle: Text(
-                  '${group.members} members · ${group.tag}',
-                  style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
-                ),
-                trailing: Wrap(
-                  spacing: 4,
-                  children: [
-                    IconButton.filledTonal(
-                      tooltip: 'Community chat',
-                      onPressed: () => _openCommunityChatPage(context, group),
-                      icon: const Icon(Icons.chat_bubble_rounded),
-                    ),
-                    IconButton(
-                      tooltip: 'Delete community',
-                      onPressed: () => widget.onDeleteCommunity(group),
-                      icon: const Icon(Icons.delete_outline_rounded, color: gdError),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        const SizedBox(height: 18),
-        SectionTitle(title: 'Find communities'),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _communitySearchController,
-          decoration: const InputDecoration(
-            labelText: 'Search communities',
-            hintText: 'Example: design, fitness, exam',
           ),
-          onSubmitted: (_) {},
-        ),
-        const SizedBox(height: 12),
-        SectionTitle(title: 'Community suggestions'),
-        const SizedBox(height: 10),
-        ...suggested.take(5).map(
-              (group) => CommunityMatchCard(
-                group: group,
-                onJoin: () => widget.onJoinCommunity(group),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () => _openFindCommunitiesPage(context),
+              icon: const Icon(Icons.groups_rounded),
+              label: const Text('Find communities'),
+            ),
+          ),
+        ] else ...[
+          for (final group in communityPreview)
+            _CommunityListCard(
+              group: group,
+              onChat: () => _openCommunityChatPage(context, group),
+              onDelete: () => widget.onDeleteCommunity(group),
+            ),
+          if (hasJoinedCommunities) ...[
+            const SizedBox(height: 4),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: gdPrimary,
+                  foregroundColor: gdCardLight,
+                  side: const BorderSide(color: gdPrimary, width: 1.5),
+                ),
+                onPressed: () => _openAllCommunitiesPage(context, joined),
+                icon: const Icon(Icons.groups_rounded),
+                label: Text('View all communities (${joined.length})'),
               ),
             ),
+          ],
+        ],
+
+        const SizedBox(height: 70),
       ],
     );
   }
@@ -665,6 +724,39 @@ class _CommunityPageState extends State<CommunityPage> {
       MaterialPageRoute(builder: (_) => _CommunityChatPage(group: group)),
     );
   }
+
+  void _openAllCommunitiesPage(BuildContext context, List<CommunityGroup> communities) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _AllCommunitiesPage(
+          communities: communities,
+          onChat: (group) => _openCommunityChatPage(context, group),
+          onDelete: (group) => widget.onDeleteCommunity(group),
+          onFindCommunities: () => _openFindCommunitiesPage(context),
+        ),
+      ),
+    );
+  }
+
+  void _openFindCommunitiesPage(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _FindCommunitiesPage(
+          communities: widget.communities,
+          onJoinCommunity: widget.onJoinCommunity,
+        ),
+      ),
+    );
+  }
+
+  void _openCommunityLeaderboardPage(BuildContext context, List<CommunityGroup> leaderboard) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _CommunityLeaderboardPage(leaderboard: leaderboard),
+      ),
+    );
+  }
+
 }
 
 
@@ -847,6 +939,303 @@ class _AllFriendsPageState extends State<_AllFriendsPage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+
+class _CommunityListCard extends StatelessWidget {
+  const _CommunityListCard({
+    required this.group,
+    required this.onChat,
+    required this.onDelete,
+  });
+
+  final CommunityGroup group;
+  final VoidCallback onChat;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: ListTile(
+        leading: const CircleAvatar(
+          backgroundColor: gdPrimarySoft,
+          child: Icon(Icons.groups_rounded, color: gdPrimary),
+        ),
+        title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+        subtitle: Text(
+          '${group.members} members · ${group.tag}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+        ),
+        trailing: Wrap(
+          spacing: 4,
+          children: [
+            IconButton.filledTonal(
+              tooltip: 'Community chat',
+              onPressed: onChat,
+              icon: const Icon(Icons.chat_bubble_rounded),
+            ),
+            IconButton(
+              tooltip: 'Delete community',
+              onPressed: onDelete,
+              icon: const Icon(Icons.delete_outline_rounded, color: gdError),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AllCommunitiesPage extends StatefulWidget {
+  const _AllCommunitiesPage({
+    required this.communities,
+    required this.onChat,
+    required this.onDelete,
+    required this.onFindCommunities,
+  });
+
+  final List<CommunityGroup> communities;
+  final ValueChanged<CommunityGroup> onChat;
+  final ValueChanged<CommunityGroup> onDelete;
+  final VoidCallback onFindCommunities;
+
+  @override
+  State<_AllCommunitiesPage> createState() => _AllCommunitiesPageState();
+}
+
+class _AllCommunitiesPageState extends State<_AllCommunitiesPage> {
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = widget.communities.where((group) {
+      final q = _query.trim().toLowerCase();
+      if (q.isEmpty) return true;
+      return group.name.toLowerCase().contains(q) ||
+          group.tag.toLowerCase().contains(q) ||
+          group.description.toLowerCase().contains(q);
+    }).toList();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('All communities'),
+        actions: [
+          IconButton(
+            tooltip: 'Find communities',
+            onPressed: widget.onFindCommunities,
+            icon: const Icon(Icons.group_add_rounded),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: PageScaffold(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
+          children: [
+            TextField(
+              controller: _searchController,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search_rounded),
+                labelText: 'Search your communities',
+              ),
+              onChanged: (value) => setState(() => _query = value),
+            ),
+            const SizedBox(height: 16),
+            if (filtered.isEmpty)
+              const HelpfulErrorBox(
+                title: 'No communities found',
+                message: 'Try a different search keyword.',
+                actionLabel: 'OK',
+                showAction: false,
+              )
+            else
+              for (final group in filtered)
+                _CommunityListCard(
+                  group: group,
+                  onChat: () => widget.onChat(group),
+                  onDelete: () => widget.onDelete(group),
+                ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FindCommunitiesPage extends StatefulWidget {
+  const _FindCommunitiesPage({
+    required this.communities,
+    required this.onJoinCommunity,
+  });
+
+  final List<CommunityGroup> communities;
+  final ValueChanged<CommunityGroup> onJoinCommunity;
+
+  @override
+  State<_FindCommunitiesPage> createState() => _FindCommunitiesPageState();
+}
+
+class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
+  final TextEditingController _searchController = TextEditingController();
+  final Set<String> _locallyJoinedCommunityNames = <String>{};
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<CommunityGroup> get _suggestions {
+    final q = _query.trim().toLowerCase();
+    final suggested = [...widget.communities]
+      ..sort((a, b) => b.similarity.compareTo(a.similarity));
+
+    return suggested.where((group) {
+      if (group.joined || _locallyJoinedCommunityNames.contains(group.name)) return false;
+      if (q.isEmpty) return true;
+      return group.name.toLowerCase().contains(q) ||
+          group.tag.toLowerCase().contains(q) ||
+          group.description.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final suggestions = _suggestions;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Find communities')),
+      body: PageScaffold(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
+          children: [
+            AppCard(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Find communities',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: gdInk),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Search by topic, goal, or tag. Join a group to add it to your community list.',
+                      style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _searchController,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.search_rounded),
+                        labelText: 'Search communities',
+                        hintText: 'Example: design, fitness, exam',
+                      ),
+                      onChanged: (value) => setState(() => _query = value),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SectionTitle(title: 'Community suggestions'),
+            const SizedBox(height: 10),
+            if (suggestions.isEmpty)
+              const HelpfulErrorBox(
+                title: 'No communities found',
+                message: 'Try another keyword or create your own community from the Social page.',
+                actionLabel: 'OK',
+                showAction: false,
+              )
+            else
+              ...suggestions.take(10).map(
+                    (group) => CommunityMatchCard(
+                      group: group,
+                      onJoin: () {
+                        widget.onJoinCommunity(group);
+                        setState(() => _locallyJoinedCommunityNames.add(group.name));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Joined ${group.name}.'),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CommunityLeaderboardPage extends StatelessWidget {
+  const _CommunityLeaderboardPage({required this.leaderboard});
+
+  final List<CommunityGroup> leaderboard;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Community leaderboard')),
+      body: PageScaffold(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
+          children: [
+            AppCard(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  children: [
+                    for (var i = 0; i < leaderboard.length; i++)
+                      _CommunityLeaderboardTile(rank: i + 1, group: leaderboard[i]),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CommunityLeaderboardTile extends StatelessWidget {
+  const _CommunityLeaderboardTile({required this.rank, required this.group});
+
+  final int rank;
+  final CommunityGroup group;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: rank == 1 ? gdAccentSoft : gdPrimarySoft,
+        child: Text('#$rank', style: const TextStyle(fontWeight: FontWeight.w900)),
+      ),
+      title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+      subtitle: Text(
+        '${group.members} members · ${group.tag}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+      ),
+      trailing: Chip(label: Text('${group.similarity}% fit')),
     );
   }
 }
