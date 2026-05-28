@@ -15,11 +15,6 @@ import '../../shared/widgets/shared_widgets.dart';
 
 const bool kDebugAllowGuestSocialAccess = true;
 
-// DEBUG TOGGLE:
-// false = use the real joined community list
-// true  = fill "My community list" with dummy joined communities
-const bool kDebugUseDummyJoinedCommunities = true;
-
 class CommunityPage extends StatefulWidget {
   const CommunityPage({
     super.key,
@@ -52,7 +47,6 @@ class CommunityPage extends StatefulWidget {
 
 class _CommunityPageState extends State<CommunityPage> {
   int _tab = 0;
-  final TextEditingController _communitySearchController = TextEditingController();
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
@@ -72,7 +66,6 @@ class _CommunityPageState extends State<CommunityPage> {
 
   @override
   void dispose() {
-    _communitySearchController.dispose();
     super.dispose();
   }
 
@@ -85,7 +78,7 @@ class _CommunityPageState extends State<CommunityPage> {
     if (user == null) return false;
 
     if (kDebugAllowGuestSocialAccess) {
-        return true;
+      return true;
     }
 
     return !user.isAnonymous;
@@ -99,7 +92,7 @@ class _CommunityPageState extends State<CommunityPage> {
     if (user == null) return null;
 
     if (user.isAnonymous && !kDebugAllowGuestSocialAccess) {
-        return null;
+      return null;
     }
 
     return _db.collection('users').doc(user.uid).collection('friends');
@@ -110,7 +103,7 @@ class _CommunityPageState extends State<CommunityPage> {
     if (user == null) return;
 
     if (user.isAnonymous && !kDebugAllowGuestSocialAccess) {
-        return;
+      return;
     }
 
     final displayName = _cleanDisplayName(user.displayName, user.email);
@@ -137,9 +130,15 @@ class _CommunityPageState extends State<CommunityPage> {
   }
 
   String _usernameFor(String displayName, String? email, String uid) {
-    final base = email?.split('@').first.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9_]'), '_') ??
+    final base = email
+            ?.split('@')
+            .first
+            .trim()
+            .toLowerCase()
+            .replaceAll(RegExp(r'[^a-z0-9_]'), '_') ??
         displayName.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9_]'), '_');
-    final cleaned = base.replaceAll(RegExp(r'_+'), '_').replaceAll(RegExp(r'^_|_$'), '');
+    final cleaned =
+        base.replaceAll(RegExp(r'_+'), '_').replaceAll(RegExp(r'^_|_$'), '');
     if (cleaned.isEmpty) return '@user_${uid.substring(0, min(6, uid.length))}';
     return cleaned.startsWith('@') ? cleaned : '@$cleaned';
   }
@@ -169,7 +168,6 @@ class _CommunityPageState extends State<CommunityPage> {
     });
   }
 
-
   List<_FriendProfile> _fallbackFriends() {
     return widget.friends
         .map((name) => name.trim())
@@ -182,13 +180,13 @@ class _CommunityPageState extends State<CommunityPage> {
     final user = _user;
     final friendsCollection = _myFriendsCollection;
     if (user == null || friendsCollection == null) {
-        _showSnack('Sign in before adding friends.');
-        return;
+      _showSnack('Sign in before adding friends.');
+      return;
     }
 
     if (user.isAnonymous && !kDebugAllowGuestSocialAccess) {
-        _showSnack('Use a full account before adding real friends.');
-        return;
+      _showSnack('Use a full account before adding real friends.');
+      return;
     }
 
     if (profile.uid == user.uid) {
@@ -272,7 +270,6 @@ class _CommunityPageState extends State<CommunityPage> {
     );
   }
 
-
   Widget _buildSignedOutGate(BuildContext context) {
     final isGuest = _isGuestUser;
     return AppCard(
@@ -326,40 +323,15 @@ class _CommunityPageState extends State<CommunityPage> {
   }
 
   Future<void> _openFullAccountLogin(BuildContext context) async {
-    final authState = context.read<AuthState>();
-
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (loginContext) => _FullAccountLoginPage(
-          onGoogle: () async {
-            try {
-              await authState.signInWithGoogle();
-              await _ensurePublicProfile();
-              if (!mounted) return;
-              if (_canUseSocial) {
-                Navigator.of(loginContext).pop();
-                setState(() {});
-                _showSnack('Full account connected. Social is now available.');
-              } else {
-                _showSnack('Google sign-in did not finish. Please try again.');
-              }
-            } catch (e) {
-              _showSnack('Google sign-in failed: $e');
-            }
-          },
-          onLinkedIn: () {
-            _showSnack('LinkedIn login is not configured yet. Use Google for full account access.');
-          },
-          onGuest: () {
-            Navigator.of(loginContext).pop();
-          },
-        ),
+        builder: (_) => const _FullAccountLoginPage(),
       ),
     );
 
+    await _ensurePublicProfile();
     if (mounted) setState(() {});
   }
-
 
   Widget _buildFriendsTab(BuildContext context) {
     return StreamBuilder<List<_FriendProfile>>(
@@ -371,14 +343,18 @@ class _CommunityPageState extends State<CommunityPage> {
           for (var i = 0; i < friends.length; i++)
             _LeaderboardEntry(
               friends[i].displayName,
-              friends[i].streak > 0 ? friends[i].streak : max(2, widget.streak - i + 2),
+              friends[i].streak > 0
+                  ? friends[i].streak
+                  : max(2, widget.streak - i + 2),
             ),
         ]..sort((a, b) => b.streak.compareTo(a.streak));
 
         final topThree = leaderboard.take(3).toList();
-        final friendPreview = friends.length > 5 ? friends.take(5).toList() : friends;
+        final friendPreview =
+            friends.length > 5 ? friends.take(5).toList() : friends;
         final hasMoreThanFive = friends.length > 5;
-        final currentFriendNames = friends.map((friend) => friend.displayName).toSet();
+        final currentFriendNames =
+            friends.map((friend) => friend.displayName).toSet();
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -397,7 +373,8 @@ class _CommunityPageState extends State<CommunityPage> {
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
-                          onPressed: () => _openLeaderboardPage(context, leaderboard),
+                          onPressed: () =>
+                              _openLeaderboardPage(context, leaderboard),
                           icon: const Icon(Icons.emoji_events_rounded),
                           label: const Text('View full leaderboard'),
                         ),
@@ -413,7 +390,8 @@ class _CommunityPageState extends State<CommunityPage> {
             if (friends.isEmpty)
               const HelpfulErrorBox(
                 title: 'No friends yet',
-                message: 'Add accountability friends from Firestore profiles so progress and chat can sync.',
+                message:
+                    'Add accountability friends from Firestore profiles so progress and chat can sync.',
                 actionLabel: 'Got it',
                 showAction: false,
               )
@@ -429,9 +407,9 @@ class _CommunityPageState extends State<CommunityPage> {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                     style: OutlinedButton.styleFrom(
+                    style: OutlinedButton.styleFrom(
                       backgroundColor: gdPrimary, // change this
-                      foregroundColor: gdCardLight,   // text/icon color
+                      foregroundColor: gdCardLight, // text/icon color
                       side: const BorderSide(color: gdPrimary, width: 1.5),
                     ),
                     onPressed: () => _openAllFriendsPage(context, friends),
@@ -455,7 +433,8 @@ class _CommunityPageState extends State<CommunityPage> {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: () => _openFindFriendsPage(context, currentFriendNames),
+                  onPressed: () =>
+                      _openFindFriendsPage(context, currentFriendNames),
                   icon: const Icon(Icons.person_search_rounded),
                   label: const Text('Find friends'),
                 ),
@@ -471,70 +450,13 @@ class _CommunityPageState extends State<CommunityPage> {
     );
   }
 
-
-  List<CommunityGroup> _debugDummyJoinedCommunities() {
-    return [
-      CommunityGroup(
-        name: 'Portfolio Builders',
-        members: 142,
-        tag: 'Career',
-        description: 'Build portfolio projects, share progress, and keep each other accountable.',
-        similarity: 88,
-        joined: true,
-      ),
-      CommunityGroup(
-        name: 'Study Sprint Club',
-        members: 89,
-        tag: 'Exam prep',
-        description: 'Daily study check-ins, sprint sessions, and exam preparation support.',
-        similarity: 94,
-        joined: true,
-      ),
-      CommunityGroup(
-        name: 'Calm Wellness Crew',
-        members: 76,
-        tag: 'Wellness',
-        description: 'A supportive group for routines, reflection, and balanced productivity.',
-        similarity: 81,
-        joined: true,
-      ),
-      CommunityGroup(
-        name: 'Code Every Day',
-        members: 118,
-        tag: 'Programming',
-        description: 'Practice coding daily, finish side projects, and review each others work.',
-        similarity: 91,
-        joined: true,
-      ),
-      CommunityGroup(
-        name: 'Focus Mode Squad',
-        members: 64,
-        tag: 'Productivity',
-        description: 'Use focus sessions together and report completed tasks at the end of the day.',
-        similarity: 86,
-        joined: true,
-      ),
-      CommunityGroup(
-        name: 'AI App Makers',
-        members: 53,
-        tag: 'AI apps',
-        description: 'Build small AI-powered apps and ship demos fast.',
-        similarity: 90,
-        joined: true,
-      ),
-    ];
-  }
-
   Widget _buildCommunitiesTab(BuildContext context) {
     final groups = widget.communities;
-    final joined = kDebugUseDummyJoinedCommunities
-        ? _debugDummyJoinedCommunities()
-        : groups.where((group) => group.joined).toList();
-    final leaderboard = [...groups]..sort((a, b) => b.members.compareTo(a.members));
-
+    final joined = groups.where((group) => group.joined).toList();
+    final leaderboard = [...groups]
+      ..sort((a, b) => b.members.compareTo(a.members));
     final topThree = leaderboard.take(3).toList();
-    final communityPreview = joined.length > 5 ? joined.take(5).toList() : joined;
-    final hasJoinedCommunities = joined.isNotEmpty;
+    final communityPreview = joined.take(5).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -547,7 +469,8 @@ class _CommunityPageState extends State<CommunityPage> {
               children: [
                 const Text(
                   'Create or join community',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: gdInk),
+                  style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w900, color: gdInk),
                 ),
                 const SizedBox(height: 10),
                 TextField(
@@ -571,7 +494,7 @@ class _CommunityPageState extends State<CommunityPage> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: () => _showSnack('Join with code is not configured yet.'),
+                        onPressed: () {},
                         icon: const Icon(Icons.login_rounded),
                         label: const Text('Join with code'),
                       ),
@@ -582,9 +505,7 @@ class _CommunityPageState extends State<CommunityPage> {
             ),
           ),
         ),
-
         const SizedBox(height: 18),
-
         SectionTitle(title: 'Community streak leaderboard', trailing: 'TOP 3'),
         const SizedBox(height: 10),
         AppCard(
@@ -592,59 +513,83 @@ class _CommunityPageState extends State<CommunityPage> {
             padding: const EdgeInsets.all(14),
             child: Column(
               children: [
-                if (topThree.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(14),
-                    child: Text(
-                      'No communities yet.',
-                      style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                for (var i = 0; i < topThree.length; i++)
+                  _CommunityLeaderboardTile(rank: i + 1, group: topThree[i]),
+                if (leaderboard.isNotEmpty) ...[
+                  const Divider(height: 22),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () =>
+                          _openCommunityLeaderboardPage(context, leaderboard),
+                      icon: const Icon(Icons.emoji_events_rounded),
+                      label: const Text('View full leaderboard'),
                     ),
-                  )
-                else
-                  for (var i = 0; i < topThree.length; i++)
-                    _CommunityLeaderboardTile(rank: i + 1, group: topThree[i]),
-                const Divider(height: 22),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => _openCommunityLeaderboardPage(context, leaderboard),
-                    icon: const Icon(Icons.emoji_events_rounded),
-                    label: const Text('View full leaderboard'),
                   ),
-                ),
+                ],
               ],
             ),
           ),
         ),
-
         const SizedBox(height: 18),
-
         SectionTitle(title: 'My community list', trailing: '${joined.length}'),
         const SizedBox(height: 10),
-        if (joined.isEmpty) ...[
-          const HelpfulErrorBox(
-            title: 'No joined communities yet',
-            message: 'Find a community that matches your goals or create your own group above.',
-            actionLabel: 'Got it',
-            showAction: false,
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: () => _openFindCommunitiesPage(context),
-              icon: const Icon(Icons.groups_rounded),
-              label: const Text('Find communities'),
-            ),
-          ),
-        ] else ...[
+        if (joined.isEmpty)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const HelpfulErrorBox(
+                title: 'No joined communities yet',
+                message: 'Find a suggested community or create your own group.',
+                actionLabel: 'Got it',
+                showAction: false,
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => _openFindCommunitiesPage(context),
+                  icon: const Icon(Icons.travel_explore_rounded),
+                  label: const Text('Find communities'),
+                ),
+              ),
+            ],
+          )
+        else ...[
           for (final group in communityPreview)
-            _CommunityListCard(
-              group: group,
-              onChat: () => _openCommunityChatPage(context, group),
-              onDelete: () => widget.onDeleteCommunity(group),
+            AppCard(
+              margin: const EdgeInsets.only(bottom: 10),
+              child: ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: gdPrimarySoft,
+                  child: Icon(Icons.groups_rounded, color: gdPrimary),
+                ),
+                title: Text(group.name,
+                    style: const TextStyle(fontWeight: FontWeight.w900)),
+                subtitle: Text(
+                  '${group.members} members · ${group.tag}',
+                  style: const TextStyle(
+                      color: gdMuted, fontWeight: FontWeight.w700),
+                ),
+                trailing: Wrap(
+                  spacing: 4,
+                  children: [
+                    IconButton.filledTonal(
+                      tooltip: 'Community chat',
+                      onPressed: () => _openCommunityChatPage(context, group),
+                      icon: const Icon(Icons.chat_bubble_rounded),
+                    ),
+                    IconButton(
+                      tooltip: 'Delete community',
+                      onPressed: () => widget.onDeleteCommunity(group),
+                      icon: const Icon(Icons.delete_outline_rounded,
+                          color: gdError),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          if (hasJoinedCommunities) ...[
+          ...[
             const SizedBox(height: 4),
             SizedBox(
               width: double.infinity,
@@ -654,20 +599,61 @@ class _CommunityPageState extends State<CommunityPage> {
                   foregroundColor: gdCardLight,
                   side: const BorderSide(color: gdPrimary, width: 1.5),
                 ),
-                onPressed: () => _openAllCommunitiesPage(context, joined),
+                onPressed: () =>
+                    _openAllCommunitiesPage(context, widget.communities),
                 icon: const Icon(Icons.groups_rounded),
                 label: Text('View all communities (${joined.length})'),
               ),
             ),
+            const SizedBox(height: 8),
           ],
         ],
-
         const SizedBox(height: 70),
       ],
     );
   }
 
-  void _openFindFriendsPage(BuildContext context, [Set<String>? currentFriendNames]) {
+  void _openFindCommunitiesPage(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _FindCommunitiesPage(
+          communities: widget.communities,
+          onJoin: (group) {
+            widget.onJoinCommunity(group);
+            setState(() {});
+          },
+        ),
+      ),
+    );
+  }
+
+  void _openAllCommunitiesPage(
+      BuildContext context, List<CommunityGroup> communities) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _AllCommunitiesPage(
+          communities: communities,
+          onChat: (group) => _openCommunityChatPage(context, group),
+          onDelete: (group) {
+            widget.onDeleteCommunity(group);
+            setState(() {});
+          },
+          onFindCommunities: () => _openFindCommunitiesPage(context),
+        ),
+      ),
+    );
+  }
+
+  void _openCommunityLeaderboardPage(
+      BuildContext context, List<CommunityGroup> leaderboard) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+          builder: (_) => _CommunityLeaderboardPage(leaderboard: leaderboard)),
+    );
+  }
+
+  void _openFindFriendsPage(BuildContext context,
+      [Set<String>? currentFriendNames]) {
     if (!_canUseSocial) {
       _showSnack('Use a full account before finding friends.');
       return;
@@ -679,7 +665,8 @@ class _CommunityPageState extends State<CommunityPage> {
           currentUid: _user?.uid,
           publicProfiles: _publicProfiles,
           friendSuggestions: widget.friendSuggestions,
-          currentFriendNames: currentFriendNames ?? _fallbackFriends().map((friend) => friend.displayName).toSet(),
+          currentFriendNames: currentFriendNames ??
+              _fallbackFriends().map((friend) => friend.displayName).toSet(),
           onAddFriend: _addFriend,
         ),
       ),
@@ -702,9 +689,11 @@ class _CommunityPageState extends State<CommunityPage> {
     );
   }
 
-  void _openLeaderboardPage(BuildContext context, List<_LeaderboardEntry> leaderboard) {
+  void _openLeaderboardPage(
+      BuildContext context, List<_LeaderboardEntry> leaderboard) {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => _LeaderboardPage(leaderboard: leaderboard)),
+      MaterialPageRoute(
+          builder: (_) => _LeaderboardPage(leaderboard: leaderboard)),
     );
   }
 
@@ -724,104 +713,88 @@ class _CommunityPageState extends State<CommunityPage> {
       MaterialPageRoute(builder: (_) => _CommunityChatPage(group: group)),
     );
   }
-
-  void _openAllCommunitiesPage(BuildContext context, List<CommunityGroup> communities) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => _AllCommunitiesPage(
-          communities: communities,
-          onChat: (group) => _openCommunityChatPage(context, group),
-          onDelete: (group) => widget.onDeleteCommunity(group),
-          onFindCommunities: () => _openFindCommunitiesPage(context),
-        ),
-      ),
-    );
-  }
-
-  void _openFindCommunitiesPage(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => _FindCommunitiesPage(
-          communities: widget.communities,
-          onJoinCommunity: widget.onJoinCommunity,
-        ),
-      ),
-    );
-  }
-
-  void _openCommunityLeaderboardPage(BuildContext context, List<CommunityGroup> leaderboard) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => _CommunityLeaderboardPage(leaderboard: leaderboard),
-      ),
-    );
-  }
-
 }
 
-
 class _FullAccountLoginPage extends StatelessWidget {
-  const _FullAccountLoginPage({
-    required this.onGoogle,
-    required this.onLinkedIn,
-    required this.onGuest,
-  });
+  const _FullAccountLoginPage();
 
-  final VoidCallback onGoogle;
-  final VoidCallback onLinkedIn;
-  final VoidCallback onGuest;
+  Future<void> _handleEmailAuth(
+    BuildContext context,
+    String email,
+    String password,
+    String? displayName,
+    bool isSignUp,
+  ) async {
+    final authState = context.read<AuthState>();
+
+    if (isSignUp) {
+      await authState.createAccountWithEmail(
+        email: email,
+        password: password,
+        displayName:
+            displayName?.trim().isEmpty == true ? null : displayName?.trim(),
+      );
+    } else {
+      await authState.signInWithEmail(email, password);
+    }
+
+    if (!context.mounted) return;
+
+    if (authState.isSignedIn) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _handleGoogle(BuildContext context) async {
+    final authState = context.read<AuthState>();
+    await authState.signInWithGoogle();
+
+    if (!context.mounted) return;
+
+    if (authState.isSignedIn) {
+      Navigator.of(context).pop();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Use full account'),
-      ),
-      body: SafeArea(
-        top: false,
-        child: Stack(
+    return Consumer<AuthState>(
+      builder: (context, authState, _) {
+        return Stack(
           children: [
-            const AmbientBackground(),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 900;
-                final tutorial = const TutorialIntroPanel();
-                final login = SimpleOnboardingCard(
-                  onGoogle: onGoogle,
-                  onLinkedIn: onLinkedIn,
-                  onGuest: onGuest,
-                );
-
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.all(18),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1120),
-                      child: wide
-                          ? Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(flex: 6, child: tutorial),
-                                const SizedBox(width: 24),
-                                Expanded(flex: 4, child: login),
-                              ],
-                            )
-                          : Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                tutorial,
-                                const SizedBox(height: 18),
-                                login,
-                              ],
-                            ),
-                    ),
-                  ),
-                );
-              },
+            OnboardingScreen(
+              onEmailAuth: (
+                email,
+                password,
+                displayName,
+                isSignUp,
+              ) =>
+                  _handleEmailAuth(
+                context,
+                email,
+                password,
+                displayName,
+                isSignUp,
+              ),
+              onGoogle: () => unawaited(_handleGoogle(context)),
+              onGuest: () => Navigator.of(context).pop(),
+              onClearError: authState.clearError,
+              isLoading: authState.isLoading,
+              errorMessage: authState.errorMessage,
+            ),
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: IconButton.filledTonal(
+                  tooltip: 'Back',
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.arrow_back_rounded),
+                ),
+              ),
             ),
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -843,7 +816,8 @@ class _FriendListCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
         leading: _Avatar(photoUrl: friend.photoUrl, label: friend.displayName),
-        title: Text(friend.displayName, style: const TextStyle(fontWeight: FontWeight.w900)),
+        title: Text(friend.displayName,
+            style: const TextStyle(fontWeight: FontWeight.w900)),
         subtitle: Text(
           '${friend.username} · ${friend.streak} day streak',
           maxLines: 1,
@@ -902,7 +876,8 @@ class _AllFriendsPageState extends State<_AllFriendsPage> {
     final filtered = widget.friends.where((friend) {
       final q = _query.trim().toLowerCase();
       if (q.isEmpty) return true;
-      return friend.displayName.toLowerCase().contains(q) || friend.username.toLowerCase().contains(q);
+      return friend.displayName.toLowerCase().contains(q) ||
+          friend.username.toLowerCase().contains(q);
     }).toList();
 
     return Scaffold(
@@ -943,54 +918,6 @@ class _AllFriendsPageState extends State<_AllFriendsPage> {
   }
 }
 
-
-class _CommunityListCard extends StatelessWidget {
-  const _CommunityListCard({
-    required this.group,
-    required this.onChat,
-    required this.onDelete,
-  });
-
-  final CommunityGroup group;
-  final VoidCallback onChat;
-  final VoidCallback onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        leading: const CircleAvatar(
-          backgroundColor: gdPrimarySoft,
-          child: Icon(Icons.groups_rounded, color: gdPrimary),
-        ),
-        title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w900)),
-        subtitle: Text(
-          '${group.members} members · ${group.tag}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
-        ),
-        trailing: Wrap(
-          spacing: 4,
-          children: [
-            IconButton.filledTonal(
-              tooltip: 'Community chat',
-              onPressed: onChat,
-              icon: const Icon(Icons.chat_bubble_rounded),
-            ),
-            IconButton(
-              tooltip: 'Delete community',
-              onPressed: onDelete,
-              icon: const Icon(Icons.delete_outline_rounded, color: gdError),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _AllCommunitiesPage extends StatefulWidget {
   const _AllCommunitiesPage({
     required this.communities,
@@ -1021,6 +948,7 @@ class _AllCommunitiesPageState extends State<_AllCommunitiesPage> {
   @override
   Widget build(BuildContext context) {
     final filtered = widget.communities.where((group) {
+      if (!group.joined) return false;
       final q = _query.trim().toLowerCase();
       if (q.isEmpty) return true;
       return group.name.toLowerCase().contains(q) ||
@@ -1035,7 +963,7 @@ class _AllCommunitiesPageState extends State<_AllCommunitiesPage> {
           IconButton(
             tooltip: 'Find communities',
             onPressed: widget.onFindCommunities,
-            icon: const Icon(Icons.group_add_rounded),
+            icon: const Icon(Icons.travel_explore_rounded),
           ),
           const SizedBox(width: 8),
         ],
@@ -1056,7 +984,8 @@ class _AllCommunitiesPageState extends State<_AllCommunitiesPage> {
             if (filtered.isEmpty)
               const HelpfulErrorBox(
                 title: 'No communities found',
-                message: 'Try a different search keyword.',
+                message:
+                    'Try a different search or find a new community to join.',
                 actionLabel: 'OK',
                 showAction: false,
               )
@@ -1065,7 +994,10 @@ class _AllCommunitiesPageState extends State<_AllCommunitiesPage> {
                 _CommunityListCard(
                   group: group,
                   onChat: () => widget.onChat(group),
-                  onDelete: () => widget.onDelete(group),
+                  onDelete: () {
+                    widget.onDelete(group);
+                    setState(() {});
+                  },
                 ),
           ],
         ),
@@ -1077,11 +1009,11 @@ class _AllCommunitiesPageState extends State<_AllCommunitiesPage> {
 class _FindCommunitiesPage extends StatefulWidget {
   const _FindCommunitiesPage({
     required this.communities,
-    required this.onJoinCommunity,
+    required this.onJoin,
   });
 
   final List<CommunityGroup> communities;
-  final ValueChanged<CommunityGroup> onJoinCommunity;
+  final ValueChanged<CommunityGroup> onJoin;
 
   @override
   State<_FindCommunitiesPage> createState() => _FindCommunitiesPageState();
@@ -1089,7 +1021,6 @@ class _FindCommunitiesPage extends StatefulWidget {
 
 class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
   final TextEditingController _searchController = TextEditingController();
-  final Set<String> _locallyJoinedCommunityNames = <String>{};
   String _query = '';
 
   @override
@@ -1098,23 +1029,18 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
     super.dispose();
   }
 
-  List<CommunityGroup> get _suggestions {
+  @override
+  Widget build(BuildContext context) {
     final q = _query.trim().toLowerCase();
-    final suggested = [...widget.communities]
+    final suggestions = [...widget.communities]
       ..sort((a, b) => b.similarity.compareTo(a.similarity));
-
-    return suggested.where((group) {
-      if (group.joined || _locallyJoinedCommunityNames.contains(group.name)) return false;
+    final filtered = suggestions.where((group) {
+      if (group.joined) return false;
       if (q.isEmpty) return true;
       return group.name.toLowerCase().contains(q) ||
           group.tag.toLowerCase().contains(q) ||
           group.description.toLowerCase().contains(q);
     }).toList();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final suggestions = _suggestions;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Find communities')),
@@ -1129,13 +1055,11 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Find communities',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: gdInk),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Search by topic, goal, or tag. Join a group to add it to your community list.',
-                      style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                      'Search community suggestions',
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: gdInk),
                     ),
                     const SizedBox(height: 14),
                     TextField(
@@ -1154,88 +1078,26 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
             const SizedBox(height: 16),
             SectionTitle(title: 'Community suggestions'),
             const SizedBox(height: 10),
-            if (suggestions.isEmpty)
+            if (filtered.isEmpty)
               const HelpfulErrorBox(
-                title: 'No communities found',
-                message: 'Try another keyword or create your own community from the Social page.',
+                title: 'No suggestions found',
+                message:
+                    'Try another keyword or create a new community from the Social page.',
                 actionLabel: 'OK',
                 showAction: false,
               )
             else
-              ...suggestions.take(10).map(
-                    (group) => CommunityMatchCard(
-                      group: group,
-                      onJoin: () {
-                        widget.onJoinCommunity(group);
-                        setState(() => _locallyJoinedCommunityNames.add(group.name));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Joined ${group.name}.'),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CommunityLeaderboardPage extends StatelessWidget {
-  const _CommunityLeaderboardPage({required this.leaderboard});
-
-  final List<CommunityGroup> leaderboard;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Community leaderboard')),
-      body: PageScaffold(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
-          children: [
-            AppCard(
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  children: [
-                    for (var i = 0; i < leaderboard.length; i++)
-                      _CommunityLeaderboardTile(rank: i + 1, group: leaderboard[i]),
-                  ],
+              for (final group in filtered)
+                CommunityMatchCard(
+                  group: group,
+                  onJoin: () {
+                    widget.onJoin(group);
+                    setState(() {});
+                  },
                 ),
-              ),
-            ),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _CommunityLeaderboardTile extends StatelessWidget {
-  const _CommunityLeaderboardTile({required this.rank, required this.group});
-
-  final int rank;
-  final CommunityGroup group;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: rank == 1 ? gdAccentSoft : gdPrimarySoft,
-        child: Text('#$rank', style: const TextStyle(fontWeight: FontWeight.w900)),
-      ),
-      title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w900)),
-      subtitle: Text(
-        '${group.members} members · ${group.tag}',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
-      ),
-      trailing: Chip(label: Text('${group.similarity}% fit')),
     );
   }
 }
@@ -1275,13 +1137,13 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
 
     Query<Map<String, dynamic>> query;
     if (q.isEmpty) {
-      query = widget.publicProfiles.orderBy('updatedAt', descending: true).limit(20);
+      query = widget.publicProfiles
+          .orderBy('updatedAt', descending: true)
+          .limit(20);
     } else {
       query = widget.publicProfiles
           .orderBy('searchName')
-          .startAt([q])
-          .endAt(['$q\uf8ff'])
-          .limit(20);
+          .startAt([q]).endAt(['$q\uf8ff']).limit(20);
     }
 
     return query.snapshots().map((snapshot) {
@@ -1320,19 +1182,24 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                       CircleAvatar(
                         radius: 34,
                         backgroundColor: gdPrimarySoft,
-                        child: Icon(Icons.lock_outline_rounded, color: gdPrimary, size: 34),
+                        child: Icon(Icons.lock_outline_rounded,
+                            color: gdPrimary, size: 34),
                       ),
                       SizedBox(height: 14),
                       Text(
                         'Sign in required',
-                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: gdInk),
+                        style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            color: gdInk),
                         textAlign: TextAlign.center,
                       ),
                       SizedBox(height: 8),
                       Text(
                         'Friend search needs an account so Firestore can check permissions safely.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                        style: TextStyle(
+                            color: gdMuted, fontWeight: FontWeight.w700),
                       ),
                     ],
                   ),
@@ -1358,12 +1225,16 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                   children: [
                     const Text(
                       'Search Firestore profiles',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: gdInk),
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: gdInk),
                     ),
                     const SizedBox(height: 8),
                     const Text(
                       'Users appear here after they open the Social page once. This keeps private user data out of public search.',
-                      style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                          color: gdMuted, fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 14),
                     TextField(
@@ -1393,13 +1264,17 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
               stream: _profileStream(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()));
+                  return const Center(
+                      child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: CircularProgressIndicator()));
                 }
 
                 if (snapshot.hasError) {
                   return HelpfulErrorBox(
                     title: 'Friend search failed',
-                    message: 'Check Firestore rules and public_profiles indexes. Details: ${snapshot.error}',
+                    message:
+                        'Check Firestore rules and public_profiles indexes. Details: ${snapshot.error}',
                     actionLabel: 'OK',
                     showAction: false,
                   );
@@ -1409,7 +1284,8 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                 if (profiles.isEmpty) {
                   return const HelpfulErrorBox(
                     title: 'No profiles found',
-                    message: 'Ask your teammate to sign in and open the Social page once, then search again.',
+                    message:
+                        'Ask your teammate to sign in and open the Social page once, then search again.',
                     actionLabel: 'OK',
                     showAction: false,
                   );
@@ -1421,14 +1297,20 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                       AppCard(
                         margin: const EdgeInsets.only(bottom: 10),
                         child: ListTile(
-                          leading: _Avatar(photoUrl: profile.photoUrl, label: profile.displayName),
-                          title: Text(profile.displayName, style: const TextStyle(fontWeight: FontWeight.w900)),
+                          leading: _Avatar(
+                              photoUrl: profile.photoUrl,
+                              label: profile.displayName),
+                          title: Text(profile.displayName,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w900)),
                           subtitle: Text(
                             '${profile.username} · ${profile.streak} day streak',
-                            style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                            style: const TextStyle(
+                                color: gdMuted, fontWeight: FontWeight.w700),
                           ),
                           trailing: FilledButton(
-                            onPressed: _adding ? null : () => unawaited(_add(profile)),
+                            onPressed:
+                                _adding ? null : () => unawaited(_add(profile)),
                             child: const Text('Add'),
                           ),
                         ),
@@ -1480,16 +1362,19 @@ class _SuggestedFriendsPanel extends StatelessWidget {
                     backgroundColor: gdPrimarySoft,
                     child: Text(
                       filtered[i].substring(0, 1).toUpperCase(),
-                      style: const TextStyle(color: gdPrimary, fontWeight: FontWeight.w900),
+                      style: const TextStyle(
+                          color: gdPrimary, fontWeight: FontWeight.w900),
                     ),
                   ),
                   title: Text(
                     filtered[i],
-                    style: const TextStyle(fontWeight: FontWeight.w900, color: gdInk),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w900, color: gdInk),
                   ),
                   subtitle: const Text(
                     'Suggested accountability friend',
-                    style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                    style:
+                        TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
                   ),
                   trailing: OutlinedButton(
                     onPressed: () => onSearchSuggestion(filtered[i]),
@@ -1542,13 +1427,13 @@ class _DirectChatPageState extends State<_DirectChatPage> {
     final user = _user;
     final text = _controller.text.trim();
     if (user == null) {
-        _snack('Sign in before sending chat messages.');
-        return;
+      _snack('Sign in before sending chat messages.');
+      return;
     }
 
     if (user.isAnonymous && !kDebugAllowGuestSocialAccess) {
-        _snack('Use a full account before sending chat messages.');
-        return;
+      _snack('Use a full account before sending chat messages.');
+      return;
     }
     if (text.isEmpty || _sending) return;
 
@@ -1609,19 +1494,24 @@ class _DirectChatPageState extends State<_DirectChatPage> {
                       CircleAvatar(
                         radius: 34,
                         backgroundColor: gdPrimarySoft,
-                        child: Icon(Icons.lock_outline_rounded, color: gdPrimary, size: 34),
+                        child: Icon(Icons.lock_outline_rounded,
+                            color: gdPrimary, size: 34),
                       ),
                       SizedBox(height: 14),
                       Text(
                         'Sign in required',
-                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: gdInk),
+                        style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            color: gdInk),
                         textAlign: TextAlign.center,
                       ),
                       SizedBox(height: 8),
                       Text(
                         'Chat needs an account so messages can be saved safely.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                        style: TextStyle(
+                            color: gdMuted, fontWeight: FontWeight.w700),
                       ),
                     ],
                   ),
@@ -1637,9 +1527,14 @@ class _DirectChatPageState extends State<_DirectChatPage> {
       appBar: AppBar(
         title: Row(
           children: [
-            _Avatar(photoUrl: widget.friend.photoUrl, label: widget.friend.displayName, radius: 18),
+            _Avatar(
+                photoUrl: widget.friend.photoUrl,
+                label: widget.friend.displayName,
+                radius: 18),
             const SizedBox(width: 10),
-            Expanded(child: Text(widget.friend.displayName, overflow: TextOverflow.ellipsis)),
+            Expanded(
+                child: Text(widget.friend.displayName,
+                    overflow: TextOverflow.ellipsis)),
           ],
         ),
       ),
@@ -1648,7 +1543,10 @@ class _DirectChatPageState extends State<_DirectChatPage> {
           children: [
             Expanded(
               child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: _messages.orderBy('createdAt', descending: true).limit(60).snapshots(),
+                stream: _messages
+                    .orderBy('createdAt', descending: true)
+                    .limit(60)
+                    .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
                     return Center(
@@ -1656,7 +1554,8 @@ class _DirectChatPageState extends State<_DirectChatPage> {
                         padding: const EdgeInsets.all(18),
                         child: HelpfulErrorBox(
                           title: 'Chat failed to load',
-                          message: 'Check Firestore chat rules. Details: ${snapshot.error}',
+                          message:
+                              'Check Firestore chat rules. Details: ${snapshot.error}',
                           actionLabel: 'OK',
                           showAction: false,
                         ),
@@ -1672,7 +1571,8 @@ class _DirectChatPageState extends State<_DirectChatPage> {
                         child: Text(
                           'No messages yet. Send a quick accountability update.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
+                          style: TextStyle(
+                              color: gdMuted, fontWeight: FontWeight.w800),
                         ),
                       ),
                     );
@@ -1699,7 +1599,7 @@ class _DirectChatPageState extends State<_DirectChatPage> {
               top: false,
               child: Container(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                color: gdSurface.withOpacity(0.92),
+                color: gdSurface.withValues(alpha: 0.92),
                 child: Row(
                   children: [
                     Expanded(
@@ -1717,12 +1617,61 @@ class _DirectChatPageState extends State<_DirectChatPage> {
                     IconButton.filled(
                       onPressed: _sending ? null : () => unawaited(_send()),
                       icon: _sending
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.send_rounded),
                     ),
                   ],
                 ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CommunityListCard extends StatelessWidget {
+  const _CommunityListCard({
+    required this.group,
+    required this.onChat,
+    required this.onDelete,
+  });
+
+  final CommunityGroup group;
+  final VoidCallback onChat;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: ListTile(
+        leading: const CircleAvatar(
+          backgroundColor: gdPrimarySoft,
+          child: Icon(Icons.groups_rounded, color: gdPrimary),
+        ),
+        title: Text(group.name,
+            style: const TextStyle(fontWeight: FontWeight.w900)),
+        subtitle: Text(
+          '${group.members} members - ${group.tag}',
+          style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+        ),
+        trailing: Wrap(
+          spacing: 4,
+          children: [
+            IconButton.filledTonal(
+              tooltip: 'Community chat',
+              onPressed: onChat,
+              icon: const Icon(Icons.chat_bubble_rounded),
+            ),
+            IconButton(
+              tooltip: 'Delete community',
+              onPressed: onDelete,
+              icon: const Icon(Icons.delete_outline_rounded, color: gdError),
             ),
           ],
         ),
@@ -1753,15 +1702,19 @@ class _CommunityChatPage extends StatelessWidget {
                     const CircleAvatar(
                       radius: 34,
                       backgroundColor: gdPrimarySoft,
-                      child: Icon(Icons.forum_rounded, color: gdPrimary, size: 34),
+                      child:
+                          Icon(Icons.forum_rounded, color: gdPrimary, size: 34),
                     ),
                     const SizedBox(height: 14),
-                    Text(group.name, style: Theme.of(context).textTheme.headlineMedium, textAlign: TextAlign.center),
+                    Text(group.name,
+                        style: Theme.of(context).textTheme.headlineMedium,
+                        textAlign: TextAlign.center),
                     const SizedBox(height: 8),
                     const Text(
                       'Community chat is now a separate page. Wire this to chats/{communityId}/messages later if your demo needs group chat.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                          color: gdMuted, fontWeight: FontWeight.w700),
                     ),
                   ],
                 ),
@@ -1770,6 +1723,63 @@ class _CommunityChatPage extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CommunityLeaderboardPage extends StatelessWidget {
+  const _CommunityLeaderboardPage({required this.leaderboard});
+
+  final List<CommunityGroup> leaderboard;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Community leaderboard')),
+      body: PageScaffold(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
+          children: [
+            AppCard(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  children: [
+                    for (var i = 0; i < leaderboard.length; i++)
+                      _CommunityLeaderboardTile(
+                          rank: i + 1, group: leaderboard[i]),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CommunityLeaderboardTile extends StatelessWidget {
+  const _CommunityLeaderboardTile({required this.rank, required this.group});
+
+  final int rank;
+  final CommunityGroup group;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: rank == 1 ? gdAccentSoft : gdPrimarySoft,
+        child:
+            Text('#$rank', style: const TextStyle(fontWeight: FontWeight.w900)),
+      ),
+      title:
+          Text(group.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+      subtitle: Text(
+        '${group.members} members',
+        style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+      ),
+      trailing: Chip(label: Text('${group.similarity}% fit')),
     );
   }
 }
@@ -1816,11 +1826,14 @@ class _LeaderboardTile extends StatelessWidget {
     return ListTile(
       leading: CircleAvatar(
         backgroundColor: rank == 1 ? gdAccentSoft : gdPrimarySoft,
-        child: Text('#$rank', style: const TextStyle(fontWeight: FontWeight.w900)),
+        child:
+            Text('#$rank', style: const TextStyle(fontWeight: FontWeight.w900)),
       ),
       title: Text(
         entry.name,
-        style: TextStyle(fontWeight: FontWeight.w900, color: entry.isYou ? gdPrimaryDark : gdInk),
+        style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: entry.isYou ? gdPrimaryDark : gdInk),
       ),
       trailing: Chip(label: Text('${entry.streak} day streak')),
     );
@@ -1843,7 +1856,8 @@ class _MessageBubble extends StatelessWidget {
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.76),
+        constraints:
+            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.76),
         margin: const EdgeInsets.symmetric(vertical: 5),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
@@ -1854,7 +1868,7 @@ class _MessageBubble extends StatelessWidget {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha: 0.06),
               blurRadius: 16,
               offset: const Offset(0, 8),
             ),
@@ -1868,12 +1882,17 @@ class _MessageBubble extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 3),
                 child: Text(
                   senderName,
-                  style: const TextStyle(color: gdMuted, fontSize: 12, fontWeight: FontWeight.w900),
+                  style: const TextStyle(
+                      color: gdMuted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900),
                 ),
               ),
             Text(
               text,
-              style: TextStyle(color: isMine ? Colors.white : gdInk, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                  color: isMine ? Colors.white : gdInk,
+                  fontWeight: FontWeight.w700),
             ),
           ],
         ),
@@ -1883,7 +1902,8 @@ class _MessageBubble extends StatelessWidget {
 }
 
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.photoUrl, required this.label, this.radius = 22});
+  const _Avatar(
+      {required this.photoUrl, required this.label, this.radius = 22});
 
   final String? photoUrl;
   final String label;
@@ -1923,7 +1943,8 @@ class _FriendProfile {
   final int streak;
   final bool isReal;
 
-  factory _FriendProfile.fromFriendDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+  factory _FriendProfile.fromFriendDoc(
+      DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? {};
     return _FriendProfile(
       uid: (data['uid'] ?? doc.id).toString(),
@@ -1938,9 +1959,11 @@ class _FriendProfile {
   factory _FriendProfile.demo(String name) {
     final cleaned = name.trim();
     return _FriendProfile(
-      uid: 'demo_${cleaned.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
+      uid:
+          'demo_${cleaned.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
       displayName: cleaned,
-      username: '@${cleaned.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
+      username:
+          '@${cleaned.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
       photoUrl: null,
       streak: 2,
       isReal: false,
@@ -2015,7 +2038,9 @@ class _SegmentButton extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               label,
-              style: TextStyle(color: selected ? Colors.white : gdInk, fontWeight: FontWeight.w900),
+              style: TextStyle(
+                  color: selected ? Colors.white : gdInk,
+                  fontWeight: FontWeight.w900),
             ),
           ],
         ),
@@ -2078,7 +2103,9 @@ class CommunityMatchCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                  child: Text(group.name,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w900, fontSize: 16)),
                 ),
                 Chip(label: Text('${group.similarity}% match')),
               ],
@@ -2086,15 +2113,19 @@ class CommunityMatchCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               '${group.members} members · ${group.tag}',
-              style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
+              style:
+                  const TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
-            Text(group.description, style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w600)),
+            Text(group.description,
+                style: const TextStyle(
+                    color: gdMuted, fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               child: group.joined
-                  ? const OutlinedButton(onPressed: null, child: Text('Already joined'))
+                  ? const OutlinedButton(
+                      onPressed: null, child: Text('Already joined'))
                   : FilledButton.icon(
                       onPressed: onJoin,
                       icon: const Icon(Icons.group_add_rounded),
