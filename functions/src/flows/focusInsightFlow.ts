@@ -1,60 +1,91 @@
 // functions/src/flows/focusInsightFlow.ts
+//
+// Generates a post-session insight after the user completes (or stops) a
+// focus timer. Rewards completed sessions with coins and an AI reflection.
 
 import { z } from "genkit";
 import { getAI, defaultModel } from "../ai";
 import { parseModelJson } from "../json";
 
-const inputSchema = z.object({
+const FocusInsightInputSchema = z.object({
   taskTitle:       z.string(),
   goalTitle:       z.string(),
-  durationMinutes: z.number().int(),
+  durationMinutes: z.number().min(1),
   completed:       z.boolean(),
 });
 
-const outputSchema = z.object({
-  insight:      z.string(),
-  nextStepHint: z.string(),
-  coinsEarned:  z.number().int(),
+const FocusInsightOutputSchema = z.object({
+  insight:     z.string(),
+  coinsEarned: z.number().default(0),
+  badge:       z.string().default(""),
 });
 
 export function defineFocusInsightFlow() {
   const ai = getAI();
 
   return ai.defineFlow(
-    { name: "focusInsight", inputSchema, outputSchema },
+    {
+      name:         "focusInsight",
+      inputSchema:  FocusInsightInputSchema,
+      outputSchema: FocusInsightOutputSchema,
+    },
     async (input) => {
-      const status   = input.completed ? "fully completed" : "partially completed";
-      const coinBase = input.completed
-        ? Math.round(input.durationMinutes * 0.8)
-        : Math.round(input.durationMinutes * 0.4);
-      const coinMin  = Math.max(1, coinBase - 5);
-      const coinMax  = coinBase + 10;
+      // Deterministic coin reward — not AI-controlled so it can't be gamed
+      const coinsEarned = input.completed
+        ? Math.min(50, Math.max(5, Math.round(input.durationMinutes / 2)))
+        : 0;
+
+      const badge =
+        input.completed && input.durationMinutes >= 45
+          ? "🏅 Deep Work"
+          : input.completed && input.durationMinutes >= 25
+          ? "⚡ Flow State"
+          : input.completed
+          ? "✅ Session Done"
+          : "";
 
       const prompt = `
-A Goal Digger user just ${status} a focus session.
-Task: "${input.taskTitle}" | Goal: "${input.goalTitle}" | Duration: ${input.durationMinutes} min.
+You are a focus coach in a productivity app. The user just ${
+        input.completed ? "completed" : "stopped early"
+      } a ${input.durationMinutes}-minute session.
 
-Write:
-1. "insight": Specific encouraging observation (1 sentence, name the task/goal).
-2. "nextStepHint": Concrete hint to maintain momentum (1 sentence).
-3. "coinsEarned": Integer between ${coinMin} and ${coinMax}. More for completed + longer sessions.
+Task: "${input.taskTitle}"
+Goal: "${input.goalTitle}"
+Completed: ${input.completed}
+${input.completed ? `Coins earned: ${coinsEarned}` : ""}
 
-Respond ONLY with valid JSON:
-{ "insight": "...", "nextStepHint": "...", "coinsEarned": ${coinBase} }`.trim();
+Write ONE sentence (max 20 words) that:
+- If completed: celebrates the win and connects it to the bigger goal
+- If stopped early: is non-judgmental and motivates them to try again
 
-      const { text } = await ai.generate({
-        model: defaultModel,
-        prompt,
-        config: { temperature: 0.7, maxOutputTokens: 256, responseMimeType: "application/json" },
-      });
+Respond ONLY with valid JSON: { "insight": "..." }`.trim();
 
-      const parsed = parseModelJson<z.infer<typeof outputSchema>>(text);
-      const coins  = Math.min(coinMax, Math.max(coinMin, parsed.coinsEarned ?? coinBase));
-      return {
-        insight:      parsed.insight      ?? "",
-        nextStepHint: parsed.nextStepHint ?? "",
-        coinsEarned:  coins,
-      };
+      try {
+        const { text } = await ai.generate({
+          model: defaultModel,
+          prompt,
+          config: {
+            temperature: 0.6,
+            maxOutputTokens: 80,
+            responseMimeType: "application/json",
+          },
+        });
+
+        const parsed = parseModelJson<{ insight: string }>(text);
+        const insight = parsed.insight?.trim();
+
+        if (insight) {
+          return { insight, coinsEarned, badge };
+        }
+      } catch (e) {
+        // Fall through to static message
+      }
+
+      const staticInsight = input.completed
+        ? `Great work — ${input.durationMinutes} focused minutes brings "${input.goalTitle}" closer to done.`
+        : `Even a short session counts. Jump back in when you're ready.`;
+
+      return { insight: staticInsight, coinsEarned, badge };
     }
   );
 }

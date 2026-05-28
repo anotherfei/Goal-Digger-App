@@ -2,20 +2,9 @@
 // lib/firebase/sync/app_sync_service.dart
 //
 // The bridge between Firebase real-time data and the app's in-memory state.
-//
-// Usage in GoalDiggerRoot (or a top-level Provider):
-//
-//   final _sync = AppSyncService(uid: authState.uid);
-//
-//   @override
-//   void initState() {
-//     super.initState();
-//     _sync.goalsStream.listen((goals) => setState(() => _goals = goals));
-//     _sync.profileStream.listen((p) => setState(() { _coins = p.coins; ... }));
-//   }
+// All stream subscriptions are managed by the caller (GoalDiggerRoot), which
+// cancels them when the user signs out or the widget is disposed.
 // ─────────────────────────────────────────────────────────────────────────────
-
-import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
@@ -42,8 +31,6 @@ class AppSyncService {
   final UserRepository _userRepo;
   final CommunityRepository _communityRepo;
   final RoutineRepository _routineRepo;
-
-  final List<StreamSubscription<dynamic>> _subs = [];
 
   // ── Public streams ───────────────────────────────────────────────────────────
 
@@ -80,8 +67,19 @@ class AppSyncService {
 
   // User profile
   Future<void> updateStreak(int streak) => _userRepo.updateStreak(uid, streak);
+
+  /// Adds [amount] to the user's coin balance using a Firestore increment
+  /// so concurrent updates don't race (e.g. two tasks completed in quick
+  /// succession won't clobber each other's coin award).
   Future<void> addCoins(int amount) => _userRepo.addCoins(uid, amount);
+
+  /// Overwrites the coin balance with an absolute [coins] value.
+  /// Use this when syncing the authoritative local total back to Firestore
+  /// (e.g. after purchasing a pet chest).
+  Future<void> setCoins(int coins) => _userRepo.updateCoins(uid, coins);
+
   Future<void> updateMood(String mood) => _userRepo.updateMood(uid, mood);
+
   Future<void> updatePreferences({
     required bool goalReminders,
     required bool friendProgressSharing,
@@ -91,34 +89,36 @@ class AppSyncService {
         goalReminders: goalReminders,
         friendProgressSharing: friendProgressSharing,
       );
+
   Future<void> updateFriends(List<String> friends) =>
       _userRepo.updateFriends(uid, friends);
+
   Future<void> updatePetState(
           int happiness, PetSkin skin, String accessory) =>
       _userRepo.updatePetState(uid, happiness, skin, accessory);
+
   Future<void> markOnboarded() => _userRepo.markOnboarded(uid);
 
   // Community
   Future<void> joinCommunity(String communityId) =>
       _communityRepo.join(uid, communityId);
+
   Future<void> leaveCommunity(String communityId) =>
       _communityRepo.leave(uid, communityId);
+
   Future<CommunityGroup> createCommunity(CommunityGroup group) =>
       _communityRepo.createCommunity(group, uid);
 
   // Routines
   Future<RoutineItem> createRoutine(RoutineItem routine) =>
       _routineRepo.createRoutine(uid, routine);
+
   Future<void> deleteRoutine(String routineId) =>
       _routineRepo.deleteRoutine(uid, routineId);
 
   // ── Cleanup ─────────────────────────────────────────────────────────────────
 
   void dispose() {
-    for (final sub in _subs) {
-      sub.cancel();
-    }
-    _subs.clear();
     debugPrint('🔌 AppSyncService disposed for uid=$uid');
   }
 }

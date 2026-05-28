@@ -1,52 +1,166 @@
+// functions/src/agent/runtime.ts
+//
+// Agentic runtime — orchestrates the full plan→execute→reflect loop.
+//
+// Flow:
+//   1. Load user memory from Firestore
+//   2. plannerAgent  → Gemini reasons about which tools to use (LLM-driven)
+//   3. toolRegistry  → execute each chosen tool (some are AI-enriched)
+//   4. reflectionAgent → Gemini generates personalised insights
+//   5. Persist insights back to Firestore memory
+//
+// All steps are wrapped in try-catch so a single tool failure never
+// aborts the entire session — partial results are always returned.
 
-import { plannerAgent } from './planner';
-import { reflectionAgent } from './reflection';
-import { memoryStore } from './memory';
-import { toolRegistry } from './tools/registry';
+import * as admin from "firebase-admin";
+import { plannerAgent } from "./planner";
+import { reflectionAgent } from "./reflection";
+import { toolRegistry } from "./tools/registry";
 
-export interface AgentRequest {
+interface AgentRunInput {
   userId: string;
   goal: string;
-  context?: Record<string, any>;
+  context?: Record<string, unknown>;
 }
 
-export interface AgentResponse {
-  plan: any;
-  reflections: any[];
-  memoryUpdated: boolean;
+interface AgentRunResult {
+  plan: Record<string, unknown>;
+  executionResults: unknown[];
+  reflections: unknown[];
+  memorySnapshot: Record<string, unknown>;
 }
 
-export async function runAgent(request: AgentRequest): Promise<AgentResponse> {
-  const memory = await memoryStore.loadUserMemory(request.userId);
+// ── Firestore memory helpers ──────────────────────────────────────────────────
 
-  const plan = await plannerAgent({
-    goal: request.goal,
-    memory,
-    tools: toolRegistry.listTools(),
-    context: request.context ?? {},
-  });
+async function loadMemory(userId: string): Promise<Record<string, unknown>> {
+  try {
+    const db = admin.firestore();
+    const snap = await db.collection("agent_memory").doc(userId).get();
+    return snap.exists ? (snap.data() as Record<string, unknown>) : {};
+  } catch (e) {
+    console.error(`[agent/runtime] loadMemory failed for uid=${userId}:`, e);
+    return {};
+  }
+}
 
-  const executionResults = [];
+async function saveMemory(
+  userId: string,
+  updates: Record<string, unknown>
+): Promise<void> {
+  try {
+    const db = admin.firestore();
+    await db
+      .collection("agent_memory")
+      .doc(userId)
+      .set(updates, { merge: true });
+  } catch (e) {
+    console.error(`[agent/runtime] saveMemory failed for uid=${userId}:`, e);
+    // Non-fatal — session still returns results to the client
+  }
+}
 
-  for (const step of plan.steps) {
-    if (step.tool && toolRegistry.hasTool(step.tool)) {
-      const result = await toolRegistry.execute(step.tool, step.args || {});
-      executionResults.push(result);
+// ── Main runtime ──────────────────────────────────────────────────────────────
+
+export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
+  const { userId, goal, context = {} } = input;
+
+  console.log(`[agent/runtime] Starting agent for uid=${userId}, goal="${goal}"`);
+
+  // Step 1: Load user memory
+  const memory = await loadMemory(userId);
+
+  // Step 2: AI planner decides which tools to invoke
+  const availableTools = toolRegistry.map((tool) => tool.name);
+  let plan = { strategy: "multi-step-goal-planning", goal, steps: [] as unknown[] };
+
+  try {
+    plan = await plannerAgent({ goal, memory, tools: availableTools, context });
+    console.log(
+      `[agent/runtime] Plan: strategy="${plan.strategy}", steps=${plan.steps.length}`
+    );
+  } catch (e) {
+    console.error("[agent/runtime] plannerAgent failed:", e);
+    // Proceed with empty plan — reflection will still run
+  }
+
+  // Step 3: Execute each planned tool step
+  const executionResults: unknown[] = [];
+
+  for (const step of plan.steps as Array<{
+    tool: string;
+    args: Record<string, unknown>;
+    title: string;
+  }>) {
+    const tool = toolRegistry.find((t) => t.name === step.tool);
+    if (!tool) {
+      console.warn(`[agent/runtime] Unknown tool "${step.tool}" — skipping`);
+      continue;
+    }
+
+    try {
+      console.log(`[agent/runtime] Executing tool: ${step.tool}`);
+      const result = await tool.execute(step.args);
+      executionResults.push({ tool: step.tool, title: step.title, result });
+    } catch (e) {
+      console.error(`[agent/runtime] Tool "${step.tool}" failed:`, e);
+      executionResults.push({
+        tool: step.tool,
+        title: step.title,
+        error: String(e),
+      });
     }
   }
 
-  const reflections = await reflectionAgent({
-    goal: request.goal,
-    plan,
-    executionResults,
-    memory,
-  });
+  // Step 4: AI reflection — synthesises insights from results
+  let reflections: unknown[] = [];
 
-  await memoryStore.saveReflection(request.userId, reflections);
+  try {
+    reflections = await reflectionAgent({
+      goal,
+      plan,
+      executionResults,
+      memory,
+    });
+    console.log(`[agent/runtime] Reflections generated: ${reflections.length}`);
+  } catch (e) {
+    console.error("[agent/runtime] reflectionAgent failed:", e);
+    reflections = [
+      {
+        type: "agent-summary",
+        insight: `Agent completed ${executionResults.length} tool(s) for "${goal}".`,
+        recommendation: "Review the plan and start with the first milestone.",
+        memoryKeysUsed: Object.keys(memory),
+      },
+    ];
+  }
+
+  // Step 5: Persist insights and update memory for future sessions
+  const memoryUpdates: Record<string, unknown> = {
+    lastGoal: goal,
+    lastAgentRun: new Date().toISOString(),
+    totalAgentRuns: ((memory.totalAgentRuns as number) ?? 0) + 1,
+    reflectionCount:
+      ((memory.reflectionCount as number) ?? 0) + reflections.length,
+  };
+
+  // Merge schedule info into memory if scheduleTasks ran successfully
+  const scheduleResult = executionResults.find(
+    (r) =>
+      (r as { tool: string; error?: string }).tool === "scheduleTasks" &&
+      !(r as { error?: string }).error
+  ) as { result?: { recommendedDailyMinutes?: number } } | undefined;
+
+  if (scheduleResult?.result?.recommendedDailyMinutes) {
+    memoryUpdates.recommendedDailyMinutes =
+      scheduleResult.result.recommendedDailyMinutes;
+  }
+
+  await saveMemory(userId, memoryUpdates);
 
   return {
-    plan,
+    plan: plan as unknown as Record<string, unknown>,
+    executionResults,
     reflections,
-    memoryUpdated: true,
+    memorySnapshot: { ...memory, ...memoryUpdates },
   };
 }

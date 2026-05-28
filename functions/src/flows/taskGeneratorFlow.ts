@@ -1,72 +1,115 @@
 // functions/src/flows/taskGeneratorFlow.ts
+//
+// Generates a list of AI micro-tasks for a goal.
+// Called when the user creates a new goal in the Flutter app.
 
 import { z } from "genkit";
 import { getAI, defaultModel } from "../ai";
 import { parseModelJson } from "../json";
 
-const inputSchema = z.object({
-  goalTitle:          z.string(),
-  category:           z.string(),
-  deadlineDays:       z.number().int(),
-  priority:           z.number().int(),
-  existingTaskTitles: z.array(z.string()).optional(),
+const TaskGeneratorInputSchema = z.object({
+  goalTitle:    z.string(),
+  category:     z.string().default("Study"),
+  priority:     z.number().min(1).max(5).default(3),
+  deadlineDays: z.number().min(1).default(14),
 });
 
-const taskSchema = z.object({
+const GeneratedTaskSchema = z.object({
   title:           z.string(),
-  durationMinutes: z.number().int(),
-  load:            z.string(), // light | focus | stretch
-  dayOffset:       z.number().int(),
-  tags:            z.array(z.string()),
+  durationMinutes: z.number(),
+  load:            z.enum(["light", "focus", "stretch"]),
+  dayOffset:       z.number(),
 });
 
-const outputSchema = z.object({
-  tasks:       z.array(taskSchema),
-  explanation: z.string(),
+const TaskGeneratorOutputSchema = z.object({
+  tasks: z.array(GeneratedTaskSchema),
 });
 
-export type TaskGeneratorInput  = z.infer<typeof inputSchema>;
-export type TaskGeneratorOutput = z.infer<typeof outputSchema>;
+export type TaskGeneratorInput  = z.infer<typeof TaskGeneratorInputSchema>;
+export type TaskGeneratorOutput = z.infer<typeof TaskGeneratorOutputSchema>;
 
 export function defineTaskGeneratorFlow() {
   const ai = getAI();
 
   return ai.defineFlow(
-    { name: "taskGenerator", inputSchema, outputSchema },
+    {
+      name:         "taskGenerator",
+      inputSchema:  TaskGeneratorInputSchema,
+      outputSchema: TaskGeneratorOutputSchema,
+    },
     async (input) => {
-      const existing = input.existingTaskTitles ?? [];
-      const existingNote = existing.length
-        ? `Avoid duplicating these existing tasks: ${existing.join(", ")}.`
-        : "";
+      const priorityLabel =
+        input.priority >= 4 ? "high" : input.priority >= 2 ? "medium" : "low";
 
       const prompt = `
-You are a productivity expert helping a user achieve: "${input.goalTitle}".
-Category: ${input.category} | Deadline: ${input.deadlineDays} days | Priority: ${input.priority}/5.
-${existingNote}
+You are an expert productivity planner. Break this goal into 4–6 focused micro-tasks.
 
-Generate 4–6 specific micro-tasks. Each must be completable in one sitting.
-Spread them across the available days — earlier days for blocking tasks.
+Goal: "${input.goalTitle}"
+Category: ${input.category}
+Priority: ${priorityLabel} (${input.priority}/5)
+Deadline: ${input.deadlineDays} days from now
 
-load: "light" ≤15 min · "focus" 15–30 min · "stretch" >30 min
-tags: 1–3 lowercase words, e.g. "research", "writing", "design", "coding".
+Rules for each task:
+- title: clear action phrase, max 10 words, starts with a verb
+- durationMinutes: 10–60 (realistic, not aspirational)
+- load: "light" (≤15 min, easy), "focus" (16–35 min, needs concentration), "stretch" (>35 min, demanding)
+- dayOffset: which day to schedule it (0 = today, max = deadlineDays - 1)
+- Schedule earlier tasks (dayOffset 0–2) as lighter tasks to build momentum
 
 Respond ONLY with valid JSON:
 {
   "tasks": [
-    { "title": "...", "durationMinutes": 20, "load": "focus", "dayOffset": 0, "tags": ["writing"] }
-  ],
-  "explanation": "One sentence explaining your scheduling approach."
+    { "title": "...", "durationMinutes": 20, "load": "light", "dayOffset": 0 },
+    ...
+  ]
 }`.trim();
 
-      const { text } = await ai.generate({
-        model: defaultModel,
-        prompt,
-        config: { temperature: 0.6, maxOutputTokens: 1024, responseMimeType: "application/json" },
-      });
+      try {
+        const { text } = await ai.generate({
+          model: defaultModel,
+          prompt,
+          config: {
+            temperature: 0.5,
+            maxOutputTokens: 512,
+            responseMimeType: "application/json",
+          },
+        });
 
-      const parsed = parseModelJson<TaskGeneratorOutput>(text);
-      const tasks = (parsed.tasks ?? []).map((t) => ({ ...t, tags: t.tags ?? [] }));
-      return { tasks, explanation: parsed.explanation ?? "" };
+        const parsed = parseModelJson<{ tasks: z.infer<typeof GeneratedTaskSchema>[] }>(text);
+
+        const validLoads = new Set(["light", "focus", "stretch"]);
+        const tasks = (parsed.tasks ?? [])
+          .filter(
+            (t) =>
+              typeof t.title === "string" &&
+              t.title.trim().length > 0 &&
+              validLoads.has(t.load)
+          )
+          .map((t) => ({
+            title:           t.title.trim(),
+            durationMinutes: Math.min(90, Math.max(5, Number(t.durationMinutes))),
+            load:            t.load as "light" | "focus" | "stretch",
+            dayOffset:       Math.min(
+              input.deadlineDays - 1,
+              Math.max(0, Number(t.dayOffset))
+            ),
+          }))
+          .slice(0, 6);
+
+        if (tasks.length >= 2) return { tasks };
+      } catch (e) {
+        console.error("[taskGeneratorFlow] AI generation failed:", e);
+      }
+
+      // Deterministic fallback
+      return {
+        tasks: [
+          { title: `Define the goal outcome for ${input.goalTitle}`, durationMinutes: 10, load: "light"   as const, dayOffset: 0 },
+          { title: "List blockers and open questions",                durationMinutes: 15, load: "light"   as const, dayOffset: 0 },
+          { title: "Complete the main first deliverable",             durationMinutes: 40, load: "focus"   as const, dayOffset: 1 },
+          { title: "Review progress and fix the weakest part",        durationMinutes: 25, load: "stretch" as const, dayOffset: 2 },
+        ],
+      };
     }
   );
 }

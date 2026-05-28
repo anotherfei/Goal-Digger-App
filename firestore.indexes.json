@@ -4,33 +4,32 @@
       "collectionGroup": "goals",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "category",  "order": "ASCENDING" },
-        { "fieldPath": "deadline",  "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "ASCENDING" }
+        { "fieldPath": "importance", "order": "DESCENDING" },
+        { "fieldPath": "deadline",   "order": "ASCENDING"  }
       ]
     },
     {
       "collectionGroup": "goals",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "importance", "order": "DESCENDING" },
-        { "fieldPath": "deadline",   "order": "ASCENDING" }
+        { "fieldPath": "category",  "order": "ASCENDING"  },
+        { "fieldPath": "deadline",  "order": "ASCENDING"  }
+      ]
+    },
+    {
+      "collectionGroup": "routines",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "repeat",    "order": "ASCENDING"  },
+        { "fieldPath": "startsAt",  "order": "ASCENDING"  }
       ]
     },
     {
       "collectionGroup": "communities",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "tag",     "order": "ASCENDING" },
-        { "fieldPath": "members", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "ai_sessions",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "uid",       "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        { "fieldPath": "similarity", "order": "DESCENDING" },
+        { "fieldPath": "members",    "order": "DESCENDING" }
       ]
     }
   ],

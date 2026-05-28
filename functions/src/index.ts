@@ -4,13 +4,12 @@
 //
 // Auth strategy:
 //   • onCall functions  → Firebase verifies the ID token automatically.
-//                         Any signed-in user is allowed (authPolicy below).
 //   • goalCoachStream   → onRequest (SSE), token verified manually via Admin SDK
 //                         because onCall doesn't support streaming responses.
 //
-// Secret:
-//   GEMINI_API_KEY is declared once here and automatically injected into
-//   process.env for every function at startup — never in source code.
+// Flow instances are created ONCE at module load time (not inside each request
+// handler). Re-creating Genkit flows on every invocation is wasteful and can
+// cause name-collision warnings in Genkit's flow registry.
 
 import * as admin from "firebase-admin";
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
@@ -27,7 +26,6 @@ import { runAgent }                from "./agent/runtime";
 admin.initializeApp();
 
 // ── Secret declaration ────────────────────────────────────────────────────────
-// Declare once — all functions below inherit it via the shared `secrets` option.
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
 
 const fnOptions = {
@@ -44,32 +42,35 @@ const requireAuth = (auth: { uid?: string } | undefined) => {
   }
 };
 
+// ── Define flows ONCE at module load ──────────────────────────────────────────
+// Genkit registers flows by name internally. Calling defineFlow() on every
+// request creates duplicate registrations and leaks memory. Define once here.
+const goalCoachFlowFn     = defineGoalCoachFlow();
+const taskGeneratorFlowFn = defineTaskGeneratorFlow();
+const moodAdvisorFlowFn   = defineMoodAdvisorFlow();
+const focusInsightFlowFn  = defineFocusInsightFlow();
+
 // ── Callable functions (Flutter uses cloud_functions package) ─────────────────
 
 export const goalCoach = onCall(fnOptions, async (req) => {
   requireAuth(req.auth);
-  const flow = defineGoalCoachFlow();
-  return await flow(req.data);
+  return await goalCoachFlowFn(req.data);
 });
 
 export const taskGenerator = onCall(fnOptions, async (req) => {
   requireAuth(req.auth);
-  const flow = defineTaskGeneratorFlow();
-  return await flow(req.data);
+  return await taskGeneratorFlowFn(req.data);
 });
 
 export const moodAdvisor = onCall(fnOptions, async (req) => {
   requireAuth(req.auth);
-  const flow = defineMoodAdvisorFlow();
-  return await flow(req.data);
+  return await moodAdvisorFlowFn(req.data);
 });
 
 export const focusInsight = onCall(fnOptions, async (req) => {
   requireAuth(req.auth);
-  const flow = defineFocusInsightFlow();
-  return await flow(req.data);
+  return await focusInsightFlowFn(req.data);
 });
-
 
 export const agentPlanner = onCall(fnOptions, async (req) => {
   requireAuth(req.auth);

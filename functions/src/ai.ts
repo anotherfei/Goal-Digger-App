@@ -1,24 +1,25 @@
-import { genkit, type Genkit } from "genkit";
+// functions/src/ai.ts
+//
+// Singleton Genkit AI instance shared across all flows and tools.
+//
+// Why singleton?
+//   genkit() registers plugins once. Calling it multiple times (e.g. once per
+//   request) causes duplicate plugin warnings and wastes initialisation time.
+//   One instance per Cloud Function worker process is the correct pattern.
+
+import { genkit } from "genkit";
 import { googleAI } from "@genkit-ai/google-genai";
-import { enableFirebaseTelemetry } from '@genkit-ai/firebase';
 
-enableFirebaseTelemetry();
-let _ai: Genkit | null = null;
+let _ai: ReturnType<typeof genkit> | null = null;
 
-export function getAI(): Genkit {
-  if (!_ai) {
-    _ai = genkit({
-      plugins: [
-        googleAI({
-          apiKey: process.env.GEMINI_API_KEY,
-        }),
-      ],
-    });
-  }
-
+export function getAI(): ReturnType<typeof genkit> {
+  if (_ai) return _ai;
+  _ai = genkit({
+    plugins: [googleAI()],
+  });
   return _ai;
 }
 
-// Good default for Goal Digger:
-// cheap/fast enough for task generation, coaching, mood advice.
-export const defaultModel = googleAI.model("gemini-2.5-flash-lite");
+// Default model used by all flows and tools.
+// Gemini 2.0 Flash gives the best latency/quality trade-off for this workload.
+export const defaultModel = "googleai/gemini-2.0-flash";

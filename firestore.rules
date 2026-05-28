@@ -1,87 +1,64 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// firestore.rules
-//
-// Security rules for Goal Digger.
-// Philosophy:
-//   • Users can read and write only their own data.
-//   • Communities are publicly readable; only members can write.
-//   • AI session logs are write-once from the backend (service account).
-// ─────────────────────────────────────────────────────────────────────────────
-
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Helper functions ────────────────────────────────────────────────────
+    // ── Helper functions ──────────────────────────────────────────────────────
     function isSignedIn() {
       return request.auth != null;
     }
 
     function isOwner(uid) {
-      return request.auth.uid == uid;
+      return isSignedIn() && request.auth.uid == uid;
     }
 
-    function isValidString(field, maxLen) {
-      return field is string && field.size() > 0 && field.size() <= maxLen;
+    function validString(val, maxLen) {
+      return val is string && val.size() > 0 && val.size() <= maxLen;
     }
 
-    // ── Users ───────────────────────────────────────────────────────────────
+    // ── User profiles ─────────────────────────────────────────────────────────
+    // Users can read/write only their own profile document.
     match /users/{uid} {
-      allow read:  if isSignedIn() && isOwner(uid);
-      allow write: if isSignedIn() && isOwner(uid)
-                   && isValidString(request.resource.data.displayName, 100);
-
-      // Goals sub-collection
-      match /goals/{goalId} {
-        allow read, write: if isSignedIn() && isOwner(uid);
-
-        // Tasks nested in goals
-        match /tasks/{taskId} {
-          allow read, write: if isSignedIn() && isOwner(uid);
-        }
-      }
-
-      // Joined community references
-      match /communities/{communityId} {
-        allow read, write: if isSignedIn() && isOwner(uid);
-      }
-
-      // Calendar routines
-      match /routines/{routineId} {
-        allow read, write: if isSignedIn() && isOwner(uid);
-      }
-
-      // AI session logs — users can read their own; only backend writes
-      match /ai_sessions/{sessionId} {
-        allow read: if isSignedIn() && isOwner(uid);
-        // Write blocked for client; backend uses service account
-        allow write: if false;
-      }
-
-      // Agent memory summaries written by Cloud Functions.
-      // Client access is limited to the signed-in owner.
-      match /aiMemory/{memoryDoc} {
-        allow read, write: if isSignedIn() && isOwner(uid);
-      }
+      allow read, write: if isOwner(uid);
     }
 
-    // ── Communities (global) ────────────────────────────────────────────────
+    // ── Goals ─────────────────────────────────────────────────────────────────
+    match /users/{uid}/goals/{goalId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // ── Routines ──────────────────────────────────────────────────────────────
+    match /users/{uid}/routines/{routineId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // ── Agent memory ──────────────────────────────────────────────────────────
+    // Written exclusively by Firebase Functions (Admin SDK bypasses rules).
+    // Users can read their own memory (e.g. to display streak analytics),
+    // but cannot write directly — all writes go through Cloud Functions.
+    match /agent_memory/{uid} {
+      allow read:  if isOwner(uid);
+      allow write: if false; // Cloud Functions (Admin SDK) only
+    }
+
+    // ── Communities ───────────────────────────────────────────────────────────
+    // Anyone signed in can read communities.
+    // Only the creator (stored in the document) can update or delete.
+    // Members sub-collection is managed per-user for privacy.
     match /communities/{communityId} {
-      // Anyone signed in can browse communities
       allow read: if isSignedIn();
-
-      // Only the creator or an admin can create/delete
       allow create: if isSignedIn()
-                    && isValidString(request.resource.data.name, 80)
-                    && request.resource.data.creatorUid == request.auth.uid;
-
-      // Member count increment/decrement allowed for all signed-in users
+        && validString(request.resource.data.name, 80)
+        && request.resource.data.createdBy == request.auth.uid;
       allow update: if isSignedIn()
-                    && request.resource.data.diff(resource.data).affectedKeys()
-                       .hasOnly(['members']);
-
+        && resource.data.createdBy == request.auth.uid;
       allow delete: if isSignedIn()
-                    && resource.data.creatorUid == request.auth.uid;
+        && resource.data.createdBy == request.auth.uid;
+    }
+
+    // Community membership — each user tracks their own joined communities
+    match /users/{uid}/joined_communities/{communityId} {
+      allow read, write: if isOwner(uid);
     }
   }
 }

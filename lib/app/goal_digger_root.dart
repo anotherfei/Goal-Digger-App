@@ -73,6 +73,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   Set<String> _joinedCommunityIds = {};
   List<RoutineItem> _routines = [];
 
+  // Auth listener wiring — avoids calling side-effecting _bindAuthState
+  // inside build(), which can trigger setState-during-build violations.
+  AuthState? _watchedAuthState;
+
   DateTime _newGoalDeadline = addDays(DateTime.now(), 14);
   int _newGoalPriority = 3;
   String _newGoalCategory = 'Study';
@@ -104,45 +108,85 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   void initState() {
     super.initState();
     _goals = seedGoals(today);
-    _routines = [
-      RoutineItem(
-        title: 'Morning goal review',
-        startsAt: DateTime(today.year, today.month, today.day, 8),
-        repeat: RoutineRepeat.daily,
-      ),
-      RoutineItem(
-        title: 'Evening reflection',
-        startsAt: DateTime(today.year, today.month, today.day, 20),
-        repeat: RoutineRepeat.weekly,
-      ),
-    ];
-    _communities = [
-      CommunityGroup(
-        name: 'Study Sprint Club',
-        members: 89,
-        tag: 'Exam prep',
-        similarity: 94,
-        description: 'Short daily sprints for students who want accountability.',
-      ),
-      CommunityGroup(
-        name: 'Portfolio Builders',
-        members: 142,
-        tag: 'Career',
-        similarity: 88,
-        description: 'Share portfolio progress and get feedback from builders.',
-      ),
-      CommunityGroup(
-        name: 'Calm Wellness Crew',
-        members: 76,
-        tag: 'Wellness',
-        similarity: 81,
-        description: 'Build low-pressure routines around sleep, movement, and reflection.',
-      ),
-    ];
+    _routines = _defaultRoutines();
+    _communities = _defaultCommunities();
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Attach a listener to AuthState so auth-change side effects (sync
+    // activation, Firestore writes) never run inside build().
+    final newAuth = context.read<AuthState>();
+    if (_watchedAuthState != newAuth) {
+      _watchedAuthState?.removeListener(_onAuthStateChanged);
+      _watchedAuthState = newAuth;
+      newAuth.addListener(_onAuthStateChanged);
+      // Handle the state that is already current on first attach.
+      _onAuthStateChanged();
+    }
+  }
+
+  // Called by AuthState whenever the Firebase user changes.
+  void _onAuthStateChanged() {
+    if (!mounted) return;
+    final authState = _watchedAuthState;
+    if (authState == null) return;
+
+    final uid = authState.uid;
+    if (uid.isEmpty) {
+      if (_activeUid != null) {
+        _resetForSignedOutState();
+      }
+      return;
+    }
+
+    if (_activeUid == uid) return;
+    _activeUid = uid;
+    _activateSync(uid);
+    unawaited(_ensureUserProfile(authState));
+  }
+
+  List<RoutineItem> _defaultRoutines() => [
+        RoutineItem(
+          title: 'Morning goal review',
+          startsAt: DateTime(today.year, today.month, today.day, 8),
+          repeat: RoutineRepeat.daily,
+        ),
+        RoutineItem(
+          title: 'Evening reflection',
+          startsAt: DateTime(today.year, today.month, today.day, 20),
+          repeat: RoutineRepeat.weekly,
+        ),
+      ];
+
+  List<CommunityGroup> _defaultCommunities() => [
+        CommunityGroup(
+          name: 'Study Sprint Club',
+          members: 89,
+          tag: 'Exam prep',
+          similarity: 94,
+          description: 'Short daily sprints for students who want accountability.',
+        ),
+        CommunityGroup(
+          name: 'Portfolio Builders',
+          members: 142,
+          tag: 'Career',
+          similarity: 88,
+          description: 'Share portfolio progress and get feedback from builders.',
+        ),
+        CommunityGroup(
+          name: 'Calm Wellness Crew',
+          members: 76,
+          tag: 'Wellness',
+          similarity: 81,
+          description: 'Build low-pressure routines around sleep, movement, and reflection.',
+        ),
+      ];
+
+  @override
   void dispose() {
+    _watchedAuthState?.removeListener(_onAuthStateChanged);
     _processingTimer?.cancel();
     _focusTimer?.cancel();
     _disposeSync();
@@ -166,24 +210,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _sync = null;
   }
 
-  void _bindAuthState(AuthState authState) {
-    final uid = authState.uid;
-    if (uid.isEmpty) {
-      if (_activeUid != null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || _activeUid == null) return;
-          _resetForSignedOutState();
-        });
-      }
-      return;
-    }
-
-    if (_activeUid == uid) return;
-    _activeUid = uid;
-    _activateSync(uid);
-    unawaited(_ensureUserProfile(authState));
-  }
-
   void _resetForSignedOutState() {
     _activeUid = null;
     _disposeSync();
@@ -192,18 +218,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _signedInWith = 'Guest';
       _selectedIndex = 2;
       _goals = seedGoals(today);
-      _routines = [
-        RoutineItem(
-          title: 'Morning goal review',
-          startsAt: DateTime(today.year, today.month, today.day, 8),
-          repeat: RoutineRepeat.daily,
-        ),
-        RoutineItem(
-          title: 'Evening reflection',
-          startsAt: DateTime(today.year, today.month, today.day, 20),
-          repeat: RoutineRepeat.weekly,
-        ),
-      ];
+      _routines = _defaultRoutines();
       _friends = ['Maya Chen', 'Leo Tan', 'Ari Putra'];
     });
   }
@@ -307,18 +322,16 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   Future<void> _persistProfileStats() async {
-    final uid = _activeUid;
-    if (uid == null) return;
+    final sync = _sync;
+    if (sync == null) return;
     try {
-      await _userRepository.updateCoins(uid, _coins);
-      await _userRepository.updateStreak(uid, _streak);
-      await _userRepository.updateMood(uid, _selectedMood);
-      await _userRepository.updatePetState(
-        uid,
-        _petHappiness,
-        _activePetSkin,
-        _activeAccessory,
-      );
+      // Use setCoins (absolute write) so the Firestore value always matches
+      // the authoritative local total, which already has all increments/
+      // decrements from task toggles and pet interactions applied.
+      await sync.setCoins(_coins);
+      await sync.updateStreak(_streak);
+      await sync.updateMood(_selectedMood);
+      await sync.updatePetState(_petHappiness, _activePetSkin, _activeAccessory);
     } catch (e) {
       debugPrint('Profile write failed: $e');
     }
@@ -487,7 +500,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     if (title.isEmpty) {
       _showHelpfulError(
         title: 'Goal name is missing',
-        message: 'Please write one clear goal first. Example: “Prepare for midterm” or “Build my portfolio”.',
+        message: 'Please write one clear goal first. Example: "Prepare for midterm" or "Build my portfolio".',
         actionLabel: 'Write goal',
         onAction: () {},
       );
@@ -497,7 +510,19 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   Future<void> _openGoalBreakdownDialog(String title) async {
+    // Create the controller here and dispose it reliably when the dialog closes.
     final chatController = TextEditingController();
+
+    try {
+      await _runGoalBreakdownDialog(title, chatController);
+    } finally {
+      // Guaranteed disposal — regardless of how the dialog was dismissed.
+      chatController.dispose();
+    }
+  }
+
+  Future<void> _runGoalBreakdownDialog(
+      String title, TextEditingController chatController) async {
     final ai = context.read<GenkitService>();
     final fallbackSpecs = _draftSpecsFromTitles(_generateTaskTitles(title));
     final deadlineDays = max(1, dateOnly(_newGoalDeadline).difference(today).inDays);
@@ -516,6 +541,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
             'completedToday': _todayCompleted,
             'totalToday': _todayTasks.length,
             'mood': _selectedMood,
+            'streak': _streak,
           },
         ),
       );
@@ -898,9 +924,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         );
       },
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) => chatController.dispose());
-    if (result != null) {
-      await WidgetsBinding.instance.endOfFrame;
+
+    if (result != null && mounted) {
       await Future<void>.delayed(const Duration(milliseconds: 120));
       if (!mounted) return;
       await _finishCreateGoal(title, approvedTaskSpecs: result);
@@ -1034,7 +1059,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
     return updated;
   }
-
 
   List<String> _draftPreviewLabels(List<_DraftTaskSpec> specs) {
     return specs.map((task) => task.previewLabel).toList();
@@ -1623,8 +1647,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   @override
   Widget build(BuildContext context) {
+    // context.watch triggers rebuild when AuthState notifies.
+    // All side effects (sync activation, Firestore writes) are handled
+    // in _onAuthStateChanged via the addListener wired in didChangeDependencies.
     final authState = context.watch<AuthState>();
-    _bindAuthState(authState);
 
     if (!authState.isKnown) {
       return const Scaffold(
