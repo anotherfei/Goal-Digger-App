@@ -70,6 +70,51 @@ class AuthService {
     return _auth.signInWithCredential(credential);
   }
 
+  Future<UserCredential> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      return await _auth.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_firebaseAuthMessage(e));
+    }
+  }
+
+  Future<UserCredential> createAccountWithEmail({
+    required String email,
+    required String password,
+    String? displayName,
+  }) async {
+    try {
+      final credential = EmailAuthProvider.credential(
+        email: email.trim(),
+        password: password,
+      );
+
+      final user = currentUser;
+      final result = user != null && user.isAnonymous
+          ? await user.linkWithCredential(credential)
+          : await _auth.createUserWithEmailAndPassword(
+              email: email.trim(),
+              password: password,
+            );
+
+      final cleanedName = displayName?.trim();
+      if (cleanedName != null && cleanedName.isNotEmpty) {
+        await result.user?.updateDisplayName(cleanedName);
+        await result.user?.reload();
+      }
+
+      return result;
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_firebaseAuthMessage(e));
+    }
+  }
+
   /// Creates an anonymous account so the user can start immediately and
   /// upgrade later via [signInWithGoogle].
   Future<UserCredential> signInAsGuest() async {
@@ -99,4 +144,29 @@ class AuthException implements Exception {
   final String message;
   @override
   String toString() => 'AuthException: $message';
+}
+
+String _firebaseAuthMessage(FirebaseAuthException e) {
+  switch (e.code) {
+    case 'invalid-email':
+      return 'Enter a valid email address.';
+    case 'user-disabled':
+      return 'This account has been disabled.';
+    case 'user-not-found':
+      return 'No Goal Digger account uses that email yet.';
+    case 'wrong-password':
+    case 'invalid-credential':
+      return 'Email or password did not match.';
+    case 'email-already-in-use':
+    case 'credential-already-in-use':
+      return 'That email already has an account. Log in instead.';
+    case 'weak-password':
+      return 'Use a password with at least 6 characters.';
+    case 'network-request-failed':
+      return 'Network connection failed. Try again.';
+    case 'operation-not-allowed':
+      return 'This sign-in method is not enabled in Firebase Auth yet.';
+    default:
+      return e.message ?? 'Authentication failed. Please try again.';
+  }
 }

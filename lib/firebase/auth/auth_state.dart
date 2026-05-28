@@ -47,6 +47,12 @@ class AuthState extends ChangeNotifier {
 
   String get uid => _user?.uid ?? '';
 
+  void clearError() {
+    if (_errorMessage == null) return;
+    _errorMessage = null;
+    notifyListeners();
+  }
+
   // ── Auth actions ─────────────────────────────────────────────────────────────
 
   Future<void> signInWithGoogle() async {
@@ -59,6 +65,47 @@ class AuthState extends ChangeNotifier {
     } catch (e) {
       _errorMessage = 'Google sign-in failed. Please try again.';
       debugPrint('signInWithGoogle error: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<void> signInWithEmail(String email, String password) async {
+    _setLoading(true);
+    try {
+      await _authService.signInWithEmail(
+        email: email,
+        password: password,
+      );
+      _errorMessage = null;
+    } on AuthException catch (e) {
+      _errorMessage = e.message;
+    } catch (e) {
+      _errorMessage = 'Email login failed. Please try again.';
+      debugPrint('signInWithEmail error: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<void> createAccountWithEmail({
+    required String email,
+    required String password,
+    String? displayName,
+  }) async {
+    _setLoading(true);
+    try {
+      await _authService.createAccountWithEmail(
+        email: email,
+        password: password,
+        displayName: displayName,
+      );
+      _errorMessage = null;
+    } on AuthException catch (e) {
+      _errorMessage = e.message;
+    } catch (e) {
+      _errorMessage = 'Could not create that account. Please try again.';
+      debugPrint('createAccountWithEmail error: $e');
     } finally {
       _setLoading(false);
     }
@@ -102,6 +149,7 @@ class AuthState extends ChangeNotifier {
 
   void _setLoading(bool value) {
     _isLoading = value;
+    if (value) _errorMessage = null;
     notifyListeners();
   }
 
