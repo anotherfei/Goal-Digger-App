@@ -13,6 +13,8 @@ import '../../core/theme/gd_colors.dart';
 import '../../models/models.dart';
 import '../../shared/widgets/shared_widgets.dart';
 
+const bool kDebugAllowGuestSocialAccess = true;
+
 class CommunityPage extends StatefulWidget {
   const CommunityPage({
     super.key,
@@ -75,7 +77,13 @@ class _CommunityPageState extends State<CommunityPage> {
 
   bool get _canUseSocial {
     final user = _user;
-    return user != null && !user.isAnonymous;
+    if (user == null) return false;
+
+    if (kDebugAllowGuestSocialAccess) {
+        return true;
+    }
+
+    return !user.isAnonymous;
   }
 
   CollectionReference<Map<String, dynamic>> get _publicProfiles =>
@@ -83,13 +91,22 @@ class _CommunityPageState extends State<CommunityPage> {
 
   CollectionReference<Map<String, dynamic>>? get _myFriendsCollection {
     final user = _user;
-    if (user == null || user.isAnonymous) return null;
+    if (user == null) return null;
+
+    if (user.isAnonymous && !kDebugAllowGuestSocialAccess) {
+        return null;
+    }
+
     return _db.collection('users').doc(user.uid).collection('friends');
   }
 
   Future<void> _ensurePublicProfile() async {
     final user = _user;
-    if (user == null || user.isAnonymous) return;
+    if (user == null) return;
+
+    if (user.isAnonymous && !kDebugAllowGuestSocialAccess) {
+        return;
+    }
 
     final displayName = _cleanDisplayName(user.displayName, user.email);
     final username = _usernameFor(displayName, user.email, user.uid);
@@ -159,9 +176,14 @@ class _CommunityPageState extends State<CommunityPage> {
   Future<void> _addFriend(_PublicProfile profile) async {
     final user = _user;
     final friendsCollection = _myFriendsCollection;
-    if (user == null || user.isAnonymous || friendsCollection == null) {
-      _showSnack('Use a full account before adding real friends.');
-      return;
+    if (user == null || friendsCollection == null) {
+        _showSnack('Sign in before adding friends.');
+        return;
+    }
+
+    if (user.isAnonymous && !kDebugAllowGuestSocialAccess) {
+        _showSnack('Use a full account before adding real friends.');
+        return;
     }
 
     if (profile.uid == user.uid) {
@@ -1130,9 +1152,14 @@ class _DirectChatPageState extends State<_DirectChatPage> {
   Future<void> _send() async {
     final user = _user;
     final text = _controller.text.trim();
-    if (user == null || user.isAnonymous) {
-      _snack('Use a full account before sending chat messages.');
-      return;
+    if (user == null) {
+        _snack('Sign in before sending chat messages.');
+        return;
+    }
+
+    if (user.isAnonymous && !kDebugAllowGuestSocialAccess) {
+        _snack('Use a full account before sending chat messages.');
+        return;
     }
     if (text.isEmpty || _sending) return;
 
@@ -1177,7 +1204,7 @@ class _DirectChatPageState extends State<_DirectChatPage> {
     final user = _user;
     final currentUid = user?.uid;
 
-    if (user == null || user.isAnonymous) {
+    if (user == null || (user.isAnonymous && !kDebugAllowGuestSocialAccess)) {
       return Scaffold(
         appBar: AppBar(title: Text(widget.friend.displayName)),
         body: PageScaffold(
