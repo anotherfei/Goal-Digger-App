@@ -4,6 +4,10 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../firebase/auth/auth_state.dart';
+import '../onboarding/onboarding_screen.dart';
 
 import '../../core/theme/gd_colors.dart';
 import '../../models/models.dart';
@@ -67,18 +71,25 @@ class _CommunityPageState extends State<CommunityPage> {
 
   User? get _user => _auth.currentUser;
 
+  bool get _isGuestUser => _user?.isAnonymous ?? false;
+
+  bool get _canUseSocial {
+    final user = _user;
+    return user != null && !user.isAnonymous;
+  }
+
   CollectionReference<Map<String, dynamic>> get _publicProfiles =>
       _db.collection('public_profiles');
 
   CollectionReference<Map<String, dynamic>>? get _myFriendsCollection {
-    final uid = _user?.uid;
-    if (uid == null) return null;
-    return _db.collection('users').doc(uid).collection('friends');
+    final user = _user;
+    if (user == null || user.isAnonymous) return null;
+    return _db.collection('users').doc(user.uid).collection('friends');
   }
 
   Future<void> _ensurePublicProfile() async {
     final user = _user;
-    if (user == null) return;
+    if (user == null || user.isAnonymous) return;
 
     final displayName = _cleanDisplayName(user.displayName, user.email);
     final username = _usernameFor(displayName, user.email, user.uid);
@@ -116,24 +127,26 @@ class _CommunityPageState extends State<CommunityPage> {
   }
 
   Stream<List<_FriendProfile>> _friendsStream() {
+    if (!_canUseSocial) {
+      return Stream.value(const []);
+    }
+
     final friendsCollection = _myFriendsCollection;
     if (friendsCollection == null) {
-      return Stream.value(_fallbackFriends());
+      return Stream.value(const []);
     }
 
     return friendsCollection
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      final firestoreFriends = snapshot.docs
+      return snapshot.docs
           .map((doc) => _FriendProfile.fromFriendDoc(doc))
           .where((friend) => friend.displayName.trim().isNotEmpty)
           .toList();
-
-      if (firestoreFriends.isNotEmpty) return firestoreFriends;
-      return _fallbackFriends();
     });
   }
+
 
   List<_FriendProfile> _fallbackFriends() {
     return widget.friends
@@ -146,8 +159,8 @@ class _CommunityPageState extends State<CommunityPage> {
   Future<void> _addFriend(_PublicProfile profile) async {
     final user = _user;
     final friendsCollection = _myFriendsCollection;
-    if (user == null || friendsCollection == null) {
-      _showSnack('Sign in first before adding real friends.');
+    if (user == null || user.isAnonymous || friendsCollection == null) {
+      _showSnack('Use a full account before adding real friends.');
       return;
     }
 
@@ -221,11 +234,105 @@ class _CommunityPageState extends State<CommunityPage> {
             ),
           ),
           const SizedBox(height: 16),
-          if (_tab == 0) _buildFriendsTab(context) else _buildCommunitiesTab(context),
+          if (!_canUseSocial)
+            _buildSignedOutGate(context)
+          else if (_tab == 0)
+            _buildFriendsTab(context)
+          else
+            _buildCommunitiesTab(context),
         ],
       ),
     );
   }
+
+
+  Widget _buildSignedOutGate(BuildContext context) {
+    final isGuest = _isGuestUser;
+    return AppCard(
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const CircleAvatar(
+              radius: 30,
+              backgroundColor: gdPrimarySoft,
+              child: Icon(
+                Icons.lock_outline_rounded,
+                color: gdPrimary,
+                size: 30,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isGuest ? 'Full sign-in required' : 'Sign in to use Social',
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+                color: gdInk,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isGuest
+                  ? 'Guest mode is only for preview. Friends, friend search, communities, and chat need a full account so your data can sync safely with Firestore.'
+                  : 'Friends, friend search, communities, and chat need an account so your data can sync safely with Firestore.',
+              style: const TextStyle(
+                color: gdMuted,
+                fontWeight: FontWeight.w700,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => _openFullAccountLogin(context),
+                icon: const Icon(Icons.login_rounded),
+                label: Text(isGuest ? 'Use full account' : 'Sign in'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openFullAccountLogin(BuildContext context) async {
+    final authState = context.read<AuthState>();
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (loginContext) => _FullAccountLoginPage(
+          onGoogle: () async {
+            try {
+              await authState.signInWithGoogle();
+              await _ensurePublicProfile();
+              if (!mounted) return;
+              if (_canUseSocial) {
+                Navigator.of(loginContext).pop();
+                setState(() {});
+                _showSnack('Full account connected. Social is now available.');
+              } else {
+                _showSnack('Google sign-in did not finish. Please try again.');
+              }
+            } catch (e) {
+              _showSnack('Google sign-in failed: $e');
+            }
+          },
+          onLinkedIn: () {
+            _showSnack('LinkedIn login is not configured yet. Use Google for full account access.');
+          },
+          onGuest: () {
+            Navigator.of(loginContext).pop();
+          },
+        ),
+      ),
+    );
+
+    if (mounted) setState(() {});
+  }
+
 
   Widget _buildFriendsTab(BuildContext context) {
     return StreamBuilder<List<_FriendProfile>>(
@@ -243,7 +350,7 @@ class _CommunityPageState extends State<CommunityPage> {
 
         final topThree = leaderboard.take(3).toList();
         final friendPreview = friends.length > 5 ? friends.take(5).toList() : friends;
-        final hasMoreThanFive = friends.length > 0;
+        final hasMoreThanFive = friends.length > 5;
         final currentFriendNames = friends.map((friend) => friend.displayName).toSet();
 
         return Column(
@@ -480,6 +587,11 @@ class _CommunityPageState extends State<CommunityPage> {
   }
 
   void _openFindFriendsPage(BuildContext context, [Set<String>? currentFriendNames]) {
+    if (!_canUseSocial) {
+      _showSnack('Use a full account before finding friends.');
+      return;
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _FindFriendsPage(
@@ -516,6 +628,11 @@ class _CommunityPageState extends State<CommunityPage> {
   }
 
   void _openChatPage(BuildContext context, _FriendProfile friend) {
+    if (!_canUseSocial) {
+      _showSnack('Use a full account before opening chat.');
+      return;
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => _DirectChatPage(friend: friend)),
     );
@@ -524,6 +641,73 @@ class _CommunityPageState extends State<CommunityPage> {
   void _openCommunityChatPage(BuildContext context, CommunityGroup group) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => _CommunityChatPage(group: group)),
+    );
+  }
+}
+
+
+class _FullAccountLoginPage extends StatelessWidget {
+  const _FullAccountLoginPage({
+    required this.onGoogle,
+    required this.onLinkedIn,
+    required this.onGuest,
+  });
+
+  final VoidCallback onGoogle;
+  final VoidCallback onLinkedIn;
+  final VoidCallback onGuest;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Use full account'),
+      ),
+      body: SafeArea(
+        top: false,
+        child: Stack(
+          children: [
+            const AmbientBackground(),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final wide = constraints.maxWidth >= 900;
+                final tutorial = const TutorialIntroPanel();
+                final login = SimpleOnboardingCard(
+                  onGoogle: onGoogle,
+                  onLinkedIn: onLinkedIn,
+                  onGuest: onGuest,
+                );
+
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(18),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1120),
+                      child: wide
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(flex: 6, child: tutorial),
+                                const SizedBox(width: 24),
+                                Expanded(flex: 4, child: login),
+                              ],
+                            )
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                tutorial,
+                                const SizedBox(height: 18),
+                                login,
+                              ],
+                            ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -709,6 +893,46 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.currentUid == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Find friends')),
+        body: PageScaffold(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: AppCard(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      CircleAvatar(
+                        radius: 34,
+                        backgroundColor: gdPrimarySoft,
+                        child: Icon(Icons.lock_outline_rounded, color: gdPrimary, size: 34),
+                      ),
+                      SizedBox(height: 14),
+                      Text(
+                        'Sign in required',
+                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: gdInk),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Friend search needs an account so Firestore can check permissions safely.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(title: const Text('Find friends')),
       body: PageScaffold(
@@ -906,8 +1130,8 @@ class _DirectChatPageState extends State<_DirectChatPage> {
   Future<void> _send() async {
     final user = _user;
     final text = _controller.text.trim();
-    if (user == null) {
-      _snack('Sign in before sending chat messages.');
+    if (user == null || user.isAnonymous) {
+      _snack('Use a full account before sending chat messages.');
       return;
     }
     if (text.isEmpty || _sending) return;
@@ -950,7 +1174,48 @@ class _DirectChatPageState extends State<_DirectChatPage> {
 
   @override
   Widget build(BuildContext context) {
-    final currentUid = _user?.uid;
+    final user = _user;
+    final currentUid = user?.uid;
+
+    if (user == null || user.isAnonymous) {
+      return Scaffold(
+        appBar: AppBar(title: Text(widget.friend.displayName)),
+        body: PageScaffold(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: AppCard(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      CircleAvatar(
+                        radius: 34,
+                        backgroundColor: gdPrimarySoft,
+                        child: Icon(Icons.lock_outline_rounded, color: gdPrimary, size: 34),
+                      ),
+                      SizedBox(height: 14),
+                      Text(
+                        'Sign in required',
+                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: gdInk),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Chat needs an account so messages can be saved safely.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
