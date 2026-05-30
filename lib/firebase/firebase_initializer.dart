@@ -22,7 +22,7 @@ class FirebaseInitializer {
       int.fromEnvironment('FIREBASE_AUTH_EMULATOR_PORT', defaultValue: 9099);
   static const int _firestoreEmulatorPort = int.fromEnvironment(
     'FIRESTORE_EMULATOR_PORT',
-    defaultValue: 8081,
+    defaultValue: 8080,
   );
   static const int _functionsEmulatorPort = int.fromEnvironment(
     'FIREBASE_FUNCTIONS_EMULATOR_PORT',
