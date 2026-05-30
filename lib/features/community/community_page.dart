@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -223,6 +225,21 @@ class _CommunityPageState extends State<CommunityPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
+  }
+
+  Future<int> _seedDebugUsers() async {
+    final user = _user;
+    if (user == null) {
+      _showSnack('Sign in before seeding debug users.');
+      return 0;
+    }
+
+    final callable = FirebaseFunctions.instanceFor(region: 'asia-east1')
+        .httpsCallable('seedDebugUsers');
+    final result = await callable.call<Map<String, dynamic>>({'count': 7});
+    final count = (result.data['count'] as num?)?.toInt() ?? 0;
+    _showSnack('Seeded $count debug users.');
+    return count;
   }
 
   @override
@@ -667,6 +684,7 @@ class _CommunityPageState extends State<CommunityPage> {
           friendSuggestions: widget.friendSuggestions,
           currentFriendNames: currentFriendNames ??
               _fallbackFriends().map((friend) => friend.displayName).toSet(),
+          onSeedDebugUsers: _seedDebugUsers,
           onAddFriend: _addFriend,
         ),
       ),
@@ -1108,6 +1126,7 @@ class _FindFriendsPage extends StatefulWidget {
     required this.publicProfiles,
     required this.friendSuggestions,
     required this.currentFriendNames,
+    required this.onSeedDebugUsers,
     required this.onAddFriend,
   });
 
@@ -1115,6 +1134,7 @@ class _FindFriendsPage extends StatefulWidget {
   final CollectionReference<Map<String, dynamic>> publicProfiles;
   final List<String> friendSuggestions;
   final Set<String> currentFriendNames;
+  final Future<int> Function() onSeedDebugUsers;
   final Future<void> Function(_PublicProfile profile) onAddFriend;
 
   @override
@@ -1125,6 +1145,7 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
   bool _adding = false;
+  bool _seeding = false;
 
   @override
   void dispose() {
@@ -1161,6 +1182,32 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
       await widget.onAddFriend(profile);
     } finally {
       if (mounted) setState(() => _adding = false);
+    }
+  }
+
+  Future<void> _seedDebugUsers() async {
+    if (_seeding) return;
+    setState(() => _seeding = true);
+    try {
+      await widget.onSeedDebugUsers();
+    } on FirebaseFunctionsException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Debug seed failed: ${e.message ?? e.code}'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Debug seed failed: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _seeding = false);
     }
   }
 
@@ -1246,6 +1293,26 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                       ),
                       onChanged: (value) => setState(() => _query = value),
                     ),
+                    if (kDebugMode) ...[
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _seeding
+                              ? null
+                              : () => unawaited(_seedDebugUsers()),
+                          icon: _seeding
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.bug_report_rounded),
+                          label: const Text('Seed 7 random debug users'),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
