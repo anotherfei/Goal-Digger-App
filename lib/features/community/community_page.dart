@@ -353,7 +353,6 @@ class _CommunityPageState extends State<CommunityPage> {
         final topThree = leaderboard.take(3).toList();
         final friendPreview =
             friends.length > 5 ? friends.take(5).toList() : friends;
-        final hasMoreThanFive = friends.length > 5;
         final currentFriendNames =
             friends.map((friend) => friend.displayName).toSet();
 
@@ -403,23 +402,21 @@ class _CommunityPageState extends State<CommunityPage> {
                   onChat: () => _openChatPage(context, friend),
                   onDelete: () => unawaited(_deleteFriend(friend)),
                 ),
-              if (hasMoreThanFive) ...[
-                const SizedBox(height: 4),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      backgroundColor: gdPrimary, // change this
-                      foregroundColor: gdCardLight, // text/icon color
-                      side: const BorderSide(color: gdPrimary, width: 1.5),
-                    ),
-                    onPressed: () => _openAllFriendsPage(context, friends),
-                    icon: const Icon(Icons.people_rounded),
-                    label: Text('View all friends (${friends.length})'),
+              const SizedBox(height: 4),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: gdPrimary,
+                    foregroundColor: gdCardLight,
+                    side: const BorderSide(color: gdPrimary, width: 1.5),
                   ),
+                  onPressed: () => _openAllFriendsPage(context, friends),
+                  icon: const Icon(Icons.people_rounded),
+                  label: Text('View all friends (${friends.length})'),
                 ),
-                const SizedBox(height: 8),
-              ],
+              ),
+              const SizedBox(height: 8),
               // SizedBox(
               //   width: double.infinity,
               //   child: FilledButton.icon(
