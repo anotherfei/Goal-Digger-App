@@ -106,6 +106,7 @@ class _CommunityPageState extends State<CommunityPage> {
     final userSnapshot = await userRef.get();
     final hasFriendsField =
         userSnapshot.exists && (userSnapshot.data()?.containsKey('friends') ?? false);
+    final invalidFriendEntries = _invalidFriendEntriesFromData(userSnapshot.data());
 
     final userData = <String, dynamic>{
       'uid': user.uid,
@@ -124,7 +125,9 @@ class _CommunityPageState extends State<CommunityPage> {
       userData['createdAt'] = FieldValue.serverTimestamp();
     }
 
-    if (!hasFriendsField) {
+    if (invalidFriendEntries.isNotEmpty) {
+      userData['friends'] = FieldValue.arrayRemove(invalidFriendEntries);
+    } else if (!hasFriendsField) {
       userData['friends'] = <String>[];
     }
 
@@ -183,47 +186,176 @@ class _CommunityPageState extends State<CommunityPage> {
       photoUrl: user?.photoURL,
       streak: widget.streak,
       isReal: user != null,
+      isFriend: true,
+      hasChat: false,
+      lastMessage: null,
+      lastSenderUid: null,
+      hasUnread: false,
+      chatUpdatedAt: null,
     );
   }
 
   Stream<_FriendsData> _friendsDataStream() {
     if (!_canUseSocial) {
       return Stream.value(
-        _FriendsData(currentUser: _currentUserFallbackProfile(), friends: const []),
+        _FriendsData(
+          currentUser: _currentUserFallbackProfile(),
+          friends: const [],
+        ),
       );
     }
 
     final user = _user;
     if (user == null) {
       return Stream.value(
-        _FriendsData(currentUser: _currentUserFallbackProfile(), friends: const []),
+        _FriendsData(
+          currentUser: _currentUserFallbackProfile(),
+          friends: const [],
+        ),
       );
     }
 
-    return _usersCollection.doc(user.uid).snapshots().asyncMap((snapshot) async {
-      final fallback = _currentUserFallbackProfile();
-      final currentUser = snapshot.exists
-          ? _FriendProfile.fromUserDoc(
-              snapshot,
-              fallbackName: fallback.displayName,
-              fallbackUsername: fallback.username,
-              fallbackPhotoUrl: fallback.photoUrl,
-              fallbackStreak: fallback.streak,
-            )
-          : fallback;
+    final controller = StreamController<_FriendsData>();
+    DocumentSnapshot<Map<String, dynamic>>? latestUserSnapshot;
+    QuerySnapshot<Map<String, dynamic>>? latestChatsSnapshot;
+    var emitVersion = 0;
+    var disposed = false;
 
-      final friendUids = _friendUidsFromData(snapshot.data());
-      final friends = await _fetchUserProfiles(friendUids);
+    Future<void> emit() async {
+      final version = ++emitVersion;
+      try {
+        final data = await _buildFriendsDataFromSnapshots(
+          userUid: user.uid,
+          userSnapshot: latestUserSnapshot,
+          chatsSnapshot: latestChatsSnapshot,
+        );
 
-      return _FriendsData(currentUser: currentUser, friends: friends);
-    });
+        if (disposed || controller.isClosed || version != emitVersion) return;
+        controller.add(data);
+      } catch (error, stackTrace) {
+        if (disposed || controller.isClosed) return;
+        controller.addError(error, stackTrace);
+      }
+    }
+
+    final userSub = _usersCollection.doc(user.uid).snapshots().listen(
+      (snapshot) {
+        latestUserSnapshot = snapshot;
+        unawaited(emit());
+      },
+      onError: controller.addError,
+    );
+
+    final chatSub = _db
+        .collection('chats')
+        .where('members', arrayContains: user.uid)
+        .snapshots()
+        .listen(
+      (snapshot) {
+        latestChatsSnapshot = snapshot;
+        unawaited(emit());
+      },
+      onError: controller.addError,
+    );
+
+    controller.onCancel = () async {
+      disposed = true;
+      await userSub.cancel();
+      await chatSub.cancel();
+    };
+
+    return controller.stream;
   }
 
-  Future<List<_FriendProfile>> _fetchUserProfiles(List<String> friendUids) async {
+  Future<_FriendsData> _buildFriendsDataFromSnapshots({
+    required String userUid,
+    required DocumentSnapshot<Map<String, dynamic>>? userSnapshot,
+    required QuerySnapshot<Map<String, dynamic>>? chatsSnapshot,
+  }) async {
+    final fallback = _currentUserFallbackProfile();
+    final currentUser = userSnapshot != null && userSnapshot.exists
+        ? _FriendProfile.fromUserDoc(
+            userSnapshot,
+            fallbackName: fallback.displayName,
+            fallbackUsername: fallback.username,
+            fallbackPhotoUrl: fallback.photoUrl,
+            fallbackStreak: fallback.streak,
+          )
+        : fallback;
+
+    final friendUidList = _friendUidsFromData(userSnapshot?.data())
+        .where((uid) => uid != userUid)
+        .toList();
+    final friendUidSet = friendUidList.toSet();
+
+    final chatByUid = _directChatSummariesFromSnapshot(chatsSnapshot, userUid);
+
     final orderedUids = <String>[];
     final seen = <String>{};
 
-    for (final uid in friendUids) {
+    // Chat rooms first, newest first, so incoming chats show up immediately.
+    final chatEntries = chatByUid.entries.toList()
+      ..sort(
+        (a, b) => _timestampMillis(b.value.updatedAt)
+            .compareTo(_timestampMillis(a.value.updatedAt)),
+      );
+
+    for (final entry in chatEntries) {
+      if (seen.add(entry.key)) {
+        orderedUids.add(entry.key);
+      }
+    }
+
+    // Then add friends who do not have a chat yet.
+    for (final uid in friendUidList) {
+      if (seen.add(uid)) {
+        orderedUids.add(uid);
+      }
+    }
+
+    final friends = await _fetchUserProfiles(
+      userUids: orderedUids,
+      friendUids: friendUidSet,
+      chatByUid: chatByUid,
+    );
+
+    return _FriendsData(currentUser: currentUser, friends: friends);
+  }
+
+  Map<String, _DirectChatSummary> _directChatSummariesFromSnapshot(
+    QuerySnapshot<Map<String, dynamic>>? snapshot,
+    String currentUid,
+  ) {
+    final summaries = <String, _DirectChatSummary>{};
+    if (snapshot == null) return summaries;
+
+    for (final doc in snapshot.docs) {
+      final summary = _DirectChatSummary.fromChatDoc(doc, currentUid);
+      if (summary == null) continue;
+
+      final existing = summaries[summary.otherUid];
+      if (existing == null ||
+          _timestampMillis(summary.updatedAt) >
+              _timestampMillis(existing.updatedAt)) {
+        summaries[summary.otherUid] = summary;
+      }
+    }
+
+    return summaries;
+  }
+
+  int _timestampMillis(Timestamp? timestamp) =>
+      timestamp?.millisecondsSinceEpoch ?? 0;
+
+  Future<List<_FriendProfile>> _fetchUserProfiles({
+    required List<String> userUids,
+    required Set<String> friendUids,
+    required Map<String, _DirectChatSummary> chatByUid,
+  }) async {
+    final orderedUids = <String>[];
+    final seen = <String>{};
+
+    for (final uid in userUids) {
       final cleaned = uid.trim();
       if (cleaned.isEmpty || seen.contains(cleaned)) continue;
       seen.add(cleaned);
@@ -240,14 +372,63 @@ class _CommunityPageState extends State<CommunityPage> {
           .get();
 
       for (final doc in snapshot.docs) {
-        profilesByUid[doc.id] = _FriendProfile.fromUserDoc(doc);
+        final summary = chatByUid[doc.id];
+        profilesByUid[doc.id] = _FriendProfile.fromUserDoc(
+          doc,
+          isFriend: friendUids.contains(doc.id),
+          hasChat: summary != null,
+          lastMessage: summary?.lastMessage,
+          lastSenderUid: summary?.lastSenderUid,
+          hasUnread: summary?.hasUnread ?? false,
+          chatUpdatedAt: summary?.updatedAt,
+        );
       }
     }
 
-    return [
-      for (final uid in orderedUids)
-        if (profilesByUid[uid] != null) profilesByUid[uid]!,
-    ];
+    final result = <_FriendProfile>[];
+
+    for (final uid in orderedUids) {
+      final profile = profilesByUid[uid];
+      if (profile != null) {
+        result.add(profile);
+        continue;
+      }
+
+      final chatSummary = chatByUid[uid];
+      if (chatSummary != null) {
+        result.add(
+          _FriendProfile.fromChatSummary(
+            chatSummary,
+            isFriend: friendUids.contains(uid),
+          ),
+        );
+        continue;
+      }
+
+      // This can happen when users/{currentUid}.friends contains a UID,
+      // but that user has not created public_profiles/{uid} yet.
+      // Do not crash the whole Friends page; show a safe fallback row instead.
+      final shortUid = uid.substring(0, min(6, uid.length));
+      final displayName = 'Friend $shortUid';
+      result.add(
+        _FriendProfile(
+          uid: uid,
+          displayName: displayName,
+          username: _fallbackUsernameFor(displayName, '', uid),
+          photoUrl: null,
+          streak: 0,
+          isReal: true,
+          isFriend: friendUids.contains(uid),
+          hasChat: false,
+          lastMessage: null,
+          lastSenderUid: null,
+          hasUnread: false,
+          chatUpdatedAt: null,
+        ),
+      );
+    }
+
+    return result;
   }
 
   List<String> _friendUidsFromData(Map<String, dynamic>? data) {
@@ -268,8 +449,42 @@ class _CommunityPageState extends State<CommunityPage> {
         })
         .whereType<String>()
         .map((uid) => uid.trim())
-        .where((uid) => uid.isNotEmpty)
+        // Old app versions stored display names in friends, for example
+        // "wilson thang". Friends must be stored as user document ids / UIDs.
+        .where(_looksLikeStoredUid)
         .toList();
+  }
+
+  List<Object> _invalidFriendEntriesFromData(Map<String, dynamic>? data) {
+    final rawFriends = data?['friends'];
+
+    if (rawFriends is! Iterable) {
+      return const [];
+    }
+
+    return rawFriends
+        .where((friend) {
+          if (friend is String) {
+            return !_looksLikeStoredUid(friend.trim());
+          }
+          if (friend is Map) {
+            final uid = (friend['uid'] ?? friend['id'] ?? friend['userId'])
+                ?.toString()
+                .trim();
+            return uid == null || !_looksLikeStoredUid(uid);
+          }
+          return true;
+        })
+        .cast<Object>()
+        .toList();
+  }
+
+  bool _looksLikeStoredUid(String value) {
+    final uid = value.trim();
+    if (uid.isEmpty) return false;
+    if (uid.contains(RegExp(r'\s'))) return false;
+    if (uid.startsWith('@')) return false;
+    return uid.length >= 6;
   }
 
   List<List<T>> _chunks<T>(List<T> values, int size) {
@@ -281,6 +496,23 @@ class _CommunityPageState extends State<CommunityPage> {
   }
 
   Future<void> _addFriend(_PublicProfile profile) async {
+    await _addFriendByUid(
+      friendUid: profile.uid,
+      displayName: profile.displayName,
+    );
+  }
+
+  Future<void> _addFriendFromFriendProfile(_FriendProfile profile) async {
+    await _addFriendByUid(
+      friendUid: profile.uid,
+      displayName: profile.displayName,
+    );
+  }
+
+  Future<void> _addFriendByUid({
+    required String friendUid,
+    required String displayName,
+  }) async {
     final user = _user;
     if (user == null) {
       _showSnack('Sign in before adding friends.');
@@ -292,7 +524,7 @@ class _CommunityPageState extends State<CommunityPage> {
       return;
     }
 
-    if (profile.uid == user.uid) {
+    if (friendUid == user.uid) {
       _showSnack('That is your own profile.');
       return;
     }
@@ -300,12 +532,12 @@ class _CommunityPageState extends State<CommunityPage> {
     await _ensurePublicProfile();
 
     await _usersCollection.doc(user.uid).set({
-      'friends': FieldValue.arrayUnion([profile.uid]),
+      'friends': FieldValue.arrayUnion([friendUid]),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
-    widget.onAddFriend(profile.displayName);
-    _showSnack('${profile.displayName} added to your friends.');
+    widget.onAddFriend(displayName);
+    _showSnack('$displayName added to your friends.');
   }
 
   Future<void> _deleteFriend(_FriendProfile friend) async {
@@ -470,7 +702,10 @@ class _CommunityPageState extends State<CommunityPage> {
         final topThree = leaderboard.take(3).toList();
         final friendPreview =
             friends.length > 5 ? friends.take(5).toList() : friends;
-        final currentFriendUids = friends.map((friend) => friend.uid).toSet();
+        final currentFriendUids = friends
+            .where((friend) => friend.isFriend)
+            .map((friend) => friend.uid)
+            .toSet();
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -501,7 +736,7 @@ class _CommunityPageState extends State<CommunityPage> {
               ),
             ),
             const SizedBox(height: 18),
-            SectionTitle(title: 'My friends', trailing: '${friends.length}'),
+            SectionTitle(title: 'Friends & chats', trailing: '${friends.length}'),
             const SizedBox(height: 10),
             if (snapshot.connectionState == ConnectionState.waiting &&
                 snapshot.data == null)
@@ -513,9 +748,9 @@ class _CommunityPageState extends State<CommunityPage> {
               )
             else if (friends.isEmpty)
               const HelpfulErrorBox(
-                title: 'No friends yet',
+                title: 'No friends or chats yet',
                 message:
-                    'Find real users from the database and add them to your friends list.',
+                    'Find real users or start a chat. Any direct chat room will appear here too.',
                 actionLabel: 'Got it',
                 showAction: false,
               )
@@ -524,7 +759,10 @@ class _CommunityPageState extends State<CommunityPage> {
                 _FriendListCard(
                   friend: friend,
                   onChat: () => _openChatPage(context, friend),
-                  onDelete: () => unawaited(_deleteFriend(friend)),
+                  onAdd: () => unawaited(_addFriendFromFriendProfile(friend)),
+                  onDelete: friend.isFriend
+                      ? () => unawaited(_deleteFriend(friend))
+                      : null,
                 ),
               const SizedBox(height: 4),
               SizedBox(
@@ -537,7 +775,7 @@ class _CommunityPageState extends State<CommunityPage> {
                   ),
                   onPressed: () => _openAllFriendsPage(context, friends),
                   icon: const Icon(Icons.people_rounded),
-                  label: Text('View all friends (${friends.length})'),
+                  label: Text('View all friends & chats (${friends.length})'),
                 ),
               ),
               const SizedBox(height: 8),
@@ -791,10 +1029,11 @@ class _CommunityPageState extends State<CommunityPage> {
         builder: (_) => _AllFriendsPage(
           friends: friends,
           onChat: (friend) => _openChatPage(context, friend),
+          onAdd: (friend) => unawaited(_addFriendFromFriendProfile(friend)),
           onDelete: (friend) => unawaited(_deleteFriend(friend)),
           onFindFriends: () => _openFindFriendsPage(
             context,
-            friends.map((friend) => friend.uid).toSet(),
+            friends.where((friend) => friend.isFriend).map((friend) => friend.uid).toSet(),
           ),
         ),
       ),
@@ -816,7 +1055,12 @@ class _CommunityPageState extends State<CommunityPage> {
     }
 
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => _DirectChatPage(friend: friend)),
+      MaterialPageRoute(
+        builder: (_) => _DirectChatPage(
+          friend: friend,
+          onAddFriend: () => _addFriendFromFriendProfile(friend),
+        ),
+      ),
     );
   }
 
@@ -915,23 +1159,49 @@ class _FriendListCard extends StatelessWidget {
   const _FriendListCard({
     required this.friend,
     required this.onChat,
+    required this.onAdd,
     required this.onDelete,
   });
 
   final _FriendProfile friend;
   final VoidCallback onChat;
-  final VoidCallback onDelete;
+  final VoidCallback onAdd;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
+    final subtitle = friend.lastMessageText.isNotEmpty
+        ? '${friend.chatLabel} · ${friend.lastMessageText}'
+        : '${friend.username} · ${friend.streak} day streak';
+
     return AppCard(
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
-        leading: _Avatar(photoUrl: friend.photoUrl, label: friend.displayName),
-        title: Text(friend.displayName,
-            style: const TextStyle(fontWeight: FontWeight.w900)),
+        leading: _UnreadAvatar(
+          photoUrl: friend.photoUrl,
+          label: friend.displayName,
+          showDot: friend.isChatOnly || friend.hasUnread,
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                friend.displayName,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+            if (friend.isChatOnly) ...[
+              const SizedBox(width: 8),
+              const Chip(
+                visualDensity: VisualDensity.compact,
+                label: Text('Chat'),
+              ),
+            ],
+          ],
+        ),
         subtitle: Text(
-          '${friend.username} · ${friend.streak} day streak',
+          subtitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
@@ -939,16 +1209,41 @@ class _FriendListCard extends StatelessWidget {
         trailing: Wrap(
           spacing: 4,
           children: [
-            IconButton.filledTonal(
-              tooltip: 'Chat',
-              onPressed: onChat,
-              icon: const Icon(Icons.chat_bubble_rounded),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                IconButton.filledTonal(
+                  tooltip: 'Chat',
+                  onPressed: onChat,
+                  icon: const Icon(Icons.chat_bubble_rounded),
+                ),
+                if (friend.hasUnread)
+                  Positioned(
+                    right: 5,
+                    top: 5,
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: const BoxDecoration(
+                        color: gdError,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
             ),
-            IconButton(
-              tooltip: 'Delete friend',
-              onPressed: onDelete,
-              icon: const Icon(Icons.delete_outline_rounded, color: gdError),
-            ),
+            if (friend.isFriend)
+              IconButton(
+                tooltip: 'Delete friend',
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline_rounded, color: gdError),
+              )
+            else
+              IconButton(
+                tooltip: 'Add friend',
+                onPressed: onAdd,
+                icon: const Icon(Icons.person_add_alt_1_rounded),
+              ),
           ],
         ),
       ),
@@ -960,12 +1255,14 @@ class _AllFriendsPage extends StatefulWidget {
   const _AllFriendsPage({
     required this.friends,
     required this.onChat,
+    required this.onAdd,
     required this.onDelete,
     required this.onFindFriends,
   });
 
   final List<_FriendProfile> friends;
   final ValueChanged<_FriendProfile> onChat;
+  final ValueChanged<_FriendProfile> onAdd;
   final ValueChanged<_FriendProfile> onDelete;
   final VoidCallback onFindFriends;
 
@@ -994,7 +1291,7 @@ class _AllFriendsPageState extends State<_AllFriendsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('All friends'),
+        title: const Text('All friends & chats'),
         actions: [
           IconButton(
             tooltip: 'Find friends',
@@ -1012,7 +1309,7 @@ class _AllFriendsPageState extends State<_AllFriendsPage> {
               controller: _searchController,
               decoration: const InputDecoration(
                 prefixIcon: Icon(Icons.search_rounded),
-                labelText: 'Search your friends',
+                labelText: 'Search friends or chats',
               ),
               onChanged: (value) => setState(() => _query = value),
             ),
@@ -1021,7 +1318,8 @@ class _AllFriendsPageState extends State<_AllFriendsPage> {
               _FriendListCard(
                 friend: friend,
                 onChat: () => widget.onChat(friend),
-                onDelete: () => widget.onDelete(friend),
+                onAdd: () => widget.onAdd(friend),
+                onDelete: friend.isFriend ? () => widget.onDelete(friend) : null,
               ),
           ],
         ),
@@ -1492,9 +1790,13 @@ class _SuggestedFriendsPanel extends StatelessWidget {
 }
 
 class _DirectChatPage extends StatefulWidget {
-  const _DirectChatPage({required this.friend});
+  const _DirectChatPage({
+    required this.friend,
+    required this.onAddFriend,
+  });
 
   final _FriendProfile friend;
+  final Future<void> Function()? onAddFriend;
 
   @override
   State<_DirectChatPage> createState() => _DirectChatPageState();
@@ -1505,6 +1807,14 @@ class _DirectChatPageState extends State<_DirectChatPage> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   bool _sending = false;
+  bool _addingFriend = false;
+  bool _addedAsFriend = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_markChatRead());
+  }
 
   @override
   void dispose() {
@@ -1520,8 +1830,48 @@ class _DirectChatPageState extends State<_DirectChatPage> {
     return members.join('_');
   }
 
+  DocumentReference<Map<String, dynamic>> get _chatRef =>
+      _db.collection('chats').doc(_chatId);
+
   CollectionReference<Map<String, dynamic>> get _messages =>
-      _db.collection('chats').doc(_chatId).collection('messages');
+      _chatRef.collection('messages');
+
+  List<String> _membersFromChatData(Map<String, dynamic>? data) {
+    final rawMembers = data?['members'];
+    if (rawMembers is! Iterable) return const [];
+
+    return rawMembers
+        .map((member) => member.toString().trim())
+        .where((member) => member.isNotEmpty)
+        .toList();
+  }
+
+  Future<void> _markChatRead() async {
+    final uid = _user?.uid;
+    if (uid == null) return;
+
+    try {
+      await _chatRef.update({
+        'unreadBy': FieldValue.arrayRemove([uid]),
+      });
+    } catch (_) {
+      // Opening a brand-new chat should not create an empty chat document.
+    }
+  }
+
+  Future<void> _addFriendFromChat() async {
+    if (widget.onAddFriend == null || _addingFriend) return;
+
+    setState(() => _addingFriend = true);
+    try {
+      await widget.onAddFriend!();
+      if (mounted) {
+        setState(() => _addedAsFriend = true);
+      }
+    } finally {
+      if (mounted) setState(() => _addingFriend = false);
+    }
+  }
 
   Future<void> _send() async {
     final user = _user;
@@ -1539,19 +1889,39 @@ class _DirectChatPageState extends State<_DirectChatPage> {
 
     setState(() => _sending = true);
     try {
-      final chatRef = _db.collection('chats').doc(_chatId);
-      await chatRef.set({
+      final chatRef = _chatRef;
+      final chatSnapshot = await chatRef.get();
+      final existingMembers = _membersFromChatData(chatSnapshot.data());
+      final sortedMembers = [user.uid, widget.friend.uid]..sort();
+      final memberUids = existingMembers.toSet().containsAll(sortedMembers) &&
+              existingMembers.length == sortedMembers.length
+          ? existingMembers
+          : sortedMembers;
+
+      final chatData = <String, dynamic>{
         'type': 'direct',
-        'members': [user.uid, widget.friend.uid],
+        'members': memberUids,
         'memberNames': {
           user.uid: user.displayName ?? 'You',
           widget.friend.uid: widget.friend.displayName,
         },
         'lastMessage': text,
         'lastSenderUid': user.uid,
+        'unreadBy': FieldValue.arrayUnion([widget.friend.uid]),
         'updatedAt': FieldValue.serverTimestamp(),
-        'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      };
+
+      // Only set createdAt when the chat room is first created.
+      // Re-writing createdAt on every send can break stricter Firestore rules.
+      if (!chatSnapshot.exists) {
+        chatData['createdAt'] = FieldValue.serverTimestamp();
+      }
+
+      await chatRef.set(chatData, SetOptions(merge: true));
+
+      await chatRef.update({
+        'unreadBy': FieldValue.arrayRemove([user.uid]),
+      });
 
       await chatRef.collection('messages').add({
         'senderUid': user.uid,
@@ -1561,6 +1931,10 @@ class _DirectChatPageState extends State<_DirectChatPage> {
       });
 
       _controller.clear();
+    } on FirebaseException catch (error) {
+      _snack('Message failed: ${error.message ?? error.code}');
+    } catch (error) {
+      _snack('Message failed: $error');
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -1637,6 +2011,22 @@ class _DirectChatPageState extends State<_DirectChatPage> {
                     overflow: TextOverflow.ellipsis)),
           ],
         ),
+        actions: [
+          if (!widget.friend.isFriend && !_addedAsFriend)
+            IconButton(
+              tooltip: 'Add friend',
+              onPressed:
+                  _addingFriend ? null : () => unawaited(_addFriendFromChat()),
+              icon: _addingFriend
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.person_add_alt_1_rounded),
+            ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: PageScaffold(
         child: Column(
@@ -2026,6 +2416,42 @@ class _Avatar extends StatelessWidget {
   }
 }
 
+class _UnreadAvatar extends StatelessWidget {
+  const _UnreadAvatar({
+    required this.photoUrl,
+    required this.label,
+    required this.showDot,
+  });
+
+  final String? photoUrl;
+  final String label;
+  final bool showDot;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _Avatar(photoUrl: photoUrl, label: label),
+        if (showDot)
+          Positioned(
+            right: -1,
+            top: -1,
+            child: Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: gdError,
+                shape: BoxShape.circle,
+                border: Border.all(color: gdCardLight, width: 2),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _FriendProfile {
   const _FriendProfile({
     required this.uid,
@@ -2034,6 +2460,12 @@ class _FriendProfile {
     required this.photoUrl,
     required this.streak,
     required this.isReal,
+    required this.isFriend,
+    required this.hasChat,
+    required this.lastMessage,
+    required this.lastSenderUid,
+    required this.hasUnread,
+    required this.chatUpdatedAt,
   });
 
   final String uid;
@@ -2042,6 +2474,23 @@ class _FriendProfile {
   final String? photoUrl;
   final int streak;
   final bool isReal;
+  final bool isFriend;
+  final bool hasChat;
+  final String? lastMessage;
+  final String? lastSenderUid;
+  final bool hasUnread;
+  final Timestamp? chatUpdatedAt;
+
+  bool get isChatOnly => hasChat && !isFriend;
+
+  String get lastMessageText => lastMessage?.trim() ?? '';
+
+  String get chatLabel {
+    if (hasUnread) return 'New message';
+    if (isChatOnly) return 'Chat request';
+    if (hasChat) return 'Last chat';
+    return username;
+  }
 
   factory _FriendProfile.fromUserDoc(
     DocumentSnapshot<Map<String, dynamic>> doc, {
@@ -2049,6 +2498,12 @@ class _FriendProfile {
     String? fallbackUsername,
     String? fallbackPhotoUrl,
     int fallbackStreak = 0,
+    bool isFriend = true,
+    bool hasChat = false,
+    String? lastMessage,
+    String? lastSenderUid,
+    bool hasUnread = false,
+    Timestamp? chatUpdatedAt,
   }) {
     final data = doc.data() ?? {};
     final email = _readString(data, const ['email']);
@@ -2081,6 +2536,99 @@ class _FriendProfile {
       photoUrl: photoUrl,
       streak: streak,
       isReal: true,
+      isFriend: isFriend,
+      hasChat: hasChat,
+      lastMessage: lastMessage,
+      lastSenderUid: lastSenderUid,
+      hasUnread: hasUnread,
+      chatUpdatedAt: chatUpdatedAt,
+    );
+  }
+
+  factory _FriendProfile.fromChatSummary(
+    _DirectChatSummary summary, {
+    required bool isFriend,
+  }) {
+    final displayName = summary.otherName?.trim().isNotEmpty == true
+        ? summary.otherName!.trim()
+        : 'Chat user';
+
+    return _FriendProfile(
+      uid: summary.otherUid,
+      displayName: displayName,
+      username: _fallbackUsernameFor(displayName, '', summary.otherUid),
+      photoUrl: null,
+      streak: 0,
+      isReal: true,
+      isFriend: isFriend,
+      hasChat: true,
+      lastMessage: summary.lastMessage,
+      lastSenderUid: summary.lastSenderUid,
+      hasUnread: summary.hasUnread,
+      chatUpdatedAt: summary.updatedAt,
+    );
+  }
+}
+
+class _DirectChatSummary {
+  const _DirectChatSummary({
+    required this.otherUid,
+    required this.otherName,
+    required this.lastMessage,
+    required this.lastSenderUid,
+    required this.hasUnread,
+    required this.updatedAt,
+  });
+
+  final String otherUid;
+  final String? otherName;
+  final String? lastMessage;
+  final String? lastSenderUid;
+  final bool hasUnread;
+  final Timestamp? updatedAt;
+
+  static _DirectChatSummary? fromChatDoc(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+    String currentUid,
+  ) {
+    final data = doc.data() ?? {};
+    if (data['type'] != null && data['type'] != 'direct') return null;
+
+    final rawMembers = data['members'];
+    if (rawMembers is! Iterable) return null;
+
+    final members = rawMembers
+        .map((member) => member.toString().trim())
+        .where((member) => member.isNotEmpty)
+        .toList();
+
+    if (!members.contains(currentUid)) return null;
+
+    final otherUid = members.firstWhere(
+      (member) => member != currentUid,
+      orElse: () => '',
+    );
+    if (otherUid.isEmpty) return null;
+
+    final rawNames = data['memberNames'];
+    String? otherName;
+    if (rawNames is Map) {
+      otherName = rawNames[otherUid]?.toString();
+    }
+
+    final unreadBy = data['unreadBy'];
+    final hasUnread = unreadBy is Iterable &&
+        unreadBy.map((uid) => uid.toString()).contains(currentUid);
+
+    final updatedAt = data['updatedAt'];
+
+    return _DirectChatSummary(
+      otherUid: otherUid,
+      otherName: otherName,
+      lastMessage: data['lastMessage']?.toString(),
+      lastSenderUid: data['lastSenderUid']?.toString(),
+      hasUnread: hasUnread,
+      updatedAt: updatedAt is Timestamp ? updatedAt : null,
     );
   }
 }
