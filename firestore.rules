@@ -16,9 +16,9 @@ service cloud.firestore {
         && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members;
     }
 
-    // Private user data. This also covers:
-    // users/{uid}/goals, users/{uid}/routines, users/{uid}/friends,
-    // users/{uid}/communities, users/{uid}/ai_sessions, etc.
+    // Private user data.
+    // This also covers users/{uid}/goals, users/{uid}/routines,
+    // users/{uid}/friends, users/{uid}/communities, users/{uid}/ai_sessions, etc.
     match /users/{uid} {
       allow read, write: if isOwner(uid);
 

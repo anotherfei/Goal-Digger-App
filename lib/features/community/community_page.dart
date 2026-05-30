@@ -84,19 +84,11 @@ class _CommunityPageState extends State<CommunityPage> {
     return !user.isAnonymous;
   }
 
+  CollectionReference<Map<String, dynamic>> get _usersCollection =>
+      _db.collection('users');
+
   CollectionReference<Map<String, dynamic>> get _publicProfiles =>
       _db.collection('public_profiles');
-
-  CollectionReference<Map<String, dynamic>>? get _myFriendsCollection {
-    final user = _user;
-    if (user == null) return null;
-
-    if (user.isAnonymous && !kDebugAllowGuestSocialAccess) {
-      return null;
-    }
-
-    return _db.collection('users').doc(user.uid).collection('friends');
-  }
 
   Future<void> _ensurePublicProfile() async {
     final user = _user;
@@ -108,6 +100,35 @@ class _CommunityPageState extends State<CommunityPage> {
 
     final displayName = _cleanDisplayName(user.displayName, user.email);
     final username = _usernameFor(displayName, user.email, user.uid);
+    final searchName = _searchIndex(displayName, username, user.email);
+
+    final userRef = _usersCollection.doc(user.uid);
+    final userSnapshot = await userRef.get();
+    final hasFriendsField =
+        userSnapshot.exists && (userSnapshot.data()?.containsKey('friends') ?? false);
+
+    final userData = <String, dynamic>{
+      'uid': user.uid,
+      'displayName': displayName,
+      'name': displayName,
+      'username': username,
+      'email': user.email,
+      'photoUrl': user.photoURL,
+      'photoURL': user.photoURL,
+      'streak': widget.streak,
+      'searchName': searchName,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    if (!userSnapshot.exists) {
+      userData['createdAt'] = FieldValue.serverTimestamp();
+    }
+
+    if (!hasFriendsField) {
+      userData['friends'] = <String>[];
+    }
+
+    await userRef.set(userData, SetOptions(merge: true));
 
     await _publicProfiles.doc(user.uid).set({
       'uid': user.uid,
@@ -115,9 +136,9 @@ class _CommunityPageState extends State<CommunityPage> {
       'username': username,
       'photoUrl': user.photoURL,
       'streak': widget.streak,
-      'searchName': _searchIndex(displayName, username),
+      'searchName': searchName,
       'updatedAt': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
+      if (!userSnapshot.exists) 'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
 
@@ -143,43 +164,125 @@ class _CommunityPageState extends State<CommunityPage> {
     return cleaned.startsWith('@') ? cleaned : '@$cleaned';
   }
 
-  String _searchIndex(String displayName, String username) {
-    return '${displayName.toLowerCase()} ${username.toLowerCase().replaceAll('@', '')} ${username.toLowerCase()}';
+  String _searchIndex(String displayName, String username, [String? email]) {
+    final cleanedUsername = username.toLowerCase().replaceAll('@', '');
+    final cleanedEmail = email?.toLowerCase() ?? '';
+    return '${displayName.toLowerCase()} $cleanedUsername ${username.toLowerCase()} $cleanedEmail';
   }
 
-  Stream<List<_FriendProfile>> _friendsStream() {
+  _FriendProfile _currentUserFallbackProfile() {
+    final user = _user;
+    final displayName = _cleanDisplayName(user?.displayName, user?.email);
+    final username =
+        _usernameFor(displayName, user?.email, user?.uid ?? 'guest');
+
+    return _FriendProfile(
+      uid: user?.uid ?? 'guest',
+      displayName: displayName,
+      username: username,
+      photoUrl: user?.photoURL,
+      streak: widget.streak,
+      isReal: user != null,
+    );
+  }
+
+  Stream<_FriendsData> _friendsDataStream() {
     if (!_canUseSocial) {
-      return Stream.value(const []);
+      return Stream.value(
+        _FriendsData(currentUser: _currentUserFallbackProfile(), friends: const []),
+      );
     }
 
-    final friendsCollection = _myFriendsCollection;
-    if (friendsCollection == null) {
-      return Stream.value(const []);
+    final user = _user;
+    if (user == null) {
+      return Stream.value(
+        _FriendsData(currentUser: _currentUserFallbackProfile(), friends: const []),
+      );
     }
 
-    return friendsCollection
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => _FriendProfile.fromFriendDoc(doc))
-          .where((friend) => friend.displayName.trim().isNotEmpty)
-          .toList();
+    return _usersCollection.doc(user.uid).snapshots().asyncMap((snapshot) async {
+      final fallback = _currentUserFallbackProfile();
+      final currentUser = snapshot.exists
+          ? _FriendProfile.fromUserDoc(
+              snapshot,
+              fallbackName: fallback.displayName,
+              fallbackUsername: fallback.username,
+              fallbackPhotoUrl: fallback.photoUrl,
+              fallbackStreak: fallback.streak,
+            )
+          : fallback;
+
+      final friendUids = _friendUidsFromData(snapshot.data());
+      final friends = await _fetchUserProfiles(friendUids);
+
+      return _FriendsData(currentUser: currentUser, friends: friends);
     });
   }
 
-  List<_FriendProfile> _fallbackFriends() {
-    return widget.friends
-        .map((name) => name.trim())
-        .where((name) => name.isNotEmpty)
-        .map((name) => _FriendProfile.demo(name))
+  Future<List<_FriendProfile>> _fetchUserProfiles(List<String> friendUids) async {
+    final orderedUids = <String>[];
+    final seen = <String>{};
+
+    for (final uid in friendUids) {
+      final cleaned = uid.trim();
+      if (cleaned.isEmpty || seen.contains(cleaned)) continue;
+      seen.add(cleaned);
+      orderedUids.add(cleaned);
+    }
+
+    if (orderedUids.isEmpty) return const [];
+
+    final profilesByUid = <String, _FriendProfile>{};
+
+    for (final chunk in _chunks(orderedUids, 10)) {
+      final snapshot = await _publicProfiles
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+
+      for (final doc in snapshot.docs) {
+        profilesByUid[doc.id] = _FriendProfile.fromUserDoc(doc);
+      }
+    }
+
+    return [
+      for (final uid in orderedUids)
+        if (profilesByUid[uid] != null) profilesByUid[uid]!,
+    ];
+  }
+
+  List<String> _friendUidsFromData(Map<String, dynamic>? data) {
+    final rawFriends = data?['friends'];
+
+    if (rawFriends is! Iterable) {
+      return const [];
+    }
+
+    return rawFriends
+        .map((friend) {
+          if (friend is String) return friend;
+          if (friend is Map) {
+            return (friend['uid'] ?? friend['id'] ?? friend['userId'])
+                ?.toString();
+          }
+          return null;
+        })
+        .whereType<String>()
+        .map((uid) => uid.trim())
+        .where((uid) => uid.isNotEmpty)
         .toList();
+  }
+
+  List<List<T>> _chunks<T>(List<T> values, int size) {
+    final chunks = <List<T>>[];
+    for (var i = 0; i < values.length; i += size) {
+      chunks.add(values.sublist(i, min(i + size, values.length)));
+    }
+    return chunks;
   }
 
   Future<void> _addFriend(_PublicProfile profile) async {
     final user = _user;
-    final friendsCollection = _myFriendsCollection;
-    if (user == null || friendsCollection == null) {
+    if (user == null) {
       _showSnack('Sign in before adding friends.');
       return;
     }
@@ -194,14 +297,10 @@ class _CommunityPageState extends State<CommunityPage> {
       return;
     }
 
-    await friendsCollection.doc(profile.uid).set({
-      'uid': profile.uid,
-      'displayName': profile.displayName,
-      'username': profile.username,
-      'photoUrl': profile.photoUrl,
-      'streak': profile.streak,
-      'status': 'accepted',
-      'createdAt': FieldValue.serverTimestamp(),
+    await _ensurePublicProfile();
+
+    await _usersCollection.doc(user.uid).set({
+      'friends': FieldValue.arrayUnion([profile.uid]),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
@@ -210,10 +309,17 @@ class _CommunityPageState extends State<CommunityPage> {
   }
 
   Future<void> _deleteFriend(_FriendProfile friend) async {
-    final friendsCollection = _myFriendsCollection;
-    if (friend.isReal && friendsCollection != null) {
-      await friendsCollection.doc(friend.uid).delete();
+    final user = _user;
+    if (user == null) {
+      _showSnack('Sign in before removing friends.');
+      return;
     }
+
+    await _usersCollection.doc(user.uid).set({
+      'friends': FieldValue.arrayRemove([friend.uid]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
     widget.onDeleteFriend(friend.displayName);
     _showSnack('${friend.displayName} removed.');
   }
@@ -335,26 +441,36 @@ class _CommunityPageState extends State<CommunityPage> {
   }
 
   Widget _buildFriendsTab(BuildContext context) {
-    return StreamBuilder<List<_FriendProfile>>(
-      stream: _friendsStream(),
+    return StreamBuilder<_FriendsData>(
+      stream: _friendsDataStream(),
       builder: (context, snapshot) {
-        final friends = snapshot.data ?? _fallbackFriends();
+        if (snapshot.hasError) {
+          return HelpfulErrorBox(
+            title: 'Friends failed to load',
+            message:
+                'Check Firestore rules for users/{uid}.friends and user profile reads. Details: ${snapshot.error}',
+            actionLabel: 'OK',
+            showAction: false,
+          );
+        }
+
+        final friendsData = snapshot.data ??
+            _FriendsData(
+              currentUser: _currentUserFallbackProfile(),
+              friends: const [],
+            );
+        final currentUser = friendsData.currentUser;
+        final friends = friendsData.friends;
         final leaderboard = <_LeaderboardEntry>[
-          _LeaderboardEntry('You', widget.streak, isYou: true),
-          for (var i = 0; i < friends.length; i++)
-            _LeaderboardEntry(
-              friends[i].displayName,
-              friends[i].streak > 0
-                  ? friends[i].streak
-                  : max(2, widget.streak - i + 2),
-            ),
+          _LeaderboardEntry('You', currentUser.streak, isYou: true),
+          for (final friend in friends)
+            _LeaderboardEntry(friend.displayName, friend.streak),
         ]..sort((a, b) => b.streak.compareTo(a.streak));
 
         final topThree = leaderboard.take(3).toList();
         final friendPreview =
             friends.length > 5 ? friends.take(5).toList() : friends;
-        final currentFriendNames =
-            friends.map((friend) => friend.displayName).toSet();
+        final currentFriendUids = friends.map((friend) => friend.uid).toSet();
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -387,11 +503,19 @@ class _CommunityPageState extends State<CommunityPage> {
             const SizedBox(height: 18),
             SectionTitle(title: 'My friends', trailing: '${friends.length}'),
             const SizedBox(height: 10),
-            if (friends.isEmpty)
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                snapshot.data == null)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (friends.isEmpty)
               const HelpfulErrorBox(
                 title: 'No friends yet',
                 message:
-                    'Add accountability friends from Firestore profiles so progress and chat can sync.',
+                    'Find real users from the database and add them to your friends list.',
                 actionLabel: 'Got it',
                 showAction: false,
               )
@@ -417,14 +541,6 @@ class _CommunityPageState extends State<CommunityPage> {
                 ),
               ),
               const SizedBox(height: 8),
-              // SizedBox(
-              //   width: double.infinity,
-              //   child: FilledButton.icon(
-              //     onPressed: () => _openFindFriendsPage(context, currentFriendNames),
-              //     icon: const Icon(Icons.person_search_rounded),
-              //     label: const Text('Find friends'),
-              //   ),
-              // ),
             ],
             if (friends.isEmpty) ...[
               const SizedBox(height: 8),
@@ -432,7 +548,7 @@ class _CommunityPageState extends State<CommunityPage> {
                 width: double.infinity,
                 child: FilledButton.icon(
                   onPressed: () =>
-                      _openFindFriendsPage(context, currentFriendNames),
+                      _openFindFriendsPage(context, currentFriendUids),
                   icon: const Icon(Icons.person_search_rounded),
                   label: const Text('Find friends'),
                 ),
@@ -651,7 +767,7 @@ class _CommunityPageState extends State<CommunityPage> {
   }
 
   void _openFindFriendsPage(BuildContext context,
-      [Set<String>? currentFriendNames]) {
+      [Set<String>? currentFriendUids]) {
     if (!_canUseSocial) {
       _showSnack('Use a full account before finding friends.');
       return;
@@ -662,9 +778,7 @@ class _CommunityPageState extends State<CommunityPage> {
         builder: (_) => _FindFriendsPage(
           currentUid: _user?.uid,
           publicProfiles: _publicProfiles,
-          friendSuggestions: widget.friendSuggestions,
-          currentFriendNames: currentFriendNames ??
-              _fallbackFriends().map((friend) => friend.displayName).toSet(),
+          currentFriendUids: Set<String>.from(currentFriendUids ?? const <String>{}),
           onAddFriend: _addFriend,
         ),
       ),
@@ -680,7 +794,7 @@ class _CommunityPageState extends State<CommunityPage> {
           onDelete: (friend) => unawaited(_deleteFriend(friend)),
           onFindFriends: () => _openFindFriendsPage(
             context,
-            friends.map((friend) => friend.displayName).toSet(),
+            friends.map((friend) => friend.uid).toSet(),
           ),
         ),
       ),
@@ -1104,15 +1218,13 @@ class _FindFriendsPage extends StatefulWidget {
   const _FindFriendsPage({
     required this.currentUid,
     required this.publicProfiles,
-    required this.friendSuggestions,
-    required this.currentFriendNames,
+    required this.currentFriendUids,
     required this.onAddFriend,
   });
 
   final String? currentUid;
   final CollectionReference<Map<String, dynamic>> publicProfiles;
-  final List<String> friendSuggestions;
-  final Set<String> currentFriendNames;
+  final Set<String> currentFriendUids;
   final Future<void> Function(_PublicProfile profile) onAddFriend;
 
   @override
@@ -1130,33 +1242,44 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
     super.dispose();
   }
 
-  Stream<List<_PublicProfile>> _profileStream() {
+  Stream<List<_PublicProfile>> _availableProfilesStream() {
     final q = _query.trim().toLowerCase().replaceAll('@', '');
 
-    Query<Map<String, dynamic>> query;
-    if (q.isEmpty) {
-      query = widget.publicProfiles
-          .orderBy('updatedAt', descending: true)
-          .limit(20);
-    } else {
-      query = widget.publicProfiles
-          .orderBy('searchName')
-          .startAt([q]).endAt(['$q\uf8ff']).limit(20);
-    }
-
-    return query.snapshots().map((snapshot) {
-      return snapshot.docs
-          .map((doc) => _PublicProfile.fromDoc(doc))
+    return widget.publicProfiles.limit(100).snapshots().map((snapshot) {
+      final profiles = snapshot.docs
+          .map((doc) => _PublicProfile.fromUserDoc(doc))
           .where((profile) => profile.uid != widget.currentUid)
+          .where((profile) => !widget.currentFriendUids.contains(profile.uid))
+          .where((profile) => profile.matchesQuery(q))
           .toList();
+
+      if (q.isEmpty) {
+        profiles.sort((a, b) {
+          final streakCompare = b.streak.compareTo(a.streak);
+          if (streakCompare != 0) return streakCompare;
+          return a.displayName.compareTo(b.displayName);
+        });
+      } else {
+        profiles.sort((a, b) => a.displayName.compareTo(b.displayName));
+      }
+
+      return profiles;
     });
   }
 
   Future<void> _add(_PublicProfile profile) async {
     if (_adding) return;
+
     setState(() => _adding = true);
+
     try {
       await widget.onAddFriend(profile);
+
+      if (mounted) {
+        setState(() {
+          widget.currentFriendUids.add(profile.uid);
+        });
+      }
     } finally {
       if (mounted) setState(() => _adding = false);
     }
@@ -1180,16 +1303,20 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                       CircleAvatar(
                         radius: 34,
                         backgroundColor: gdPrimarySoft,
-                        child: Icon(Icons.lock_outline_rounded,
-                            color: gdPrimary, size: 34),
+                        child: Icon(
+                          Icons.lock_outline_rounded,
+                          color: gdPrimary,
+                          size: 34,
+                        ),
                       ),
                       SizedBox(height: 14),
                       Text(
                         'Sign in required',
                         style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            color: gdInk),
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          color: gdInk,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                       SizedBox(height: 8),
@@ -1197,7 +1324,9 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                         'Friend search needs an account so Firestore can check permissions safely.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                            color: gdMuted, fontWeight: FontWeight.w700),
+                          color: gdMuted,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ],
                   ),
@@ -1208,6 +1337,8 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
         ),
       );
     }
+
+    final q = _query.trim();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Find friends')),
@@ -1222,24 +1353,27 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Search Firestore profiles',
+                      'Search users',
                       style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          color: gdInk),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: gdInk,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Users appear here after they open the Social page once. This keeps private user data out of public search.',
+                      'Search real users from Firestore. Suggestions also come from public profile documents, not dummy data.',
                       style: TextStyle(
-                          color: gdMuted, fontWeight: FontWeight.w700),
+                        color: gdMuted,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 14),
                     TextField(
                       controller: _searchController,
                       decoration: const InputDecoration(
                         prefixIcon: Icon(Icons.search_rounded),
-                        labelText: 'Search name or username',
+                        labelText: 'Search name, username, or email',
                         hintText: 'Example: maya or @maya',
                       ),
                       onChanged: (value) => setState(() => _query = value),
@@ -1249,68 +1383,65 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
               ),
             ),
             const SizedBox(height: 16),
-            _SuggestedFriendsPanel(
-              suggestions: widget.friendSuggestions,
-              currentFriendNames: widget.currentFriendNames,
-              onSearchSuggestion: (name) {
-                _searchController.text = name;
-                setState(() => _query = name);
-              },
-            ),
-            const SizedBox(height: 16),
             StreamBuilder<List<_PublicProfile>>(
-              stream: _profileStream(),
+              stream: _availableProfilesStream(),
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    snapshot.data == null) {
                   return const Center(
-                      child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: CircularProgressIndicator()));
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
                 }
 
                 if (snapshot.hasError) {
                   return HelpfulErrorBox(
                     title: 'Friend search failed',
                     message:
-                        'Check Firestore rules and public_profiles indexes. Details: ${snapshot.error}',
+                        'Firestore denied public_profiles. Deploy the updated firestore.rules file, or restart the emulator after saving rules. Details: ${snapshot.error}',
                     actionLabel: 'OK',
                     showAction: false,
                   );
                 }
 
-                final profiles = snapshot.data ?? [];
-                if (profiles.isEmpty) {
-                  return const HelpfulErrorBox(
-                    title: 'No profiles found',
-                    message:
-                        'Ask your teammate to sign in and open the Social page once, then search again.',
-                    actionLabel: 'OK',
-                    showAction: false,
-                  );
-                }
+                final profiles = snapshot.data ?? const <_PublicProfile>[];
+                final sectionTitle =
+                    q.isEmpty ? 'Friend suggestions' : 'Search results';
 
                 return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (final profile in profiles)
+                    SectionTitle(title: sectionTitle, trailing: '${profiles.length}'),
+                    const SizedBox(height: 10),
+                    if (profiles.isEmpty)
+                      HelpfulErrorBox(
+                        title:
+                            q.isEmpty ? 'No friend suggestions yet' : 'No users found',
+                        message: q.isEmpty
+                            ? 'Ask your teammates to sign in and open the Social page once so their public profile is created.'
+                            : 'Try another name or username.',
+                        actionLabel: 'OK',
+                        showAction: false,
+                      )
+                    else
                       AppCard(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        child: ListTile(
-                          leading: _Avatar(
-                              photoUrl: profile.photoUrl,
-                              label: profile.displayName),
-                          title: Text(profile.displayName,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w900)),
-                          subtitle: Text(
-                            '${profile.username} · ${profile.streak} day streak',
-                            style: const TextStyle(
-                                color: gdMuted, fontWeight: FontWeight.w700),
-                          ),
-                          trailing: FilledButton(
-                            onPressed:
-                                _adding ? null : () => unawaited(_add(profile)),
-                            child: const Text('Add'),
-                          ),
+                        child: Column(
+                          children: [
+                            for (var i = 0; i < profiles.length; i++) ...[
+                              _PublicProfileTile(
+                                profile: profiles[i],
+                                adding: _adding,
+                                onAdd: () => unawaited(_add(profiles[i])),
+                                subtitlePrefix: q.isEmpty
+                                    ? 'Suggested accountability friend'
+                                    : null,
+                              ),
+                              if (i != profiles.length - 1)
+                                const Divider(height: 1),
+                            ],
+                          ],
                         ),
                       ),
                   ],
@@ -1324,67 +1455,42 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
   }
 }
 
-class _SuggestedFriendsPanel extends StatelessWidget {
-  const _SuggestedFriendsPanel({
-    required this.suggestions,
-    required this.currentFriendNames,
-    required this.onSearchSuggestion,
+class _PublicProfileTile extends StatelessWidget {
+  const _PublicProfileTile({
+    required this.profile,
+    required this.adding,
+    required this.onAdd,
+    this.subtitlePrefix,
   });
 
-  final List<String> suggestions;
-  final Set<String> currentFriendNames;
-  final ValueChanged<String> onSearchSuggestion;
+  final _PublicProfile profile;
+  final bool adding;
+  final VoidCallback onAdd;
+  final String? subtitlePrefix;
 
   @override
   Widget build(BuildContext context) {
-    final filtered = suggestions
-        .map((name) => name.trim())
-        .where((name) => name.isNotEmpty)
-        .where((name) => !currentFriendNames.contains(name))
-        .take(4)
-        .toList();
+    final streakText = '${profile.streak} day streak';
+    final subtitle = subtitlePrefix == null
+        ? '${profile.username} · $streakText'
+        : '$subtitlePrefix · ${profile.username} · $streakText';
 
-    if (filtered.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SectionTitle(title: 'Suggestions'),
-        const SizedBox(height: 10),
-        AppCard(
-          child: Column(
-            children: [
-              for (var i = 0; i < filtered.length; i++) ...[
-                ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: gdPrimarySoft,
-                    child: Text(
-                      filtered[i].substring(0, 1).toUpperCase(),
-                      style: const TextStyle(
-                          color: gdPrimary, fontWeight: FontWeight.w900),
-                    ),
-                  ),
-                  title: Text(
-                    filtered[i],
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w900, color: gdInk),
-                  ),
-                  subtitle: const Text(
-                    'Suggested accountability friend',
-                    style:
-                        TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
-                  ),
-                  trailing: OutlinedButton(
-                    onPressed: () => onSearchSuggestion(filtered[i]),
-                    child: const Text('Search'),
-                  ),
-                ),
-                if (i != filtered.length - 1) const Divider(height: 1),
-              ],
-            ],
-          ),
-        ),
-      ],
+    return ListTile(
+      leading: _Avatar(photoUrl: profile.photoUrl, label: profile.displayName),
+      title: Text(
+        profile.displayName,
+        style: const TextStyle(fontWeight: FontWeight.w900),
+      ),
+      subtitle: Text(
+        subtitle,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+      ),
+      trailing: FilledButton(
+        onPressed: adding ? null : onAdd,
+        child: const Text('Add'),
+      ),
     );
   }
 }
@@ -1941,32 +2047,56 @@ class _FriendProfile {
   final int streak;
   final bool isReal;
 
-  factory _FriendProfile.fromFriendDoc(
-      DocumentSnapshot<Map<String, dynamic>> doc) {
+  factory _FriendProfile.fromUserDoc(
+    DocumentSnapshot<Map<String, dynamic>> doc, {
+    String? fallbackName,
+    String? fallbackUsername,
+    String? fallbackPhotoUrl,
+    int fallbackStreak = 0,
+  }) {
     final data = doc.data() ?? {};
+    final email = _readString(data, const ['email']);
+    final displayName = _readString(
+      data,
+      const ['displayName', 'name', 'fullName'],
+      fallbackName ??
+          (email.contains('@') ? email.split('@').first : 'Friend'),
+    );
+    final username = _readString(
+      data,
+      const ['username', 'handle'],
+      fallbackUsername ?? _fallbackUsernameFor(displayName, email, doc.id),
+    );
+    final photoUrl = _readNullableString(
+          data,
+          const ['photoUrl', 'photoURL', 'avatarUrl', 'avatarURL'],
+        ) ??
+        fallbackPhotoUrl;
+    final streak = _readInt(
+      data,
+      const ['streak', 'currentStreak', 'streakCount'],
+      fallbackStreak,
+    );
+
     return _FriendProfile(
-      uid: (data['uid'] ?? doc.id).toString(),
-      displayName: (data['displayName'] ?? data['name'] ?? 'Friend').toString(),
-      username: (data['username'] ?? '@friend').toString(),
-      photoUrl: data['photoUrl']?.toString(),
-      streak: (data['streak'] as num?)?.toInt() ?? 0,
+      uid: _readString(data, const ['uid'], doc.id),
+      displayName: displayName,
+      username: username,
+      photoUrl: photoUrl,
+      streak: streak,
       isReal: true,
     );
   }
+}
 
-  factory _FriendProfile.demo(String name) {
-    final cleaned = name.trim();
-    return _FriendProfile(
-      uid:
-          'demo_${cleaned.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
-      displayName: cleaned,
-      username:
-          '@${cleaned.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
-      photoUrl: null,
-      streak: 2,
-      isReal: false,
-    );
-  }
+class _FriendsData {
+  const _FriendsData({
+    required this.currentUser,
+    required this.friends,
+  });
+
+  final _FriendProfile currentUser;
+  final List<_FriendProfile> friends;
 }
 
 class _PublicProfile {
@@ -1976,6 +2106,7 @@ class _PublicProfile {
     required this.username,
     required this.photoUrl,
     required this.streak,
+    required this.searchText,
   });
 
   final String uid;
@@ -1983,16 +2114,53 @@ class _PublicProfile {
   final String username;
   final String? photoUrl;
   final int streak;
+  final String searchText;
 
-  factory _PublicProfile.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+  factory _PublicProfile.fromUserDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? {};
-    return _PublicProfile(
-      uid: (data['uid'] ?? doc.id).toString(),
-      displayName: (data['displayName'] ?? 'Goal Digger User').toString(),
-      username: (data['username'] ?? '@user').toString(),
-      photoUrl: data['photoUrl']?.toString(),
-      streak: (data['streak'] as num?)?.toInt() ?? 0,
+    final email = _readString(data, const ['email']);
+    final displayName = _readString(
+      data,
+      const ['displayName', 'name', 'fullName'],
+      email.contains('@') ? email.split('@').first : 'Goal Digger User',
     );
+    final username = _readString(
+      data,
+      const ['username', 'handle'],
+      _fallbackUsernameFor(displayName, email, doc.id),
+    );
+    final photoUrl = _readNullableString(
+      data,
+      const ['photoUrl', 'photoURL', 'avatarUrl', 'avatarURL'],
+    );
+    final streak = _readInt(
+      data,
+      const ['streak', 'currentStreak', 'streakCount'],
+      0,
+    );
+    final searchText = _readString(
+      data,
+      const ['searchName', 'searchText'],
+      '${displayName.toLowerCase()} ${username.toLowerCase()} ${username.toLowerCase().replaceAll('@', '')} ${email.toLowerCase()}',
+    );
+
+    return _PublicProfile(
+      uid: _readString(data, const ['uid'], doc.id),
+      displayName: displayName,
+      username: username,
+      photoUrl: photoUrl,
+      streak: streak,
+      searchText: searchText.toLowerCase(),
+    );
+  }
+
+  bool matchesQuery(String query) {
+    final q = query.trim().toLowerCase().replaceAll('@', '');
+    if (q.isEmpty) return true;
+    return searchText.contains(q) ||
+        displayName.toLowerCase().contains(q) ||
+        username.toLowerCase().contains(q) ||
+        username.toLowerCase().replaceAll('@', '').contains(q);
   }
 }
 
@@ -2136,3 +2304,55 @@ class CommunityMatchCard extends StatelessWidget {
     );
   }
 }
+
+String _readString(
+  Map<String, dynamic> data,
+  List<String> keys, [
+  String fallback = '',
+]) {
+  for (final key in keys) {
+    final value = data[key];
+    if (value == null) continue;
+    final text = value.toString().trim();
+    if (text.isNotEmpty) return text;
+  }
+  return fallback;
+}
+
+String? _readNullableString(Map<String, dynamic> data, List<String> keys) {
+  final value = _readString(data, keys);
+  return value.isEmpty ? null : value;
+}
+
+int _readInt(
+  Map<String, dynamic> data,
+  List<String> keys, [
+  int fallback = 0,
+]) {
+  for (final key in keys) {
+    final value = data[key];
+    if (value is num) return value.toInt();
+    if (value is String) {
+      final parsed = int.tryParse(value.trim());
+      if (parsed != null) return parsed;
+    }
+  }
+  return fallback;
+}
+
+String _fallbackUsernameFor(String displayName, String email, String uid) {
+  final source = email.contains('@') ? email.split('@').first : displayName;
+  final cleaned = source
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9_]'), '_')
+      .replaceAll(RegExp(r'_+'), '_')
+      .replaceAll(RegExp(r'^_|_$'), '');
+
+  if (cleaned.isEmpty) {
+    return '@user_${uid.substring(0, min(6, uid.length))}';
+  }
+
+  return cleaned.startsWith('@') ? cleaned : '@$cleaned';
+}
+
