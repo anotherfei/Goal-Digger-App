@@ -528,8 +528,17 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     final deadlineDays = max(1, dateOnly(_newGoalDeadline).difference(today).inDays);
     var draftSpecs = List<_DraftTaskSpec>.from(fallbackSpecs);
     var aiAvailable = false;
+    var fromAgent = false;
     String? agentStrategy;
+    String? agentHabitInsight;
+    String? agentRecommendation;
+    String? agentScheduleNote;
+    String? agentBurnoutRisk;
+    var agentDegraded = false;
+    List<_DraftTaskSpec> agentSpecs = const [];
 
+    // Step 1: Run the planning agent. It plans, executes tools (habit analysis,
+    // milestones, burnout-aware scheduling) and reflects — we consume ALL of it.
     try {
       final agentPlan = await ai.agentPlanner.plan(
         AgentPlannerRequest(
@@ -545,36 +554,77 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           },
         ),
       );
-      agentStrategy = agentPlan.plan['strategy']?.toString();
+      agentStrategy = agentPlan.strategy;
+      agentDegraded = agentPlan.degraded;
+      agentHabitInsight = agentPlan.habitInsight;
+      agentRecommendation = agentPlan.primaryInsight;
+      agentBurnoutRisk = agentPlan.burnoutRisk;
+      agentScheduleNote = agentPlan.schedule['scheduleNote']?.toString();
+      if (agentPlan.milestones.isNotEmpty) {
+        agentSpecs = _draftSpecsFromTitles(agentPlan.milestones).take(6).toList();
+      }
     } catch (e) {
       debugPrint('Agent planner unavailable: $e');
     }
 
-    try {
-      final generated = await ai.taskGenerator.generate(
-        TaskGeneratorRequest(
-          goalTitle: title,
-          category: _newGoalCategory,
-          priority: _newGoalPriority,
-          deadlineDays: deadlineDays,
-        ),
-      );
-      final aiSpecs = _draftSpecsFromGeneratedTasks(generated.tasks).take(6).toList();
-      if (aiSpecs.isNotEmpty) {
-        draftSpecs = aiSpecs;
-        aiAvailable = true;
+    if (agentSpecs.isNotEmpty) {
+      draftSpecs = agentSpecs;
+      aiAvailable = true;
+      fromAgent = true;
+    } else {
+      // Step 2 (fallback): the agent produced no milestones — try the task
+      // generator, then fall back to the local heuristic plan.
+      try {
+        final generated = await ai.taskGenerator.generate(
+          TaskGeneratorRequest(
+            goalTitle: title,
+            category: _newGoalCategory,
+            priority: _newGoalPriority,
+            deadlineDays: deadlineDays,
+          ),
+        );
+        final aiSpecs = _draftSpecsFromGeneratedTasks(generated.tasks).take(6).toList();
+        if (aiSpecs.isNotEmpty) {
+          draftSpecs = aiSpecs;
+          aiAvailable = true;
+        }
+      } catch (e) {
+        debugPrint('AI task generation fallback used: $e');
       }
-    } catch (e) {
-      debugPrint('AI task generation fallback used: $e');
     }
 
-    final agentSuffix = agentStrategy == null ? '' : ' and agent planner ($agentStrategy)';
+    // Compose the opening message from the agent's REAL output, not a cosmetic
+    // suffix. Surface the habit insight, schedule note, and top recommendation.
+    final intro = StringBuffer();
+    if (fromAgent && !agentDegraded) {
+      final strategy = agentStrategy?.trim();
+      intro.write('I ran the planning agent');
+      if (strategy != null && strategy.isNotEmpty) intro.write(' ($strategy)');
+      intro.write(' and broke "$title" into ${draftSpecs.length} milestones.');
+    } else if (aiAvailable) {
+      intro.write(
+          'I used the AI task generator to break "$title" into ${draftSpecs.length} tasks.');
+    } else {
+      intro.write(
+          'I could not reach the AI planner, so I prepared a local fallback plan for "$title".');
+    }
+    final habit = agentHabitInsight?.trim();
+    if (habit != null && habit.isNotEmpty) {
+      final risk = agentBurnoutRisk?.trim();
+      final riskTag = (risk != null && risk.isNotEmpty) ? ' (burnout risk: $risk)' : '';
+      intro.write('\n\n🧠 $habit$riskTag');
+    }
+    final note = agentScheduleNote?.trim();
+    if (note != null && note.isNotEmpty) intro.write('\n📅 $note');
+    final rec = agentRecommendation?.trim();
+    if (rec != null && rec.isNotEmpty) intro.write('\n👉 $rec');
+    intro.write(
+        '\n\nYou can ask me to make the plan easier, more detailed, or reorder it before scheduling.');
+
     final messages = <Map<String, dynamic>>[
       {
         'role': 'assistant',
-        'text': aiAvailable
-            ? 'Great! I used the backend AI task generator$agentSuffix to break "$title" into ${draftSpecs.length} micro-tasks. You can ask me to make the plan easier, more detailed, or reorder it before scheduling.'
-            : 'I could not reach the backend AI task generator, so I prepared a local fallback plan for "$title". You can still adjust it before scheduling.',
+        'text': intro.toString(),
         'tasks': _draftPreviewLabels(draftSpecs),
       },
     ];

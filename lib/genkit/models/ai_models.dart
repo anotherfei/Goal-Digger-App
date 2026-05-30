@@ -286,21 +286,68 @@ class AgentPlannerResponse {
     required this.plan,
     required this.reflections,
     required this.memoryUpdated,
+    this.strategy,
+    this.milestones = const [],
+    this.habitInsight,
+    this.burnoutRisk,
+    this.schedule = const {},
+    this.degraded = false,
   });
 
   final Map<String, dynamic> plan;
   final List<Map<String, dynamic>> reflections;
   final bool memoryUpdated;
 
+  /// One-line description of the planning approach the agent chose.
+  final String? strategy;
+
+  /// Ready-to-use milestone titles produced by the createMilestones tool.
+  final List<String> milestones;
+
+  /// AI productivity insight from the analyzeHabits tool, if it ran.
+  final String? habitInsight;
+
+  /// Burnout risk ("low" | "medium" | "high") detected by analyzeHabits.
+  final String? burnoutRisk;
+
+  /// Raw schedule payload from scheduleTasks (sessions, scheduleNote, …).
+  final Map<String, dynamic> schedule;
+
+  /// True when the agent fell back (planner/tool/reflection failures).
+  final bool degraded;
+
+  /// The first reflection condensed into a single user-facing line, or null.
+  String? get primaryInsight {
+    if (reflections.isEmpty) return null;
+    final r = reflections.first;
+    final insight = (r['insight'] ?? '').toString().trim();
+    final recommendation = (r['recommendation'] ?? '').toString().trim();
+    final parts = [insight, recommendation].where((s) => s.isNotEmpty);
+    return parts.isEmpty ? null : parts.join(' ');
+  }
+
+  static Map<String, dynamic> _asStrMap(dynamic value) =>
+      (value as Map<dynamic, dynamic>? ?? {})
+          .map((key, v) => MapEntry(key.toString(), v));
+
   factory AgentPlannerResponse.fromJson(Map<String, dynamic> json) {
+    final plan = _asStrMap(json['plan']);
     return AgentPlannerResponse(
-      plan: (json['plan'] as Map<dynamic, dynamic>? ?? {})
-          .map((key, value) => MapEntry(key.toString(), value)),
+      plan: plan,
       reflections: (json['reflections'] as List<dynamic>? ?? [])
           .whereType<Map<dynamic, dynamic>>()
-          .map((entry) => entry.map((key, value) => MapEntry(key.toString(), value)))
+          .map((entry) => _asStrMap(entry))
           .toList(),
       memoryUpdated: json['memoryUpdated'] as bool? ?? false,
+      strategy: (json['strategy'] ?? plan['strategy'])?.toString(),
+      milestones: (json['milestones'] as List<dynamic>? ?? [])
+          .map((e) => e.toString())
+          .where((s) => s.trim().isNotEmpty)
+          .toList(),
+      habitInsight: json['habitInsight']?.toString(),
+      burnoutRisk: json['burnoutRisk']?.toString(),
+      schedule: _asStrMap(json['schedule']),
+      degraded: json['degraded'] as bool? ?? false,
     );
   }
 }
