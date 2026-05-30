@@ -985,7 +985,7 @@ class _CommunityPageState extends State<CommunityPage> {
 
     final ref = _communitiesCollection.doc(community.id);
     try {
-      await _db.runTransaction((transaction) async {
+      final didJoin = await _db.runTransaction<bool>((transaction) async {
         final snapshot = await transaction.get(ref);
         if (!snapshot.exists) {
           throw FirebaseException(
@@ -997,7 +997,7 @@ class _CommunityPageState extends State<CommunityPage> {
 
         final data = snapshot.data();
         final members = _stringListFromRaw(data?['members']).toSet();
-        if (members.contains(user.uid)) return;
+        if (members.contains(user.uid)) return false;
 
         members.add(user.uid);
         transaction.update(ref, {
@@ -1005,6 +1005,7 @@ class _CommunityPageState extends State<CommunityPage> {
           'memberCount': members.length,
           'updatedAt': FieldValue.serverTimestamp(),
         });
+        return true;
       });
 
       await _usersCollection.doc(user.uid).set({
@@ -1012,12 +1013,56 @@ class _CommunityPageState extends State<CommunityPage> {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
+      if (didJoin) {
+        await _addCommunitySystemMessage(
+          communityId: community.id,
+          text: '${_cleanDisplayName(user.displayName, user.email)} has joined',
+          eventType: 'join',
+        );
+      }
+
       _showSnack('Joined ${community.name}.');
     } on FirebaseException catch (error) {
       _showSnack('Join failed: ${error.message ?? error.code}');
     } catch (error) {
       _showSnack('Join failed: $error');
     }
+  }
+
+  Future<void> _addCommunitySystemMessage({
+    required String communityId,
+    required String text,
+    required String eventType,
+  }) async {
+    final user = _user;
+    if (user == null) return;
+
+    final displayName = _cleanDisplayName(user.displayName, user.email);
+    final communityRef = _communitiesCollection.doc(communityId);
+    final messageRef = communityRef.collection('messages').doc();
+    final batch = _db.batch();
+
+    batch.set(messageRef, {
+      'type': 'system',
+      'eventType': eventType,
+      'senderUid': user.uid,
+      'senderName': displayName,
+      'text': text,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    batch.set(
+      communityRef,
+      {
+        'lastMessage': text,
+        'lastSenderUid': user.uid,
+        'lastSenderName': displayName,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    await batch.commit();
   }
 
   Future<void> _deleteOrLeaveCommunity(_DbCommunity community) async {
@@ -1059,14 +1104,34 @@ class _CommunityPageState extends State<CommunityPage> {
       if (isOwner) {
         await ref.delete();
       } else {
+        final displayName = _cleanDisplayName(user.displayName, user.email);
+        final leaveText = '$displayName has left';
+
         await _db.runTransaction((transaction) async {
           final snapshot = await transaction.get(ref);
           if (!snapshot.exists) return;
+
           final members = _stringListFromRaw(snapshot.data()?['members']).toSet();
+          if (!members.contains(user.uid)) return;
+
           members.remove(user.uid);
+
+          final messageRef = ref.collection('messages').doc();
+          transaction.set(messageRef, {
+            'type': 'system',
+            'eventType': 'leave',
+            'senderUid': user.uid,
+            'senderName': displayName,
+            'text': leaveText,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+
           transaction.update(ref, {
             'members': members.toList(),
             'memberCount': members.length,
+            'lastMessage': leaveText,
+            'lastSenderUid': user.uid,
+            'lastSenderName': displayName,
             'updatedAt': FieldValue.serverTimestamp(),
           });
         });
@@ -1229,6 +1294,7 @@ class _CommunityPageState extends State<CommunityPage> {
               for (final group in communityPreview)
                 _CommunityListCard(
                   group: group,
+                  onDetails: () => _openCommunityDetailsPage(context, group),
                   onChat: () => _openCommunityChatPage(context, group),
                   onDelete: () => unawaited(_deleteOrLeaveCommunity(group)),
                 ),
@@ -1278,6 +1344,7 @@ class _CommunityPageState extends State<CommunityPage> {
         builder: (_) => _AllCommunitiesPage(
           communities: communities,
           onChat: (group) => _openCommunityChatPage(context, group),
+          onDetails: (group) => _openCommunityDetailsPage(context, group),
           onDelete: (group) => unawaited(_deleteOrLeaveCommunity(group)),
           onFindCommunities: () => _openFindCommunitiesPage(context, communities),
         ),
@@ -1359,6 +1426,20 @@ class _CommunityPageState extends State<CommunityPage> {
   void _openCommunityChatPage(BuildContext context, _DbCommunity group) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => _CommunityChatPage(group: group)),
+    );
+  }
+
+  void _openCommunityDetailsPage(BuildContext context, _DbCommunity group) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _CommunityDetailPage(
+          initialGroup: group,
+          currentUid: _user?.uid ?? '',
+          onChat: (latestGroup) => _openCommunityChatPage(context, latestGroup),
+          onJoin: (latestGroup) => unawaited(_joinCommunity(latestGroup)),
+          onDelete: (latestGroup) => unawaited(_deleteOrLeaveCommunity(latestGroup)),
+        ),
+      ),
     );
   }
 }
@@ -1624,12 +1705,14 @@ class _AllCommunitiesPage extends StatefulWidget {
   const _AllCommunitiesPage({
     required this.communities,
     required this.onChat,
+    required this.onDetails,
     required this.onDelete,
     required this.onFindCommunities,
   });
 
   final List<_DbCommunity> communities;
   final ValueChanged<_DbCommunity> onChat;
+  final ValueChanged<_DbCommunity> onDetails;
   final ValueChanged<_DbCommunity> onDelete;
   final VoidCallback onFindCommunities;
 
@@ -1695,6 +1778,7 @@ class _AllCommunitiesPageState extends State<_AllCommunitiesPage> {
               for (final group in filtered)
                 _CommunityListCard(
                   group: group,
+                  onDetails: () => widget.onDetails(group),
                   onChat: () => widget.onChat(group),
                   onDelete: () => widget.onDelete(group),
                 ),
@@ -2423,11 +2507,13 @@ class _DirectChatPageState extends State<_DirectChatPage> {
 class _CommunityListCard extends StatelessWidget {
   const _CommunityListCard({
     required this.group,
+    required this.onDetails,
     required this.onChat,
     required this.onDelete,
   });
 
   final _DbCommunity group;
+  final VoidCallback onDetails;
   final VoidCallback onChat;
   final VoidCallback onDelete;
 
@@ -2436,9 +2522,14 @@ class _CommunityListCard extends StatelessWidget {
     return AppCard(
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
-        leading: const CircleAvatar(
-          backgroundColor: gdPrimarySoft,
-          child: Icon(Icons.groups_rounded, color: gdPrimary),
+        onTap: onDetails,
+        leading: InkResponse(
+          onTap: onDetails,
+          radius: 28,
+          child: const CircleAvatar(
+            backgroundColor: gdPrimarySoft,
+            child: Icon(Icons.groups_rounded, color: gdPrimary),
+          ),
         ),
         title: Text(group.name,
             style: const TextStyle(fontWeight: FontWeight.w900)),
@@ -2473,54 +2564,740 @@ class _CommunityListCard extends StatelessWidget {
   }
 }
 
-class _CommunityChatPage extends StatelessWidget {
+class _CommunityDetailPage extends StatelessWidget {
+  const _CommunityDetailPage({
+    required this.initialGroup,
+    required this.currentUid,
+    required this.onChat,
+    required this.onJoin,
+    required this.onDelete,
+  });
+
+  final _DbCommunity initialGroup;
+  final String currentUid;
+  final ValueChanged<_DbCommunity> onChat;
+  final ValueChanged<_DbCommunity> onJoin;
+  final ValueChanged<_DbCommunity> onDelete;
+
+  FirebaseFirestore get _db => FirebaseFirestore.instance;
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>> _communityStream() {
+    return _db.collection('communities').doc(initialGroup.id).snapshots();
+  }
+
+  Future<List<_CommunityMemberProfile>> _loadMemberProfiles(
+    _DbCommunity group,
+  ) async {
+    final members = group.membersList
+        .map((uid) => uid.trim())
+        .where((uid) => uid.isNotEmpty)
+        .toList();
+
+    if (members.isEmpty) return const [];
+
+    final profilesByUid = <String, _CommunityMemberProfile>{};
+
+    for (final chunk in _memberChunks(members, 10)) {
+      final snapshot = await _db
+          .collection('public_profiles')
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final email = _readString(data, const ['email']);
+        final displayName = _readString(
+          data,
+          const ['displayName', 'name', 'fullName'],
+          email.contains('@') ? email.split('@').first : 'Member',
+        );
+        profilesByUid[doc.id] = _CommunityMemberProfile(
+          uid: doc.id,
+          displayName: displayName,
+          username: _readString(
+            data,
+            const ['username', 'handle'],
+            _fallbackUsernameFor(displayName, email, doc.id),
+          ),
+          photoUrl: _readNullableString(
+            data,
+            const ['photoUrl', 'photoURL', 'avatarUrl', 'avatarURL'],
+          ),
+        );
+      }
+    }
+
+    return [
+      for (final uid in members)
+        profilesByUid[uid] ??
+            _CommunityMemberProfile(
+              uid: uid,
+              displayName: 'Member ${_shortId(uid)}',
+              username: _shortId(uid),
+              photoUrl: null,
+            ),
+    ];
+  }
+
+  List<List<T>> _memberChunks<T>(List<T> values, int size) {
+    final chunks = <List<T>>[];
+    for (var i = 0; i < values.length; i += size) {
+      chunks.add(values.sublist(i, min(i + size, values.length)));
+    }
+    return chunks;
+  }
+
+  String _shortId(String value) {
+    if (value.length <= 8) return value;
+    return '${value.substring(0, 6)}...${value.substring(value.length - 2)}';
+  }
+
+  String _formatTimestamp(Timestamp? timestamp) {
+    if (timestamp == null) return 'Not saved yet';
+    final date = timestamp.toDate().toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${date.year}-${two(date.month)}-${two(date.day)} '
+        '${two(date.hour)}:${two(date.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Community info')),
+      body: PageScaffold(
+        child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: _communityStream(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(18),
+                child: HelpfulErrorBox(
+                  title: 'Community failed to load',
+                  message:
+                      'Check Firestore rules for communities reads. Details: ${snapshot.error}',
+                  actionLabel: 'OK',
+                  showAction: false,
+                ),
+              );
+            }
+
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                snapshot.data == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final doc = snapshot.data;
+            if (doc == null || !doc.exists) {
+              return const Padding(
+                padding: EdgeInsets.all(18),
+                child: HelpfulErrorBox(
+                  title: 'Community no longer exists',
+                  message: 'This community document was deleted from Firestore.',
+                  actionLabel: 'OK',
+                  showAction: false,
+                ),
+              );
+            }
+
+            final group = _DbCommunity.fromDoc(doc, currentUid: currentUid);
+
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
+              children: [
+                AppCard(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const CircleAvatar(
+                              radius: 34,
+                              backgroundColor: gdPrimarySoft,
+                              child: Icon(
+                                Icons.groups_rounded,
+                                color: gdPrimary,
+                                size: 34,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    group.name,
+                                    style: const TextStyle(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w900,
+                                      color: gdInk,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      Chip(label: Text(group.tag)),
+                                      Chip(
+                                        label: Text(
+                                          group.joined ? 'Joined' : 'Not joined',
+                                        ),
+                                      ),
+                                      if (group.isOwner)
+                                        const Chip(label: Text('Owner')),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          group.description,
+                          style: const TextStyle(
+                            color: gdMuted,
+                            fontWeight: FontWeight.w700,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            if (group.joined)
+                              Expanded(
+                                child: FilledButton.icon(
+                                  onPressed: () => onChat(group),
+                                  icon: const Icon(Icons.chat_bubble_rounded),
+                                  label: const Text('Open chat'),
+                                ),
+                              )
+                            else
+                              Expanded(
+                                child: FilledButton.icon(
+                                  onPressed: () => onJoin(group),
+                                  icon: const Icon(Icons.group_add_rounded),
+                                  label: const Text('Join'),
+                                ),
+                              ),
+                            if (group.joined) ...[
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () => onDelete(group),
+                                  icon: Icon(
+                                    group.isOwner
+                                        ? Icons.delete_outline_rounded
+                                        : Icons.logout_rounded,
+                                  ),
+                                  label: Text(group.isOwner ? 'Delete' : 'Leave'),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                AppCard(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        _CommunityInfoRow(
+                          icon: Icons.confirmation_number_rounded,
+                          label: 'Join code',
+                          value: group.joinCode,
+                        ),
+                        const Divider(height: 20),
+                        _CommunityInfoRow(
+                          icon: Icons.person_rounded,
+                          label: 'Owner',
+                          value: group.ownerName,
+                        ),
+                        const Divider(height: 20),
+                        _CommunityInfoRow(
+                          icon: Icons.badge_rounded,
+                          label: 'Owner UID',
+                          value: _shortId(group.ownerUid),
+                        ),
+                        const Divider(height: 20),
+                        _CommunityInfoRow(
+                          icon: Icons.people_rounded,
+                          label: 'Members',
+                          value: '${group.members}',
+                        ),
+                        const Divider(height: 20),
+                        _CommunityInfoRow(
+                          icon: Icons.calendar_month_rounded,
+                          label: 'Created',
+                          value: _formatTimestamp(group.createdAt),
+                        ),
+                        const Divider(height: 20),
+                        _CommunityInfoRow(
+                          icon: Icons.update_rounded,
+                          label: 'Updated',
+                          value: _formatTimestamp(group.updatedAt),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                SectionTitle(title: 'Members', trailing: '${group.members}'),
+                const SizedBox(height: 10),
+                FutureBuilder<List<_CommunityMemberProfile>>(
+                  future: _loadMemberProfiles(group),
+                  builder: (context, memberSnapshot) {
+                    if (memberSnapshot.connectionState ==
+                        ConnectionState.waiting) {
+                      return const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: CircularProgressIndicator(),
+                        ),
+                      );
+                    }
+
+                    final members = memberSnapshot.data ?? const [];
+                    if (members.isEmpty) {
+                      return const HelpfulErrorBox(
+                        title: 'No members found',
+                        message: 'The members array is currently empty.',
+                        actionLabel: 'OK',
+                        showAction: false,
+                      );
+                    }
+
+                    return Column(
+                      children: [
+                        for (final member in members)
+                          AppCard(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            child: ListTile(
+                              leading: _Avatar(
+                                photoUrl: member.photoUrl,
+                                label: member.displayName,
+                              ),
+                              title: Text(
+                                member.displayName,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w900),
+                              ),
+                              subtitle: Text(
+                                member.username,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: gdMuted,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              trailing: Wrap(
+                                spacing: 6,
+                                children: [
+                                  if (member.uid == group.ownerUid)
+                                    const Chip(label: Text('Owner')),
+                                  if (member.uid == currentUid)
+                                    const Chip(label: Text('You')),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _CommunityInfoRow extends StatelessWidget {
+  const _CommunityInfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          radius: 18,
+          backgroundColor: gdPrimarySoft,
+          child: Icon(icon, color: gdPrimary, size: 18),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: gdMuted,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 2),
+              SelectableText(
+                value.isEmpty ? '-' : value,
+                style: const TextStyle(
+                  color: gdInk,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CommunityMemberProfile {
+  const _CommunityMemberProfile({
+    required this.uid,
+    required this.displayName,
+    required this.username,
+    required this.photoUrl,
+  });
+
+  final String uid;
+  final String displayName;
+  final String username;
+  final String? photoUrl;
+}
+
+class _CommunityChatPage extends StatefulWidget {
   const _CommunityChatPage({required this.group});
 
   final _DbCommunity group;
 
   @override
+  State<_CommunityChatPage> createState() => _CommunityChatPageState();
+}
+
+class _CommunityChatPageState extends State<_CommunityChatPage> {
+  final TextEditingController _controller = TextEditingController();
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  bool _sending = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  User? get _user => _auth.currentUser;
+
+  DocumentReference<Map<String, dynamic>> get _communityRef =>
+      _db.collection('communities').doc(widget.group.id);
+
+  CollectionReference<Map<String, dynamic>> get _messages =>
+      _communityRef.collection('messages');
+
+  bool get _isMember {
+    final uid = _user?.uid;
+    if (uid == null) return false;
+    return widget.group.membersList.contains(uid);
+  }
+
+  Future<void> _send() async {
+    final user = _user;
+    final text = _controller.text.trim();
+
+    if (user == null) {
+      _snack('Sign in before sending community messages.');
+      return;
+    }
+
+    if (user.isAnonymous && !kDebugAllowGuestSocialAccess) {
+      _snack('Use a full account before sending community messages.');
+      return;
+    }
+
+    if (!_isMember) {
+      _snack('Join this community before sending messages.');
+      return;
+    }
+
+    if (text.isEmpty || _sending) return;
+
+    setState(() => _sending = true);
+    try {
+      final displayName = user.displayName?.trim().isNotEmpty == true
+          ? user.displayName!.trim()
+          : user.email?.split('@').first.trim() ?? 'Member';
+
+      final messageRef = _messages.doc();
+      final batch = _db.batch();
+
+      batch.set(messageRef, {
+        'senderUid': user.uid,
+        'senderName': displayName,
+        'text': text,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      batch.set(
+        _communityRef,
+        {
+          'lastMessage': text,
+          'lastSenderUid': user.uid,
+          'lastSenderName': displayName,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+
+      await batch.commit();
+      _controller.clear();
+    } on FirebaseException catch (error) {
+      _snack('Community message failed: ${error.message ?? error.code}');
+    } catch (error) {
+      _snack('Community message failed: $error');
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final user = _user;
+    final currentUid = user?.uid;
+
+    if (user == null || (user.isAnonymous && !kDebugAllowGuestSocialAccess)) {
+      return Scaffold(
+        appBar: AppBar(title: Text('${widget.group.name} chat')),
+        body: PageScaffold(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: AppCard(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      CircleAvatar(
+                        radius: 34,
+                        backgroundColor: gdPrimarySoft,
+                        child: Icon(Icons.lock_outline_rounded,
+                            color: gdPrimary, size: 34),
+                      ),
+                      SizedBox(height: 14),
+                      Text(
+                        'Sign in required',
+                        style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            color: gdInk),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Community chat needs an account so messages can be saved safely.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            color: gdMuted, fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
-      appBar: AppBar(title: Text('${group.name} chat')),
+      appBar: AppBar(
+        title: Row(
+          children: [
+            const CircleAvatar(
+              radius: 18,
+              backgroundColor: gdPrimarySoft,
+              child: Icon(Icons.groups_rounded, color: gdPrimary, size: 18),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '${widget.group.name} chat',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
       body: PageScaffold(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: AppCard(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+        child: Column(
+          children: [
+            Expanded(
+              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: _messages
+                    .orderBy('createdAt', descending: true)
+                    .limit(100)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: HelpfulErrorBox(
+                          title: 'Community chat failed to load',
+                          message:
+                              'Check Firestore rules for communities/{communityId}/messages. Details: ${snapshot.error}',
+                          actionLabel: 'OK',
+                          showAction: false,
+                        ),
+                      ),
+                    );
+                  }
+
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      snapshot.data == null) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  final docs = snapshot.data?.docs ?? [];
+
+                  if (docs.isEmpty) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: AppCard(
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const CircleAvatar(
+                                  radius: 34,
+                                  backgroundColor: gdPrimarySoft,
+                                  child: Icon(Icons.forum_rounded,
+                                      color: gdPrimary, size: 34),
+                                ),
+                                const SizedBox(height: 14),
+                                Text(
+                                  widget.group.name,
+                                  style:
+                                      Theme.of(context).textTheme.headlineMedium,
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '${widget.group.members} members · code ${widget.group.joinCode}',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                      color: gdMuted,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'No community messages yet. Start the first update for the group.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      color: gdMuted,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    reverse: true,
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                    itemCount: docs.length,
+                    itemBuilder: (context, index) {
+                      final data = docs[index].data();
+                      final text = data['text']?.toString() ?? '';
+                      final isSystemMessage = data['type'] == 'system' ||
+                          data['eventType'] == 'join' ||
+                          data['eventType'] == 'leave';
+
+                      if (isSystemMessage) {
+                        return _SystemMessageBubble(text: text);
+                      }
+
+                      final isMine = data['senderUid'] == currentUid;
+                      return _MessageBubble(
+                        text: text,
+                        isMine: isMine,
+                        senderName: data['senderName']?.toString() ?? '',
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                color: gdSurface.withValues(alpha: 0.92),
+                child: Row(
                   children: [
-                    const CircleAvatar(
-                      radius: 34,
-                      backgroundColor: gdPrimarySoft,
-                      child:
-                          Icon(Icons.forum_rounded, color: gdPrimary, size: 34),
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        enabled: _isMember,
+                        minLines: 1,
+                        maxLines: 4,
+                        decoration: InputDecoration(
+                          hintText: _isMember
+                              ? 'Message the community...'
+                              : 'Join this community to chat',
+                        ),
+                        onSubmitted: (_) => unawaited(_send()),
+                      ),
                     ),
-                    const SizedBox(height: 14),
-                    Text(group.name,
-                        style: Theme.of(context).textTheme.headlineMedium,
-                        textAlign: TextAlign.center),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${group.members} members · code ${group.joinCode}',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                          color: gdMuted, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'The community list is now backed by Firestore. Group chat can be wired next under communities/{communityId}/messages.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          color: gdMuted, fontWeight: FontWeight.w700),
+                    const SizedBox(width: 8),
+                    IconButton.filled(
+                      onPressed:
+                          !_isMember || _sending ? null : () => unawaited(_send()),
+                      icon: _sending
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.send_rounded),
                     ),
                   ],
                 ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -2636,6 +3413,39 @@ class _LeaderboardTile extends StatelessWidget {
             color: entry.isYou ? gdPrimaryDark : gdInk),
       ),
       trailing: Chip(label: Text('${entry.streak} day streak')),
+    );
+  }
+}
+
+class _SystemMessageBubble extends StatelessWidget {
+  const _SystemMessageBubble({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final cleaned = text.trim();
+    if (cleaned.isEmpty) return const SizedBox.shrink();
+
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: gdSurface.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: gdPrimarySoft),
+        ),
+        child: Text(
+          cleaned,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: gdMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
     );
   }
 }
