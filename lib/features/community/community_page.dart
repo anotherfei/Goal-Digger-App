@@ -761,6 +761,7 @@ class _CommunityPageState extends State<CommunityPage> {
               for (final friend in friendPreview)
                 _FriendListCard(
                   friend: friend,
+                  onDetails: () => _openUserDetailsPage(context, friend),
                   onChat: () => _openChatPage(context, friend),
                   onAdd: () => unawaited(_addFriendFromFriendProfile(friend)),
                   onDelete: friend.isFriend
@@ -1376,6 +1377,8 @@ class _CommunityPageState extends State<CommunityPage> {
           currentUid: _user?.uid,
           publicProfiles: _publicProfiles,
           currentFriendUids: Set<String>.from(currentFriendUids ?? const <String>{}),
+          onProfileDetails: (profile) =>
+              _openPublicUserDetailsPage(context, profile),
           onAddFriend: _addFriend,
         ),
       ),
@@ -1387,6 +1390,7 @@ class _CommunityPageState extends State<CommunityPage> {
       MaterialPageRoute(
         builder: (_) => _AllFriendsPage(
           friends: friends,
+          onDetails: (friend) => _openUserDetailsPage(context, friend),
           onChat: (friend) => _openChatPage(context, friend),
           onAdd: (friend) => unawaited(_addFriendFromFriendProfile(friend)),
           onDelete: (friend) => unawaited(_deleteFriend(friend)),
@@ -1418,6 +1422,58 @@ class _CommunityPageState extends State<CommunityPage> {
         builder: (_) => _DirectChatPage(
           friend: friend,
           onAddFriend: () => _addFriendFromFriendProfile(friend),
+        ),
+      ),
+    );
+  }
+
+  _FriendProfile _friendProfileFromPublicProfile(
+    _PublicProfile profile, {
+    bool isFriend = false,
+  }) {
+    return _FriendProfile(
+      uid: profile.uid,
+      displayName: profile.displayName,
+      username: profile.username,
+      photoUrl: profile.photoUrl,
+      streak: profile.streak,
+      isReal: true,
+      isFriend: isFriend,
+      hasChat: false,
+      lastMessage: null,
+      lastSenderUid: null,
+      hasUnread: false,
+      chatUpdatedAt: null,
+    );
+  }
+
+  void _openPublicUserDetailsPage(
+    BuildContext context,
+    _PublicProfile profile,
+  ) {
+    _openUserDetailsPage(
+      context,
+      _friendProfileFromPublicProfile(
+        profile,
+        isFriend: false,
+      ),
+    );
+  }
+
+  void _openUserDetailsPage(BuildContext context, _FriendProfile profile) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _UserDetailPage(
+          initialProfile: profile,
+          currentUid: _user?.uid,
+          onChat: (latestProfile) => _openChatPage(context, latestProfile),
+          onAdd: profile.isFriend
+              ? null
+              : (latestProfile) =>
+                  unawaited(_addFriendFromFriendProfile(latestProfile)),
+          onDelete: profile.isFriend
+              ? (latestProfile) => unawaited(_deleteFriend(latestProfile))
+              : null,
         ),
       ),
     );
@@ -1531,12 +1587,14 @@ class _FullAccountLoginPage extends StatelessWidget {
 class _FriendListCard extends StatelessWidget {
   const _FriendListCard({
     required this.friend,
+    required this.onDetails,
     required this.onChat,
     required this.onAdd,
     required this.onDelete,
   });
 
   final _FriendProfile friend;
+  final VoidCallback onDetails;
   final VoidCallback onChat;
   final VoidCallback onAdd;
   final VoidCallback? onDelete;
@@ -1550,10 +1608,14 @@ class _FriendListCard extends StatelessWidget {
     return AppCard(
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
-        leading: _UnreadAvatar(
-          photoUrl: friend.photoUrl,
-          label: friend.displayName,
-          showDot: friend.isChatOnly || friend.hasUnread,
+        leading: InkResponse(
+          onTap: onDetails,
+          radius: 28,
+          child: _UnreadAvatar(
+            photoUrl: friend.photoUrl,
+            label: friend.displayName,
+            showDot: friend.isChatOnly || friend.hasUnread,
+          ),
         ),
         title: Row(
           children: [
@@ -1627,6 +1689,7 @@ class _FriendListCard extends StatelessWidget {
 class _AllFriendsPage extends StatefulWidget {
   const _AllFriendsPage({
     required this.friends,
+    required this.onDetails,
     required this.onChat,
     required this.onAdd,
     required this.onDelete,
@@ -1634,6 +1697,7 @@ class _AllFriendsPage extends StatefulWidget {
   });
 
   final List<_FriendProfile> friends;
+  final ValueChanged<_FriendProfile> onDetails;
   final ValueChanged<_FriendProfile> onChat;
   final ValueChanged<_FriendProfile> onAdd;
   final ValueChanged<_FriendProfile> onDelete;
@@ -1690,6 +1754,7 @@ class _AllFriendsPageState extends State<_AllFriendsPage> {
             for (final friend in filtered)
               _FriendListCard(
                 friend: friend,
+                onDetails: () => widget.onDetails(friend),
                 onChat: () => widget.onChat(friend),
                 onAdd: () => widget.onAdd(friend),
                 onDelete: friend.isFriend ? () => widget.onDelete(friend) : null,
@@ -1897,12 +1962,14 @@ class _FindFriendsPage extends StatefulWidget {
     required this.currentUid,
     required this.publicProfiles,
     required this.currentFriendUids,
+    required this.onProfileDetails,
     required this.onAddFriend,
   });
 
   final String? currentUid;
   final CollectionReference<Map<String, dynamic>> publicProfiles;
   final Set<String> currentFriendUids;
+  final ValueChanged<_PublicProfile> onProfileDetails;
   final Future<void> Function(_PublicProfile profile) onAddFriend;
 
   @override
@@ -2075,9 +2142,14 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                       AppCard(
                         margin: const EdgeInsets.only(bottom: 10),
                         child: ListTile(
-                          leading: _Avatar(
+                          leading: InkResponse(
+                            onTap: () => widget.onProfileDetails(profile),
+                            radius: 28,
+                            child: _Avatar(
                               photoUrl: profile.photoUrl,
-                              label: profile.displayName),
+                              label: profile.displayName,
+                            ),
+                          ),
                           title: Text(profile.displayName,
                               style:
                                   const TextStyle(fontWeight: FontWeight.w900)),
@@ -2381,10 +2453,27 @@ class _DirectChatPageState extends State<_DirectChatPage> {
       appBar: AppBar(
         title: Row(
           children: [
-            _Avatar(
+            InkResponse(
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => _UserDetailPage(
+                      initialProfile: widget.friend,
+                      currentUid: user.uid,
+                      onAdd: widget.onAddFriend == null
+                          ? null
+                          : (_) => unawaited(_addFriendFromChat()),
+                    ),
+                  ),
+                );
+              },
+              radius: 24,
+              child: _Avatar(
                 photoUrl: widget.friend.photoUrl,
                 label: widget.friend.displayName,
-                radius: 18),
+                radius: 18,
+              ),
+            ),
             const SizedBox(width: 10),
             Expanded(
                 child: Text(widget.friend.displayName,
@@ -2660,6 +2749,45 @@ class _CommunityDetailPage extends StatelessWidget {
         '${two(date.hour)}:${two(date.minute)}';
   }
 
+  void _openMemberDetails(
+    BuildContext context,
+    _CommunityMemberProfile member,
+  ) {
+    final profile = _FriendProfile(
+      uid: member.uid,
+      displayName: member.displayName,
+      username: member.username,
+      photoUrl: member.photoUrl,
+      streak: 0,
+      isReal: true,
+      isFriend: false,
+      hasChat: false,
+      lastMessage: null,
+      lastSenderUid: null,
+      hasUnread: false,
+      chatUpdatedAt: null,
+    );
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _UserDetailPage(
+          initialProfile: profile,
+          currentUid: currentUid,
+          onChat: (latestProfile) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => _DirectChatPage(
+                  friend: latestProfile,
+                  onAddFriend: null,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -2880,9 +3008,14 @@ class _CommunityDetailPage extends StatelessWidget {
                           AppCard(
                             margin: const EdgeInsets.only(bottom: 10),
                             child: ListTile(
-                              leading: _Avatar(
-                                photoUrl: member.photoUrl,
-                                label: member.displayName,
+                              onTap: () => _openMemberDetails(context, member),
+                              leading: InkResponse(
+                                onTap: () => _openMemberDetails(context, member),
+                                radius: 28,
+                                child: _Avatar(
+                                  photoUrl: member.photoUrl,
+                                  label: member.displayName,
+                                ),
                               ),
                               title: Text(
                                 member.displayName,
@@ -2912,6 +3045,254 @@ class _CommunityDetailPage extends StatelessWidget {
                       ],
                     );
                   },
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+
+class _UserDetailPage extends StatelessWidget {
+  const _UserDetailPage({
+    required this.initialProfile,
+    required this.currentUid,
+    this.onChat,
+    this.onAdd,
+    this.onDelete,
+  });
+
+  final _FriendProfile initialProfile;
+  final String? currentUid;
+  final ValueChanged<_FriendProfile>? onChat;
+  final ValueChanged<_FriendProfile>? onAdd;
+  final ValueChanged<_FriendProfile>? onDelete;
+
+  FirebaseFirestore get _db => FirebaseFirestore.instance;
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>> _profileStream() {
+    return _db.collection('public_profiles').doc(initialProfile.uid).snapshots();
+  }
+
+  _FriendProfile _profileFromSnapshot(
+    DocumentSnapshot<Map<String, dynamic>>? snapshot,
+  ) {
+    if (snapshot == null || !snapshot.exists) return initialProfile;
+
+    return _FriendProfile.fromUserDoc(
+      snapshot,
+      fallbackName: initialProfile.displayName,
+      fallbackUsername: initialProfile.username,
+      fallbackPhotoUrl: initialProfile.photoUrl,
+      fallbackStreak: initialProfile.streak,
+      isFriend: initialProfile.isFriend,
+      hasChat: initialProfile.hasChat,
+      lastMessage: initialProfile.lastMessage,
+      lastSenderUid: initialProfile.lastSenderUid,
+      hasUnread: initialProfile.hasUnread,
+      chatUpdatedAt: initialProfile.chatUpdatedAt,
+    );
+  }
+
+  String _shortId(String value) {
+    if (value.length <= 12) return value;
+    return '${value.substring(0, 8)}...${value.substring(value.length - 4)}';
+  }
+
+  String _formatTimestamp(Timestamp? timestamp) {
+    if (timestamp == null) return 'Not saved yet';
+    final date = timestamp.toDate().toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${date.year}-${two(date.month)}-${two(date.day)} '
+        '${two(date.hour)}:${two(date.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Profile info')),
+      body: PageScaffold(
+        child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: _profileStream(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(18),
+                child: HelpfulErrorBox(
+                  title: 'Profile failed to load',
+                  message:
+                      'Check Firestore rules for public_profiles reads. Details: ${snapshot.error}',
+                  actionLabel: 'OK',
+                  showAction: false,
+                ),
+              );
+            }
+
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                snapshot.data == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final doc = snapshot.data;
+            final data = doc?.data() ?? const <String, dynamic>{};
+            final profile = _profileFromSnapshot(doc);
+            final isMe = currentUid != null && currentUid == profile.uid;
+            final createdAt = data['createdAt'];
+            final updatedAt = data['updatedAt'];
+            final hasPublicProfile = doc?.exists ?? false;
+            final canShowActions = !isMe &&
+                (onChat != null ||
+                    (!profile.isFriend && onAdd != null) ||
+                    (profile.isFriend && onDelete != null));
+
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
+              children: [
+                AppCard(
+                  child: Padding(
+                    padding: const EdgeInsets.all(22),
+                    child: Column(
+                      children: [
+                        _Avatar(
+                          photoUrl: profile.photoUrl,
+                          label: profile.displayName,
+                          radius: 44,
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          profile.displayName,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w900,
+                            color: gdInk,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          profile.username,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: gdMuted,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          alignment: WrapAlignment.center,
+                          children: [
+                            if (isMe) const Chip(label: Text('You')),
+                            if (profile.isFriend)
+                              const Chip(label: Text('Friend')),
+                            if (profile.isChatOnly)
+                              const Chip(label: Text('Chat request')),
+                            if (!hasPublicProfile)
+                              const Chip(label: Text('Fallback profile')),
+                          ],
+                        ),
+                        if (canShowActions) ...[
+                          const SizedBox(height: 18),
+                          Row(
+                            children: [
+                              if (onChat != null) ...[
+                                Expanded(
+                                  child: FilledButton.icon(
+                                    onPressed: () => onChat!(profile),
+                                    icon: const Icon(Icons.chat_bubble_rounded),
+                                    label: const Text('Message'),
+                                  ),
+                                ),
+                              ],
+                              if (!profile.isFriend && onAdd != null) ...[
+                                if (onChat != null) const SizedBox(width: 10),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => onAdd!(profile),
+                                    icon: const Icon(Icons.person_add_alt_1_rounded),
+                                    label: const Text('Add friend'),
+                                  ),
+                                ),
+                              ],
+                              if (profile.isFriend && onDelete != null) ...[
+                                if (onChat != null) const SizedBox(width: 10),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => onDelete!(profile),
+                                    icon: const Icon(Icons.delete_outline_rounded),
+                                    label: const Text('Remove'),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                AppCard(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        _CommunityInfoRow(
+                          icon: Icons.badge_rounded,
+                          label: 'User UID',
+                          value: _shortId(profile.uid),
+                        ),
+                        const Divider(height: 20),
+                        _CommunityInfoRow(
+                          icon: Icons.alternate_email_rounded,
+                          label: 'Username',
+                          value: profile.username,
+                        ),
+                        const Divider(height: 20),
+                        _CommunityInfoRow(
+                          icon: Icons.local_fire_department_rounded,
+                          label: 'Streak',
+                          value: '${profile.streak} day streak',
+                        ),
+                        const Divider(height: 20),
+                        _CommunityInfoRow(
+                          icon: Icons.verified_user_rounded,
+                          label: 'Profile source',
+                          value: hasPublicProfile
+                              ? 'public_profiles/${profile.uid}'
+                              : 'Fallback from chat/member data',
+                        ),
+                        if (profile.lastMessageText.isNotEmpty) ...[
+                          const Divider(height: 20),
+                          _CommunityInfoRow(
+                            icon: Icons.chat_bubble_rounded,
+                            label: 'Last chat',
+                            value: profile.lastMessageText,
+                          ),
+                        ],
+                        const Divider(height: 20),
+                        _CommunityInfoRow(
+                          icon: Icons.calendar_month_rounded,
+                          label: 'Created',
+                          value: _formatTimestamp(
+                            createdAt is Timestamp ? createdAt : null,
+                          ),
+                        ),
+                        const Divider(height: 20),
+                        _CommunityInfoRow(
+                          icon: Icons.update_rounded,
+                          label: 'Updated',
+                          value: _formatTimestamp(
+                            updatedAt is Timestamp ? updatedAt : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             );
