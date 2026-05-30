@@ -74,7 +74,8 @@ class GoalCoachRequest {
         'userMessage': userMessage,
         'goalTitle': goalTitle,
         'progressPercent': progressPercent,
-        'history': conversationHistory.map((m) => m.toJson()).toList(),
+        // Key must match the backend Zod schema field name exactly.
+        'conversationHistory': conversationHistory.map((m) => m.toJson()).toList(),
       };
 }
 
@@ -188,17 +189,20 @@ class MoodAdvisorResponse {
     required this.message,
     required this.emoji,
     required this.suggestion,
+    this.intensity = 'medium',
   });
 
   final String message;
   final String emoji;
   final String suggestion;
+  final String intensity; // 'low' | 'medium' | 'high'
 
   factory MoodAdvisorResponse.fromJson(Map<String, dynamic> json) =>
       MoodAdvisorResponse(
-        message: json['message'] as String? ?? '',
-        emoji: json['emoji'] as String? ?? '✨',
+        message:   json['message']    as String? ?? '',
+        emoji:     json['emoji']      as String? ?? '✨',
         suggestion: json['suggestion'] as String? ?? '',
+        intensity:  json['intensity']  as String? ?? 'medium',
       );
 }
 
@@ -230,17 +234,20 @@ class FocusInsightResponse {
     required this.insight,
     required this.nextStepHint,
     required this.coinsEarned,
+    this.badge = '',
   });
 
   final String insight;
   final String nextStepHint;
   final int coinsEarned;
+  final String badge; // e.g. "🏅 Deep Work" — now returned by backend
 
   factory FocusInsightResponse.fromJson(Map<String, dynamic> json) =>
       FocusInsightResponse(
-        insight: json['insight'] as String? ?? '',
+        insight:      json['insight']      as String? ?? '',
         nextStepHint: json['nextStepHint'] as String? ?? '',
-        coinsEarned: (json['coinsEarned'] as num?)?.toInt() ?? 15,
+        coinsEarned:  (json['coinsEarned'] as num?)?.toInt() ?? 15,
+        badge:        json['badge']        as String? ?? '',
       );
 }
 

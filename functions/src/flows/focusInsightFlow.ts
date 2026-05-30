@@ -15,9 +15,10 @@ const FocusInsightInputSchema = z.object({
 });
 
 const FocusInsightOutputSchema = z.object({
-  insight:     z.string(),
-  coinsEarned: z.number().default(0),
-  badge:       z.string().default(""),
+  insight:      z.string(),
+  coinsEarned:  z.number().default(0),
+  badge:        z.string().default(""),
+  nextStepHint: z.string().default(""),  // added to match Flutter FocusInsightResponse
 });
 
 export function defineFocusInsightFlow() {
@@ -75,7 +76,10 @@ Respond ONLY with valid JSON: { "insight": "..." }`.trim();
         const insight = parsed.insight?.trim();
 
         if (insight) {
-          return { insight, coinsEarned, badge };
+          const nextStepHint = input.completed
+            ? `Keep the momentum — start your next task within 10 minutes.`
+            : `When you're ready, try again with a shorter 10-minute session.`;
+          return { insight, coinsEarned, badge, nextStepHint };
         }
       } catch (e) {
         // Fall through to static message
@@ -85,7 +89,11 @@ Respond ONLY with valid JSON: { "insight": "..." }`.trim();
         ? `Great work — ${input.durationMinutes} focused minutes brings "${input.goalTitle}" closer to done.`
         : `Even a short session counts. Jump back in when you're ready.`;
 
-      return { insight: staticInsight, coinsEarned, badge };
+      const staticNextStep = input.completed
+        ? `Review what you just completed and pick the next action.`
+        : `Take a short break, then try again with a smaller time block.`;
+
+      return { insight: staticInsight, coinsEarned, badge, nextStepHint: staticNextStep };
     }
   );
 }

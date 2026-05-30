@@ -42,7 +42,23 @@ class FirebaseInitializer {
       return;
     }
 
+    // Validate any cached credential against production Firebase.
+    // An emulator-issued token stored from a previous dev session will be
+    // rejected, causing INVALID_REFRESH_TOKEN floods. Clearing it here lets
+    // the user sign in cleanly on the next screen.
+    await _clearStaleTokenIfPresent();
     await _activateAppCheckWhenConfigured();
+  }
+
+  static Future<void> _clearStaleTokenIfPresent() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      await user.getIdToken(true);
+    } catch (_) {
+      await FirebaseAuth.instance.signOut();
+      debugPrint('⚠️ Stale auth token cleared — please sign in again.');
+    }
   }
 
   static Future<void> _connectToEmulators() async {
@@ -58,6 +74,8 @@ class FirebaseInitializer {
 
     try {
       await FirebaseAuth.instance.useAuthEmulator(host, 9099);
+      // Clear any cached production token — the emulator won't recognise it.
+      await FirebaseAuth.instance.signOut();
     } catch (_) {
       // Firebase Auth emulator can only be attached once per process.
     }

@@ -28,6 +28,7 @@ interface AgentRunResult {
   executionResults: unknown[];
   reflections: unknown[];
   memorySnapshot: Record<string, unknown>;
+  memoryUpdated: boolean;
 }
 
 // ── Firestore memory helpers ──────────────────────────────────────────────────
@@ -162,5 +163,6 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
     executionResults,
     reflections,
     memorySnapshot: { ...memory, ...memoryUpdates },
+    memoryUpdated: true,  // signals to Flutter that memory was persisted this session
   };
 }

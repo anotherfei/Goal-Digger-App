@@ -19,9 +19,11 @@ const GoalCoachInputSchema = z.object({
 });
 
 const GoalCoachOutputSchema = z.object({
-  reply:            z.string(),
-  suggestedActions: z.array(z.string()).default([]),
-  encouragement:    z.string().default(""),
+  reply:             z.string(),
+  suggestedActions:  z.array(z.string()).default([]),
+  encouragement:     z.string().default(""),
+  // motivationalScore added so the Flutter model (which reads this field) works correctly.
+  motivationalScore: z.number().min(1).max(10).default(7),
 });
 
 export type GoalCoachInput  = z.infer<typeof GoalCoachInputSchema>;
@@ -52,13 +54,15 @@ Respond with a JSON object:
 {
   "reply": "1–3 sentence response. Be specific to the goal. Never generic.",
   "suggestedActions": ["concrete next task 1", "concrete next task 2"],
-  "encouragement": "One short motivational line (max 12 words) tied to their goal"
+  "encouragement": "One short motivational line (max 12 words) tied to their goal",
+  "motivationalScore": 8
 }
 
 Rules:
 - suggestedActions should be specific micro-tasks the user can act on today.
 - If the user asks to change/adjust tasks, put the revised task titles in suggestedActions.
 - Reply must feel like a real human coach, not a chatbot.
+- motivationalScore is 1–10: how encouraging the tone is (10 = very uplifting).
 - Respond ONLY with valid JSON — no markdown fences.`.trim();
 
       try {
@@ -82,18 +86,22 @@ Rules:
         const parsed = JSON.parse(cleaned);
 
         return {
-          reply:            String(parsed.reply ?? "").trim(),
-          suggestedActions: Array.isArray(parsed.suggestedActions)
+          reply:             String(parsed.reply ?? "").trim(),
+          suggestedActions:  Array.isArray(parsed.suggestedActions)
             ? parsed.suggestedActions.map(String).filter(Boolean)
             : [],
-          encouragement:    String(parsed.encouragement ?? "").trim(),
+          encouragement:     String(parsed.encouragement ?? "").trim(),
+          motivationalScore: typeof parsed.motivationalScore === "number"
+            ? Math.min(10, Math.max(1, Math.round(parsed.motivationalScore)))
+            : 7,
         };
       } catch (e) {
         // Graceful degradation — the Flutter app handles this gracefully
         return {
-          reply:            "I couldn't reach the AI right now. Check your network and try again.",
-          suggestedActions: [],
-          encouragement:    "",
+          reply:             "I couldn't reach the AI right now. Check your network and try again.",
+          suggestedActions:  [],
+          encouragement:     "",
+          motivationalScore: 7,
         };
       }
     }
