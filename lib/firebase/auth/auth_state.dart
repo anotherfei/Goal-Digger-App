@@ -46,6 +46,11 @@ class AuthState extends ChangeNotifier {
   }
 
   String get uid => _user?.uid ?? '';
+  bool get emailVerified => _user?.emailVerified ?? false;
+
+  List<String> get providerIds =>
+      _user?.providerData.map((provider) => provider.providerId).toList() ??
+      const [];
 
   void clearError() {
     if (_errorMessage == null) return;
@@ -111,6 +116,129 @@ class AuthState extends ChangeNotifier {
     }
   }
 
+  Future<bool> upgradeGuestWithEmail({
+    required String displayName,
+    required String email,
+    required String password,
+  }) async {
+    _setLoading(true);
+    try {
+      await _authService.upgradeGuestWithEmail(
+        displayName: displayName,
+        email: email,
+        password: password,
+      );
+      _user = _authService.currentUser;
+      _status = _user == null
+          ? AuthStatus.signedOut
+          : _user!.isAnonymous
+              ? AuthStatus.guest
+              : AuthStatus.signedIn;
+      _errorMessage = null;
+      return true;
+    } on AuthException catch (e) {
+      _errorMessage = e.message;
+      return false;
+    } catch (e) {
+      _errorMessage = 'Could not upgrade the guest account. Please try again.';
+      debugPrint('upgradeGuestWithEmail error: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<bool> sendPasswordResetEmail(String email) async {
+    _setLoading(true);
+    try {
+      await _authService.sendPasswordResetEmail(email);
+      _errorMessage = null;
+      return true;
+    } on AuthException catch (e) {
+      _errorMessage = e.message;
+      return false;
+    } catch (e) {
+      _errorMessage = 'Could not send reset instructions. Please try again.';
+      debugPrint('sendPasswordResetEmail error: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<bool> sendEmailVerification() async {
+    _setLoading(true);
+    try {
+      await _authService.sendEmailVerification();
+      _errorMessage = null;
+      return true;
+    } on AuthException catch (e) {
+      _errorMessage = e.message;
+      return false;
+    } catch (e) {
+      _errorMessage = 'Could not send verification email. Please try again.';
+      debugPrint('sendEmailVerification error: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<bool> reloadUser() async {
+    _setLoading(true);
+    try {
+      await _authService.reloadUser();
+      _user = _authService.currentUser;
+      _errorMessage = null;
+      return true;
+    } catch (e) {
+      _errorMessage = 'Could not refresh account status. Please try again.';
+      debugPrint('reloadUser error: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<bool> updateDisplayName(String displayName) async {
+    _setLoading(true);
+    try {
+      await _authService.updateDisplayName(displayName);
+      _user = _authService.currentUser;
+      _errorMessage = null;
+      return true;
+    } on AuthException catch (e) {
+      _errorMessage = e.message;
+      return false;
+    } catch (e) {
+      _errorMessage = 'Could not update display name. Please try again.';
+      debugPrint('updateDisplayName error: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<bool> deleteCurrentUser() async {
+    _setLoading(true);
+    try {
+      await _authService.deleteCurrentUser();
+      _user = null;
+      _status = AuthStatus.signedOut;
+      _errorMessage = null;
+      return true;
+    } on AuthException catch (e) {
+      _errorMessage = e.message;
+      return false;
+    } catch (e) {
+      _errorMessage = 'Could not delete account. Please try again.';
+      debugPrint('deleteCurrentUser error: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   Future<void> signInAsGuest() async {
     _setLoading(true);
     try {
@@ -148,6 +276,8 @@ class AuthState extends ChangeNotifier {
   }
 
   void _setLoading(bool value) {
+    final shouldClearError = value && _errorMessage != null;
+    if (_isLoading == value && !shouldClearError) return;
     _isLoading = value;
     if (value) _errorMessage = null;
     notifyListeners();

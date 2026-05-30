@@ -10,6 +10,7 @@ ThemeData buildGoalDiggerTheme() {
 
   return ThemeData(
     useMaterial3: true,
+    fontFamily: 'PlusJakartaSans',
     scaffoldBackgroundColor: gdBackground,
     colorScheme: scheme.copyWith(
       primary: gdPrimary,
@@ -35,10 +36,10 @@ ThemeData buildGoalDiggerTheme() {
     ),
     navigationBarTheme: const NavigationBarThemeData(
       height: 72,
-      labelTextStyle: MaterialStatePropertyAll(
+      labelTextStyle: WidgetStatePropertyAll(
         TextStyle(fontWeight: FontWeight.w800, color: gdInk),
       ),
-      iconTheme: MaterialStatePropertyAll(
+      iconTheme: WidgetStatePropertyAll(
         IconThemeData(color: gdMuted),
       ),
     ),

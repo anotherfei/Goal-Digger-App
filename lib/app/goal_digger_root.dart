@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -14,6 +15,7 @@ import '../features/companion/companion_page.dart';
 import '../features/focus/widgets/focus_widgets.dart';
 import '../features/onboarding/onboarding_screen.dart';
 import '../features/planner/planner_page.dart';
+import '../features/profile/profile_screen.dart';
 import '../features/responsive/responsive_goal_shell.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/tasks/tasks_page.dart';
@@ -55,6 +57,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   final TextEditingController _communityController = TextEditingController();
 
   bool _onboarded = false;
+  String? _profileDisplayName;
   String _signedInWith = 'Guest';
   int _selectedIndex = 2;
   late List<GoalProject> _goals;
@@ -222,6 +225,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _disposeSync();
     setState(() {
       _onboarded = false;
+      _profileDisplayName = null;
       _signedInWith = 'Guest';
       _selectedIndex = 2;
       _goals = seedGoals(today);
@@ -265,6 +269,11 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _profileSub = sync.profileStream.listen(
       (profile) {
         if (!mounted || profile == null) return;
+        final user = context.read<AuthService>().currentUser;
+        final authDisplayName = user?.displayName?.trim();
+        final syncedDisplayName = authDisplayName?.isNotEmpty == true
+            ? authDisplayName!
+            : profile.displayName.trim();
         setState(() {
           _coins = profile.coins;
           _streak = profile.streak;
@@ -272,13 +281,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           _activePetSkin = profile.activePetSkin;
           _activeAccessory = profile.activeAccessory;
           _selectedMood = profile.selectedMood;
+          _profileDisplayName = syncedDisplayName.isNotEmpty
+              ? syncedDisplayName
+              : _profileDisplayName;
           _goalReminders = profile.goalReminders;
           _friendProgressSharing = profile.friendProgressSharing;
           _friends = profile.friends.isEmpty
               ? ['Maya Chen', 'Leo Tan', 'Ari Putra']
               : List<String>.from(profile.friends);
           _onboarded = profile.onboarded;
-          final user = context.read<AuthService>().currentUser;
           final providerId = user?.providerData.isNotEmpty == true
               ? user!.providerData.first.providerId
               : null;
@@ -428,13 +439,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       throw StateError('Firebase did not return a signed-in user.');
     }
 
+    final displayName = user.displayName?.trim().isNotEmpty == true
+        ? user.displayName!.trim()
+        : provider == 'Guest'
+            ? 'Guest User'
+            : 'Goal Digger User';
+
     await _userRepository.createOrUpdateProfile(
       uid: user.uid,
-      displayName: user.displayName?.trim().isNotEmpty == true
-          ? user.displayName!.trim()
-          : provider == 'Guest'
-              ? 'Guest User'
-              : 'Goal Digger User',
+      displayName: displayName,
       email: user.email,
       photoUrl: user.photoURL,
     );
@@ -445,6 +458,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     if (!mounted) return;
     authState.clearError();
     setState(() {
+      _profileDisplayName = displayName;
       _signedInWith = provider;
       _onboarded = true;
     });
@@ -1572,125 +1586,133 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   void _openProfile() {
     final authState = context.read<AuthState>();
-    final displayName = authState.displayName;
+    final user = context.read<AuthService>().currentUser ?? authState.user;
+    final displayName = _currentProfileDisplayName(user, authState);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
-        builder: (context) => Scaffold(
-          backgroundColor: gdBackground,
-          appBar: AppBar(
-            centerTitle: true,
-            title: const Text('Profile'),
-            leading: IconButton(
-              tooltip: 'Close profile',
-              icon: const Icon(Icons.close_rounded),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ),
-          body: SafeArea(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-              children: [
-                AppCard(
-                  color: gdSurface,
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const CircleAvatar(
-                              radius: 36,
-                              backgroundColor: gdPrimarySoft,
-                              child: Icon(Icons.account_circle_rounded,
-                                  size: 42, color: gdPrimary),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(displayName,
-                                      style: const TextStyle(
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.w900,
-                                          color: gdInk)),
-                                  const SizedBox(height: 4),
-                                  Text('Signed in with $_signedInWith',
-                                      style: const TextStyle(
-                                          color: gdMuted,
-                                          fontWeight: FontWeight.w700)),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 18),
-                        Row(children: [
-                          Expanded(
-                              child: StatMiniCard(
-                                  icon: Icons.paid_rounded,
-                                  label: 'Coins',
-                                  value: '$_coins')),
-                          const SizedBox(width: 10),
-                          Expanded(
-                              child: StatMiniCard(
-                                  icon: Icons.local_fire_department_rounded,
-                                  label: 'Streak',
-                                  value: '$_streak days')),
-                        ]),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                AppCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text('Account',
-                            style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                color: gdInk)),
-                        SizedBox(height: 10),
-                        ListTile(
-                            leading: Icon(Icons.mail_rounded),
-                            title: Text('Email / login method'),
-                            subtitle: Text(
-                                'Manage account connection from settings.')),
-                        ListTile(
-                            leading: Icon(Icons.shield_rounded),
-                            title: Text('Privacy'),
-                            subtitle: Text(
-                                'Control what friends and communities can see.')),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                AppCard(
-                  color: gdPrimarySoft,
-                  child: const Padding(
-                    padding: EdgeInsets.all(18),
-                    child: Text(
-                      'Friends are now managed from the Community page under the Friends tab.',
-                      style: TextStyle(
-                          color: gdInk,
-                          fontWeight: FontWeight.w800,
-                          height: 1.4),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+        builder: (context) => ProfileScreen(
+          displayName: displayName,
+          email: user?.email ?? '',
+          photoUrl: user?.photoURL,
+          signedInWith: _signedInWith,
+          isGuest: user?.isAnonymous ?? authState.isGuest,
+          emailVerified: authState.emailVerified,
+          providerIds: authState.providerIds,
+          coins: _coins,
+          streak: _streak,
+          petHappiness: _petHappiness,
+          pet: _activePetSkin,
+          accessory: _activeAccessory,
+          selectedMood: _selectedMood,
+          goals: _goals,
+          tasks: _allTasks,
+          communities: _communities,
+          friends: _friends,
+          routines: _routines,
+          goalReminders: _goalReminders,
+          friendProgressSharing: _friendProgressSharing,
+          onDisplayNameChanged: _updateDisplayName,
+          onSendEmailVerification: authState.sendEmailVerification,
+          onRefreshEmailVerification: authState.reloadUser,
+          onSendPasswordReset: authState.sendPasswordResetEmail,
+          onUpgradeGuestWithEmail: _upgradeGuestWithEmail,
+          onGoalRemindersChanged: _setGoalReminders,
+          onFriendProgressSharingChanged: _setFriendProgressSharing,
+          onSignOut: () => unawaited(_handleSignOut()),
+          onDeleteAccount: _deleteCurrentAccount,
         ),
       ),
     );
+  }
+
+  String _currentProfileDisplayName(
+    firebase_auth.User? user,
+    AuthState authState,
+  ) {
+    if (_profileDisplayName?.trim().isNotEmpty == true) {
+      return _profileDisplayName!.trim();
+    }
+    if (user?.displayName?.trim().isNotEmpty == true) {
+      return user!.displayName!.trim();
+    }
+    return authState.displayName;
+  }
+
+  Future<bool> _updateDisplayName(String displayName) async {
+    final authService = context.read<AuthService>();
+    try {
+      final cleaned = displayName.trim();
+      await authService.updateDisplayName(displayName);
+      final user = authService.currentUser;
+      if (user == null) return false;
+      if (mounted) {
+        setState(() => _profileDisplayName = cleaned);
+      }
+      try {
+        await _userRepository.createOrUpdateProfile(
+          uid: user.uid,
+          displayName: cleaned,
+          email: user.email,
+          photoUrl: user.photoURL,
+        );
+      } catch (e) {
+        debugPrint('Display name profile sync failed: $e');
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Display name update failed: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _upgradeGuestWithEmail({
+    required String displayName,
+    required String email,
+    required String password,
+  }) async {
+    final authState = context.read<AuthState>();
+    final authService = context.read<AuthService>();
+    final upgraded = await authState.upgradeGuestWithEmail(
+      displayName: displayName,
+      email: email,
+      password: password,
+    );
+    final user = authService.currentUser ?? authState.user;
+    if (!upgraded || user == null) return false;
+
+    try {
+      await _userRepository.createOrUpdateProfile(
+        uid: user.uid,
+        displayName: displayName.trim(),
+        email: user.email ?? email.trim(),
+        photoUrl: user.photoURL,
+      );
+      await _userRepository.markOnboarded(user.uid);
+      if (mounted) {
+        setState(() {
+          _profileDisplayName = displayName.trim();
+          _signedInWith = 'Email';
+        });
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Guest upgrade profile sync failed: $e');
+      if (mounted) {
+        setState(() {
+          _profileDisplayName = displayName.trim();
+          _signedInWith = 'Email';
+        });
+      }
+      return true;
+    }
+  }
+
+  Future<bool> _deleteCurrentAccount() async {
+    final deleted = await context.read<AuthState>().deleteCurrentUser();
+    if (!deleted || !mounted) return false;
+    _resetForSignedOutState();
+    return true;
   }
 
   void _addRoutine(RoutineItem routine) {
@@ -1797,12 +1819,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   @override
   Widget build(BuildContext context) {
-    // context.watch triggers rebuild when AuthState notifies.
+    // Rebuild the root only when the auth status itself changes. Loading and
+    // error changes are only needed by onboarding, and rebuilding the signed-in
+    // shell during modal cleanup can upset Flutter's inherited-widget tree.
+    final authStatus =
+        context.select<AuthState, AuthStatus>((authState) => authState.status);
+
     // All side effects (sync activation, Firestore writes) are handled
     // in _onAuthStateChanged via the addListener wired in didChangeDependencies.
-    final authState = context.watch<AuthState>();
-
-    if (!authState.isKnown) {
+    if (authStatus == AuthStatus.unknown) {
       return const Scaffold(
         backgroundColor: gdBackground,
         body: Center(child: CircularProgressIndicator()),
@@ -1810,19 +1835,22 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     }
 
     if (!_onboarded) {
-      return OnboardingScreen(
-        isLoading: authState.isLoading,
-        errorMessage: authState.errorMessage,
-        onClearError: authState.clearError,
-        onEmailAuth: (email, password, displayName, isSignUp) =>
-            _completeOnboardingWithEmail(
-          email: email,
-          password: password,
-          displayName: displayName,
-          isSignUp: isSignUp,
+      return Consumer<AuthState>(
+        builder: (context, authState, _) => OnboardingScreen(
+          isLoading: authState.isLoading,
+          errorMessage: authState.errorMessage,
+          onClearError: authState.clearError,
+          onPasswordReset: authState.sendPasswordResetEmail,
+          onEmailAuth: (email, password, displayName, isSignUp) =>
+              _completeOnboardingWithEmail(
+            email: email,
+            password: password,
+            displayName: displayName,
+            isSignUp: isSignUp,
+          ),
+          onGoogle: () => unawaited(_completeOnboardingWithAuth('Google')),
+          onGuest: () => unawaited(_completeOnboardingWithAuth('Guest')),
         ),
-        onGoogle: () => unawaited(_completeOnboardingWithAuth('Google')),
-        onGuest: () => unawaited(_completeOnboardingWithAuth('Guest')),
       );
     }
 
