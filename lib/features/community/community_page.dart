@@ -1242,10 +1242,10 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
     super.dispose();
   }
 
-  Stream<List<_PublicProfile>> _availableProfilesStream() {
+  Stream<List<_PublicProfile>> _profileStream() {
     final q = _query.trim().toLowerCase().replaceAll('@', '');
 
-    return widget.publicProfiles.limit(100).snapshots().map((snapshot) {
+    return widget.publicProfiles.limit(80).snapshots().map((snapshot) {
       final profiles = snapshot.docs
           .map((doc) => _PublicProfile.fromUserDoc(doc))
           .where((profile) => profile.uid != widget.currentUid)
@@ -1253,28 +1253,16 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
           .where((profile) => profile.matchesQuery(q))
           .toList();
 
-      if (q.isEmpty) {
-        profiles.sort((a, b) {
-          final streakCompare = b.streak.compareTo(a.streak);
-          if (streakCompare != 0) return streakCompare;
-          return a.displayName.compareTo(b.displayName);
-        });
-      } else {
-        profiles.sort((a, b) => a.displayName.compareTo(b.displayName));
-      }
-
+      profiles.sort((a, b) => a.displayName.compareTo(b.displayName));
       return profiles;
     });
   }
 
   Future<void> _add(_PublicProfile profile) async {
     if (_adding) return;
-
     setState(() => _adding = true);
-
     try {
       await widget.onAddFriend(profile);
-
       if (mounted) {
         setState(() {
           widget.currentFriendUids.add(profile.uid);
@@ -1303,20 +1291,16 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                       CircleAvatar(
                         radius: 34,
                         backgroundColor: gdPrimarySoft,
-                        child: Icon(
-                          Icons.lock_outline_rounded,
-                          color: gdPrimary,
-                          size: 34,
-                        ),
+                        child: Icon(Icons.lock_outline_rounded,
+                            color: gdPrimary, size: 34),
                       ),
                       SizedBox(height: 14),
                       Text(
                         'Sign in required',
                         style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          color: gdInk,
-                        ),
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            color: gdInk),
                         textAlign: TextAlign.center,
                       ),
                       SizedBox(height: 8),
@@ -1324,9 +1308,7 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                         'Friend search needs an account so Firestore can check permissions safely.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: gdMuted,
-                          fontWeight: FontWeight.w700,
-                        ),
+                            color: gdMuted, fontWeight: FontWeight.w700),
                       ),
                     ],
                   ),
@@ -1337,8 +1319,6 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
         ),
       );
     }
-
-    final q = _query.trim();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Find friends')),
@@ -1355,18 +1335,15 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                     const Text(
                       'Search users',
                       style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: gdInk,
-                      ),
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: gdInk),
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Search real users from Firestore. Suggestions also come from public profile documents, not dummy data.',
+                      'Search real public profile documents from Firestore. Adding someone stores their uid in your users/{uid}.friends list.',
                       style: TextStyle(
-                        color: gdMuted,
-                        fontWeight: FontWeight.w700,
-                      ),
+                          color: gdMuted, fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 14),
                     TextField(
@@ -1384,64 +1361,58 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
             ),
             const SizedBox(height: 16),
             StreamBuilder<List<_PublicProfile>>(
-              stream: _availableProfilesStream(),
+              stream: _profileStream(),
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting &&
-                    snapshot.data == null) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: CircularProgressIndicator(),
-                    ),
-                  );
+                      child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: CircularProgressIndicator()));
                 }
 
                 if (snapshot.hasError) {
                   return HelpfulErrorBox(
                     title: 'Friend search failed',
                     message:
-                        'Firestore denied public_profiles. Deploy the updated firestore.rules file, or restart the emulator after saving rules. Details: ${snapshot.error}',
+                        'Check Firestore rules for reading public_profiles. Details: ${snapshot.error}',
                     actionLabel: 'OK',
                     showAction: false,
                   );
                 }
 
-                final profiles = snapshot.data ?? const <_PublicProfile>[];
-                final sectionTitle =
-                    q.isEmpty ? 'Friend suggestions' : 'Search results';
+                final profiles = snapshot.data ?? [];
+                if (profiles.isEmpty) {
+                  return const HelpfulErrorBox(
+                    title: 'No profiles found',
+                    message:
+                        'Ask your teammate to sign in and open the Social page once, then search again.',
+                    actionLabel: 'OK',
+                    showAction: false,
+                  );
+                }
 
                 return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SectionTitle(title: sectionTitle, trailing: '${profiles.length}'),
-                    const SizedBox(height: 10),
-                    if (profiles.isEmpty)
-                      HelpfulErrorBox(
-                        title:
-                            q.isEmpty ? 'No friend suggestions yet' : 'No users found',
-                        message: q.isEmpty
-                            ? 'Ask your teammates to sign in and open the Social page once so their public profile is created.'
-                            : 'Try another name or username.',
-                        actionLabel: 'OK',
-                        showAction: false,
-                      )
-                    else
+                    for (final profile in profiles)
                       AppCard(
-                        child: Column(
-                          children: [
-                            for (var i = 0; i < profiles.length; i++) ...[
-                              _PublicProfileTile(
-                                profile: profiles[i],
-                                adding: _adding,
-                                onAdd: () => unawaited(_add(profiles[i])),
-                                subtitlePrefix: q.isEmpty
-                                    ? 'Suggested accountability friend'
-                                    : null,
-                              ),
-                              if (i != profiles.length - 1)
-                                const Divider(height: 1),
-                            ],
-                          ],
+                        margin: const EdgeInsets.only(bottom: 10),
+                        child: ListTile(
+                          leading: _Avatar(
+                              photoUrl: profile.photoUrl,
+                              label: profile.displayName),
+                          title: Text(profile.displayName,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w900)),
+                          subtitle: Text(
+                            '${profile.username} · ${profile.streak} day streak',
+                            style: const TextStyle(
+                                color: gdMuted, fontWeight: FontWeight.w700),
+                          ),
+                          trailing: FilledButton(
+                            onPressed:
+                                _adding ? null : () => unawaited(_add(profile)),
+                            child: const Text('Add'),
+                          ),
                         ),
                       ),
                   ],
@@ -1455,42 +1426,67 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
   }
 }
 
-class _PublicProfileTile extends StatelessWidget {
-  const _PublicProfileTile({
-    required this.profile,
-    required this.adding,
-    required this.onAdd,
-    this.subtitlePrefix,
+class _SuggestedFriendsPanel extends StatelessWidget {
+  const _SuggestedFriendsPanel({
+    required this.suggestions,
+    required this.currentFriendNames,
+    required this.onSearchSuggestion,
   });
 
-  final _PublicProfile profile;
-  final bool adding;
-  final VoidCallback onAdd;
-  final String? subtitlePrefix;
+  final List<String> suggestions;
+  final Set<String> currentFriendNames;
+  final ValueChanged<String> onSearchSuggestion;
 
   @override
   Widget build(BuildContext context) {
-    final streakText = '${profile.streak} day streak';
-    final subtitle = subtitlePrefix == null
-        ? '${profile.username} · $streakText'
-        : '$subtitlePrefix · ${profile.username} · $streakText';
+    final filtered = suggestions
+        .map((name) => name.trim())
+        .where((name) => name.isNotEmpty)
+        .where((name) => !currentFriendNames.contains(name))
+        .take(4)
+        .toList();
 
-    return ListTile(
-      leading: _Avatar(photoUrl: profile.photoUrl, label: profile.displayName),
-      title: Text(
-        profile.displayName,
-        style: const TextStyle(fontWeight: FontWeight.w900),
-      ),
-      subtitle: Text(
-        subtitle,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
-      ),
-      trailing: FilledButton(
-        onPressed: adding ? null : onAdd,
-        child: const Text('Add'),
-      ),
+    if (filtered.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionTitle(title: 'Suggestions'),
+        const SizedBox(height: 10),
+        AppCard(
+          child: Column(
+            children: [
+              for (var i = 0; i < filtered.length; i++) ...[
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: gdPrimarySoft,
+                    child: Text(
+                      filtered[i].substring(0, 1).toUpperCase(),
+                      style: const TextStyle(
+                          color: gdPrimary, fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                  title: Text(
+                    filtered[i],
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w900, color: gdInk),
+                  ),
+                  subtitle: const Text(
+                    'Suggested accountability friend',
+                    style:
+                        TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                  ),
+                  trailing: OutlinedButton(
+                    onPressed: () => onSearchSuggestion(filtered[i]),
+                    child: const Text('Search'),
+                  ),
+                ),
+                if (i != filtered.length - 1) const Divider(height: 1),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
