@@ -90,6 +90,9 @@ class _CommunityPageState extends State<CommunityPage> {
   CollectionReference<Map<String, dynamic>> get _publicProfiles =>
       _db.collection('public_profiles');
 
+  CollectionReference<Map<String, dynamic>> get _communitiesCollection =>
+      _db.collection('communities');
+
   Future<void> _ensurePublicProfile() async {
     final user = _user;
     if (user == null) return;
@@ -802,205 +805,494 @@ class _CommunityPageState extends State<CommunityPage> {
     );
   }
 
-  Widget _buildCommunitiesTab(BuildContext context) {
-    final groups = widget.communities;
-    final joined = groups.where((group) => group.joined).toList();
-    final leaderboard = [...groups]
-      ..sort((a, b) => b.members.compareTo(a.members));
-    final topThree = leaderboard.take(3).toList();
-    final communityPreview = joined.take(5).toList();
+  Stream<List<_DbCommunity>> _communitiesStream() {
+    final user = _user;
+    if (user == null) return Stream.value(const []);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AppCard(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Create or join community',
-                  style: TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w900, color: gdInk),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: widget.controller,
-                  decoration: const InputDecoration(
-                    labelText: 'Create a community',
-                    hintText: 'Example: Midterm study group',
-                  ),
-                  onSubmitted: (_) => widget.onAddCommunity(),
-                ),
-                const SizedBox(height: 12),
-                Row(
+    return _communitiesCollection
+        .limit(100)
+        .snapshots()
+        .map((snapshot) {
+      final communities = snapshot.docs
+          .map((doc) => _DbCommunity.fromDoc(doc, currentUid: user.uid))
+          .toList();
+
+      communities.sort((a, b) {
+        if (a.joined != b.joined) return a.joined ? -1 : 1;
+        return _timestampMillis(b.updatedAt).compareTo(_timestampMillis(a.updatedAt));
+      });
+      return communities;
+    });
+  }
+
+  Future<void> _createCommunityFromInput() async {
+    final user = _user;
+    if (user == null) {
+      _showSnack('Sign in before creating a community.');
+      return;
+    }
+
+    if (user.isAnonymous && !kDebugAllowGuestSocialAccess) {
+      _showSnack('Use a full account before creating communities.');
+      return;
+    }
+
+    final name = widget.controller.text.trim();
+    if (name.isEmpty) {
+      _showSnack('Type a community name first.');
+      return;
+    }
+
+    final displayName = _cleanDisplayName(user.displayName, user.email);
+    final tag = _communityTagForName(name);
+    final docRef = _communitiesCollection.doc();
+    final joinCode = _joinCodeFromId(docRef.id);
+
+    try {
+      await docRef.set({
+        'name': name,
+        'tag': tag,
+        'description': 'A community for people working on $name.',
+        'ownerUid': user.uid,
+        'ownerName': displayName,
+        'members': [user.uid],
+        'memberCount': 1,
+        'joinCode': joinCode,
+        'searchText': _communitySearchText(name, tag, 'A community for people working on $name.', joinCode),
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      await _usersCollection.doc(user.uid).set({
+        'communityIds': FieldValue.arrayUnion([docRef.id]),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      widget.controller.clear();
+      _showSnack('$name created. Join code: $joinCode');
+    } on FirebaseException catch (error) {
+      _showSnack('Create community failed: ${error.message ?? error.code}');
+    } catch (error) {
+      _showSnack('Create community failed: $error');
+    }
+  }
+
+  String _communityTagForName(String name) {
+    final cleaned = name.trim().toLowerCase();
+    if (cleaned.contains('exam') || cleaned.contains('study') || cleaned.contains('midterm')) {
+      return 'Study';
+    }
+    if (cleaned.contains('fit') || cleaned.contains('gym') || cleaned.contains('workout')) {
+      return 'Fitness';
+    }
+    if (cleaned.contains('code') || cleaned.contains('app') || cleaned.contains('project')) {
+      return 'Coding';
+    }
+    if (cleaned.contains('trade') || cleaned.contains('finance')) {
+      return 'Trading';
+    }
+    return 'General';
+  }
+
+  String _joinCodeFromId(String id) {
+    final cleaned = id.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
+    if (cleaned.length <= 6) return cleaned;
+    return cleaned.substring(0, 6);
+  }
+
+  String _communitySearchText(
+    String name,
+    String tag,
+    String description,
+    String joinCode,
+  ) {
+    return '${name.toLowerCase()} ${tag.toLowerCase()} ${description.toLowerCase()} ${joinCode.toLowerCase()}';
+  }
+
+  Future<void> _showJoinCodeDialog() async {
+    final controller = TextEditingController();
+    final code = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Join with code'),
+          content: TextField(
+            controller: controller,
+            textCapitalization: TextCapitalization.characters,
+            decoration: const InputDecoration(
+              labelText: 'Community code',
+              hintText: 'Example: ABC123',
+            ),
+            onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+              child: const Text('Join'),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+
+    final cleanedCode = code?.trim().toUpperCase();
+    if (cleanedCode == null || cleanedCode.isEmpty) return;
+
+    try {
+      final snapshot = await _communitiesCollection
+          .where('joinCode', isEqualTo: cleanedCode)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        _showSnack('No community found for code $cleanedCode.');
+        return;
+      }
+
+      final user = _user;
+      if (user == null) return;
+      await _joinCommunity(
+        _DbCommunity.fromDoc(snapshot.docs.first, currentUid: user.uid),
+      );
+    } on FirebaseException catch (error) {
+      _showSnack('Join failed: ${error.message ?? error.code}');
+    } catch (error) {
+      _showSnack('Join failed: $error');
+    }
+  }
+
+  Future<void> _joinCommunity(_DbCommunity community) async {
+    final user = _user;
+    if (user == null) {
+      _showSnack('Sign in before joining a community.');
+      return;
+    }
+
+    if (user.isAnonymous && !kDebugAllowGuestSocialAccess) {
+      _showSnack('Use a full account before joining communities.');
+      return;
+    }
+
+    if (community.joined) {
+      _showSnack('You already joined ${community.name}.');
+      return;
+    }
+
+    final ref = _communitiesCollection.doc(community.id);
+    try {
+      await _db.runTransaction((transaction) async {
+        final snapshot = await transaction.get(ref);
+        if (!snapshot.exists) {
+          throw FirebaseException(
+            plugin: 'cloud_firestore',
+            code: 'not-found',
+            message: 'Community no longer exists.',
+          );
+        }
+
+        final data = snapshot.data();
+        final members = _stringListFromRaw(data?['members']).toSet();
+        if (members.contains(user.uid)) return;
+
+        members.add(user.uid);
+        transaction.update(ref, {
+          'members': members.toList(),
+          'memberCount': members.length,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      });
+
+      await _usersCollection.doc(user.uid).set({
+        'communityIds': FieldValue.arrayUnion([community.id]),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      _showSnack('Joined ${community.name}.');
+    } on FirebaseException catch (error) {
+      _showSnack('Join failed: ${error.message ?? error.code}');
+    } catch (error) {
+      _showSnack('Join failed: $error');
+    }
+  }
+
+  Future<void> _deleteOrLeaveCommunity(_DbCommunity community) async {
+    final user = _user;
+    if (user == null) {
+      _showSnack('Sign in first.');
+      return;
+    }
+
+    final isOwner = community.ownerUid == user.uid;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(isOwner ? 'Delete community?' : 'Leave community?'),
+          content: Text(
+            isOwner
+                ? 'This deletes ${community.name} for everyone.'
+                : 'This removes ${community.name} from your community list.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(isOwner ? 'Delete' : 'Leave'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    final ref = _communitiesCollection.doc(community.id);
+    try {
+      if (isOwner) {
+        await ref.delete();
+      } else {
+        await _db.runTransaction((transaction) async {
+          final snapshot = await transaction.get(ref);
+          if (!snapshot.exists) return;
+          final members = _stringListFromRaw(snapshot.data()?['members']).toSet();
+          members.remove(user.uid);
+          transaction.update(ref, {
+            'members': members.toList(),
+            'memberCount': members.length,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        });
+      }
+
+      await _usersCollection.doc(user.uid).set({
+        'communityIds': FieldValue.arrayRemove([community.id]),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      _showSnack(isOwner ? '${community.name} deleted.' : 'Left ${community.name}.');
+    } on FirebaseException catch (error) {
+      _showSnack('Community update failed: ${error.message ?? error.code}');
+    } catch (error) {
+      _showSnack('Community update failed: $error');
+    }
+  }
+
+  Widget _buildCommunitiesTab(BuildContext context) {
+    return StreamBuilder<List<_DbCommunity>>(
+      stream: _communitiesStream(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return HelpfulErrorBox(
+            title: 'Communities failed to load',
+            message:
+                'Check Firestore rules for communities reads. Details: ${snapshot.error}',
+            actionLabel: 'OK',
+            showAction: false,
+          );
+        }
+
+        final groups = snapshot.data ?? const <_DbCommunity>[];
+        final joined = groups.where((group) => group.joined).toList();
+        final leaderboard = [...groups]
+          ..sort((a, b) => b.members.compareTo(a.members));
+        final topThree = leaderboard.take(3).toList();
+        final communityPreview = joined.take(5).toList();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppCard(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: widget.onAddCommunity,
-                        icon: const Icon(Icons.add_rounded),
-                        label: const Text('Create'),
-                      ),
+                    const Text(
+                      'Create or join community',
+                      style: TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.w900, color: gdInk),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {},
-                        icon: const Icon(Icons.login_rounded),
-                        label: const Text('Join with code'),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: widget.controller,
+                      decoration: const InputDecoration(
+                        labelText: 'Create a community',
+                        hintText: 'Example: Midterm study group',
                       ),
+                      onSubmitted: (_) => unawaited(_createCommunityFromInput()),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: () => unawaited(_createCommunityFromInput()),
+                            icon: const Icon(Icons.add_rounded),
+                            label: const Text('Create'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => unawaited(_showJoinCodeDialog()),
+                            icon: const Icon(Icons.login_rounded),
+                            label: const Text('Join with code'),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
-          ),
-        ),
-        const SizedBox(height: 18),
-        SectionTitle(title: 'Community streak leaderboard', trailing: 'TOP 3'),
-        const SizedBox(height: 10),
-        AppCard(
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              children: [
-                for (var i = 0; i < topThree.length; i++)
-                  _CommunityLeaderboardTile(rank: i + 1, group: topThree[i]),
-                if (leaderboard.isNotEmpty) ...[
-                  const Divider(height: 22),
+            const SizedBox(height: 18),
+            SectionTitle(title: 'Community streak leaderboard', trailing: 'TOP 3'),
+            const SizedBox(height: 10),
+            AppCard(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  children: [
+                    if (snapshot.connectionState == ConnectionState.waiting &&
+                        snapshot.data == null)
+                      const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: CircularProgressIndicator(),
+                      )
+                    else if (topThree.isEmpty)
+                      const HelpfulErrorBox(
+                        title: 'No communities yet',
+                        message: 'Create the first real community in Firestore.',
+                        actionLabel: 'OK',
+                        showAction: false,
+                      )
+                    else
+                      for (var i = 0; i < topThree.length; i++)
+                        _CommunityLeaderboardTile(rank: i + 1, group: topThree[i]),
+                    if (leaderboard.length > 3) ...[
+                      const Divider(height: 22),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () =>
+                              _openCommunityLeaderboardPage(context, leaderboard),
+                          icon: const Icon(Icons.emoji_events_rounded),
+                          label: const Text('View full leaderboard'),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            SectionTitle(title: 'My community list', trailing: '${joined.length}'),
+            const SizedBox(height: 10),
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                snapshot.data == null)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (joined.isEmpty)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const HelpfulErrorBox(
+                    title: 'No joined communities yet',
+                    message: 'Find a real Firestore community or create your own group.',
+                    actionLabel: 'Got it',
+                    showAction: false,
+                  ),
+                  const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () =>
-                          _openCommunityLeaderboardPage(context, leaderboard),
-                      icon: const Icon(Icons.emoji_events_rounded),
-                      label: const Text('View full leaderboard'),
+                    child: FilledButton.icon(
+                      onPressed: () => _openFindCommunitiesPage(context, groups),
+                      icon: const Icon(Icons.travel_explore_rounded),
+                      label: const Text('Find communities'),
                     ),
                   ),
                 ],
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 18),
-        SectionTitle(title: 'My community list', trailing: '${joined.length}'),
-        const SizedBox(height: 10),
-        if (joined.isEmpty)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const HelpfulErrorBox(
-                title: 'No joined communities yet',
-                message: 'Find a suggested community or create your own group.',
-                actionLabel: 'Got it',
-                showAction: false,
-              ),
-              const SizedBox(height: 8),
+              )
+            else ...[
+              for (final group in communityPreview)
+                _CommunityListCard(
+                  group: group,
+                  onChat: () => _openCommunityChatPage(context, group),
+                  onDelete: () => unawaited(_deleteOrLeaveCommunity(group)),
+                ),
+              const SizedBox(height: 4),
               SizedBox(
                 width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () => _openFindCommunitiesPage(context),
-                  icon: const Icon(Icons.travel_explore_rounded),
-                  label: const Text('Find communities'),
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: gdPrimary,
+                    foregroundColor: gdCardLight,
+                    side: const BorderSide(color: gdPrimary, width: 1.5),
+                  ),
+                  onPressed: () => _openAllCommunitiesPage(context, joined),
+                  icon: const Icon(Icons.groups_rounded),
+                  label: Text('View all communities (${joined.length})'),
                 ),
               ),
+              const SizedBox(height: 8),
             ],
-          )
-        else ...[
-          for (final group in communityPreview)
-            AppCard(
-              margin: const EdgeInsets.only(bottom: 10),
-              child: ListTile(
-                leading: const CircleAvatar(
-                  backgroundColor: gdPrimarySoft,
-                  child: Icon(Icons.groups_rounded, color: gdPrimary),
-                ),
-                title: Text(group.name,
-                    style: const TextStyle(fontWeight: FontWeight.w900)),
-                subtitle: Text(
-                  '${group.members} members · ${group.tag}',
-                  style: const TextStyle(
-                      color: gdMuted, fontWeight: FontWeight.w700),
-                ),
-                trailing: Wrap(
-                  spacing: 4,
-                  children: [
-                    IconButton.filledTonal(
-                      tooltip: 'Community chat',
-                      onPressed: () => _openCommunityChatPage(context, group),
-                      icon: const Icon(Icons.chat_bubble_rounded),
-                    ),
-                    IconButton(
-                      tooltip: 'Delete community',
-                      onPressed: () => widget.onDeleteCommunity(group),
-                      icon: const Icon(Icons.delete_outline_rounded,
-                          color: gdError),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ...[
-            const SizedBox(height: 4),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  backgroundColor: gdPrimary,
-                  foregroundColor: gdCardLight,
-                  side: const BorderSide(color: gdPrimary, width: 1.5),
-                ),
-                onPressed: () =>
-                    _openAllCommunitiesPage(context, widget.communities),
-                icon: const Icon(Icons.groups_rounded),
-                label: Text('View all communities (${joined.length})'),
-              ),
-            ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 70),
           ],
-        ],
-        const SizedBox(height: 70),
-      ],
+        );
+      },
     );
   }
 
-  void _openFindCommunitiesPage(BuildContext context) {
+  void _openFindCommunitiesPage(
+    BuildContext context,
+    List<_DbCommunity> communities,
+  ) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _FindCommunitiesPage(
-          communities: widget.communities,
-          onJoin: (group) {
-            widget.onJoinCommunity(group);
-            setState(() {});
-          },
+          communities: communities,
+          onJoin: (group) => unawaited(_joinCommunity(group)),
         ),
       ),
     );
   }
 
   void _openAllCommunitiesPage(
-      BuildContext context, List<CommunityGroup> communities) {
+    BuildContext context,
+    List<_DbCommunity> communities,
+  ) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _AllCommunitiesPage(
           communities: communities,
           onChat: (group) => _openCommunityChatPage(context, group),
-          onDelete: (group) {
-            widget.onDeleteCommunity(group);
-            setState(() {});
-          },
-          onFindCommunities: () => _openFindCommunitiesPage(context),
+          onDelete: (group) => unawaited(_deleteOrLeaveCommunity(group)),
+          onFindCommunities: () => _openFindCommunitiesPage(context, communities),
         ),
       ),
     );
   }
 
   void _openCommunityLeaderboardPage(
-      BuildContext context, List<CommunityGroup> leaderboard) {
+    BuildContext context,
+    List<_DbCommunity> leaderboard,
+  ) {
     Navigator.of(context).push(
       MaterialPageRoute(
-          builder: (_) => _CommunityLeaderboardPage(leaderboard: leaderboard)),
+        builder: (_) => _CommunityLeaderboardPage(leaderboard: leaderboard),
+      ),
     );
   }
 
@@ -1064,7 +1356,7 @@ class _CommunityPageState extends State<CommunityPage> {
     );
   }
 
-  void _openCommunityChatPage(BuildContext context, CommunityGroup group) {
+  void _openCommunityChatPage(BuildContext context, _DbCommunity group) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => _CommunityChatPage(group: group)),
     );
@@ -1336,9 +1628,9 @@ class _AllCommunitiesPage extends StatefulWidget {
     required this.onFindCommunities,
   });
 
-  final List<CommunityGroup> communities;
-  final ValueChanged<CommunityGroup> onChat;
-  final ValueChanged<CommunityGroup> onDelete;
+  final List<_DbCommunity> communities;
+  final ValueChanged<_DbCommunity> onChat;
+  final ValueChanged<_DbCommunity> onDelete;
   final VoidCallback onFindCommunities;
 
   @override
@@ -1358,12 +1650,12 @@ class _AllCommunitiesPageState extends State<_AllCommunitiesPage> {
   @override
   Widget build(BuildContext context) {
     final filtered = widget.communities.where((group) {
-      if (!group.joined) return false;
       final q = _query.trim().toLowerCase();
       if (q.isEmpty) return true;
       return group.name.toLowerCase().contains(q) ||
           group.tag.toLowerCase().contains(q) ||
-          group.description.toLowerCase().contains(q);
+          group.description.toLowerCase().contains(q) ||
+          group.joinCode.toLowerCase().contains(q);
     }).toList();
 
     return Scaffold(
@@ -1404,10 +1696,7 @@ class _AllCommunitiesPageState extends State<_AllCommunitiesPage> {
                 _CommunityListCard(
                   group: group,
                   onChat: () => widget.onChat(group),
-                  onDelete: () {
-                    widget.onDelete(group);
-                    setState(() {});
-                  },
+                  onDelete: () => widget.onDelete(group),
                 ),
           ],
         ),
@@ -1422,8 +1711,8 @@ class _FindCommunitiesPage extends StatefulWidget {
     required this.onJoin,
   });
 
-  final List<CommunityGroup> communities;
-  final ValueChanged<CommunityGroup> onJoin;
+  final List<_DbCommunity> communities;
+  final ValueChanged<_DbCommunity> onJoin;
 
   @override
   State<_FindCommunitiesPage> createState() => _FindCommunitiesPageState();
@@ -1449,7 +1738,8 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
       if (q.isEmpty) return true;
       return group.name.toLowerCase().contains(q) ||
           group.tag.toLowerCase().contains(q) ||
-          group.description.toLowerCase().contains(q);
+          group.description.toLowerCase().contains(q) ||
+          group.joinCode.toLowerCase().contains(q);
     }).toList();
 
     return Scaffold(
@@ -1465,11 +1755,17 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Search community suggestions',
+                      'Search real communities',
                       style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w900,
                           color: gdInk),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'These are documents from Firestore communities, not dummy data.',
+                      style: TextStyle(
+                          color: gdMuted, fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 14),
                     TextField(
@@ -1492,13 +1788,13 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
               const HelpfulErrorBox(
                 title: 'No suggestions found',
                 message:
-                    'Try another keyword or create a new community from the Social page.',
+                    'Create a community from the Social page or try another keyword.',
                 actionLabel: 'OK',
                 showAction: false,
               )
             else
               for (final group in filtered)
-                CommunityMatchCard(
+                _DbCommunityMatchCard(
                   group: group,
                   onJoin: () {
                     widget.onJoin(group);
@@ -2131,7 +2427,7 @@ class _CommunityListCard extends StatelessWidget {
     required this.onDelete,
   });
 
-  final CommunityGroup group;
+  final _DbCommunity group;
   final VoidCallback onChat;
   final VoidCallback onDelete;
 
@@ -2147,7 +2443,9 @@ class _CommunityListCard extends StatelessWidget {
         title: Text(group.name,
             style: const TextStyle(fontWeight: FontWeight.w900)),
         subtitle: Text(
-          '${group.members} members - ${group.tag}',
+          '${group.members} members · ${group.tag} · code ${group.joinCode}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
         ),
         trailing: Wrap(
@@ -2159,9 +2457,14 @@ class _CommunityListCard extends StatelessWidget {
               icon: const Icon(Icons.chat_bubble_rounded),
             ),
             IconButton(
-              tooltip: 'Delete community',
+              tooltip: group.isOwner ? 'Delete community' : 'Leave community',
               onPressed: onDelete,
-              icon: const Icon(Icons.delete_outline_rounded, color: gdError),
+              icon: Icon(
+                group.isOwner
+                    ? Icons.delete_outline_rounded
+                    : Icons.logout_rounded,
+                color: gdError,
+              ),
             ),
           ],
         ),
@@ -2173,7 +2476,7 @@ class _CommunityListCard extends StatelessWidget {
 class _CommunityChatPage extends StatelessWidget {
   const _CommunityChatPage({required this.group});
 
-  final CommunityGroup group;
+  final _DbCommunity group;
 
   @override
   Widget build(BuildContext context) {
@@ -2200,8 +2503,15 @@ class _CommunityChatPage extends StatelessWidget {
                         style: Theme.of(context).textTheme.headlineMedium,
                         textAlign: TextAlign.center),
                     const SizedBox(height: 8),
+                    Text(
+                      '${group.members} members · code ${group.joinCode}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          color: gdMuted, fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
                     const Text(
-                      'Community chat is now a separate page. Wire this to chats/{communityId}/messages later if your demo needs group chat.',
+                      'The community list is now backed by Firestore. Group chat can be wired next under communities/{communityId}/messages.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                           color: gdMuted, fontWeight: FontWeight.w700),
@@ -2220,7 +2530,7 @@ class _CommunityChatPage extends StatelessWidget {
 class _CommunityLeaderboardPage extends StatelessWidget {
   const _CommunityLeaderboardPage({required this.leaderboard});
 
-  final List<CommunityGroup> leaderboard;
+  final List<_DbCommunity> leaderboard;
 
   @override
   Widget build(BuildContext context) {
@@ -2253,7 +2563,7 @@ class _CommunityLeaderboardTile extends StatelessWidget {
   const _CommunityLeaderboardTile({required this.rank, required this.group});
 
   final int rank;
-  final CommunityGroup group;
+  final _DbCommunity group;
 
   @override
   Widget build(BuildContext context) {
@@ -2266,10 +2576,10 @@ class _CommunityLeaderboardTile extends StatelessWidget {
       title:
           Text(group.name, style: const TextStyle(fontWeight: FontWeight.w900)),
       subtitle: Text(
-        '${group.members} members',
+        '${group.members} members · ${group.tag}',
         style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
       ),
-      trailing: Chip(label: Text('${group.similarity}% fit')),
+      trailing: Chip(label: Text(group.joined ? 'Joined' : '${group.similarity}% fit')),
     );
   }
 }
@@ -2448,6 +2758,156 @@ class _UnreadAvatar extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+
+class _DbCommunity {
+  const _DbCommunity({
+    required this.id,
+    required this.name,
+    required this.tag,
+    required this.description,
+    required this.ownerUid,
+    required this.ownerName,
+    required this.joinCode,
+    required this.membersList,
+    required this.memberCount,
+    required this.joined,
+    required this.isOwner,
+    required this.similarity,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String name;
+  final String tag;
+  final String description;
+  final String ownerUid;
+  final String ownerName;
+  final String joinCode;
+  final List<String> membersList;
+  final int memberCount;
+  final bool joined;
+  final bool isOwner;
+  final int similarity;
+  final Timestamp? createdAt;
+  final Timestamp? updatedAt;
+
+  int get members => max(memberCount, membersList.length);
+
+  factory _DbCommunity.fromDoc(
+    DocumentSnapshot<Map<String, dynamic>> doc, {
+    required String currentUid,
+  }) {
+    final data = doc.data() ?? {};
+    final name = _readString(data, const ['name', 'title'], 'Untitled community');
+    final tag = _readString(data, const ['tag', 'category'], 'General');
+    final description = _readString(
+      data,
+      const ['description', 'about'],
+      'No description yet.',
+    );
+    final members = _stringListFromRaw(data['members']);
+    final memberCount = _readInt(
+      data,
+      const ['memberCount', 'membersCount', 'members'],
+      members.length,
+    );
+    final ownerUid = _readString(data, const ['ownerUid', 'createdByUid', 'creatorUid']);
+    final joinCode = _readString(
+      data,
+      const ['joinCode', 'code'],
+      _fallbackJoinCode(doc.id),
+    ).toUpperCase();
+    final createdAt = data['createdAt'];
+    final updatedAt = data['updatedAt'];
+
+    return _DbCommunity(
+      id: doc.id,
+      name: name,
+      tag: tag,
+      description: description,
+      ownerUid: ownerUid,
+      ownerName: _readString(data, const ['ownerName', 'createdByName'], 'Owner'),
+      joinCode: joinCode,
+      membersList: members,
+      memberCount: memberCount,
+      joined: members.contains(currentUid),
+      isOwner: ownerUid == currentUid,
+      similarity: _readInt(data, const ['similarity', 'match'], 80),
+      createdAt: createdAt is Timestamp ? createdAt : null,
+      updatedAt: updatedAt is Timestamp ? updatedAt : null,
+    );
+  }
+
+  CommunityGroup toCommunityGroup({bool? joined}) {
+    return CommunityGroup(
+      name: name,
+      members: members,
+      tag: tag,
+      description: description,
+      similarity: similarity,
+      joined: joined ?? this.joined,
+    );
+  }
+}
+
+class _DbCommunityMatchCard extends StatelessWidget {
+  const _DbCommunityMatchCard({
+    required this.group,
+    required this.onJoin,
+  });
+
+  final _DbCommunity group;
+  final VoidCallback onJoin;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(group.name,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w900, fontSize: 16)),
+                ),
+                Chip(label: Text('${group.similarity}% match')),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${group.members} members · ${group.tag} · code ${group.joinCode}',
+              style:
+                  const TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 6),
+            Text(group.description,
+                style: const TextStyle(
+                    color: gdMuted, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: group.joined
+                  ? const OutlinedButton(
+                      onPressed: null, child: Text('Already joined'))
+                  : FilledButton.icon(
+                      onPressed: onJoin,
+                      icon: const Icon(Icons.group_add_rounded),
+                      label: const Text('Join community'),
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -2847,6 +3307,21 @@ class CommunityMatchCard extends StatelessWidget {
       ),
     );
   }
+}
+
+List<String> _stringListFromRaw(dynamic raw) {
+  if (raw is! Iterable) return const [];
+
+  return raw
+      .map((value) => value.toString().trim())
+      .where((value) => value.isNotEmpty)
+      .toList();
+}
+
+String _fallbackJoinCode(String id) {
+  final cleaned = id.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
+  if (cleaned.length <= 6) return cleaned;
+  return cleaned.substring(0, 6);
 }
 
 String _readString(
