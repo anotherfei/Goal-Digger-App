@@ -26,7 +26,6 @@ import '../genkit/models/ai_models.dart';
 import '../models/models.dart';
 import '../shared/widgets/shared_widgets.dart';
 
-
 class _DraftTaskSpec {
   const _DraftTaskSpec({
     required this.title,
@@ -92,7 +91,11 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   bool _goalReminders = true;
   bool _friendProgressSharing = true;
   List<String> _friends = ['Maya Chen', 'Leo Tan', 'Ari Putra'];
-  final List<String> _friendSuggestions = ['Nina Rahman', 'Jay Lim', 'Sofia Hart'];
+  final List<String> _friendSuggestions = [
+    'Nina Rahman',
+    'Jay Lim',
+    'Sofia Hart'
+  ];
   PetSkin _activePetSkin = defaultPet;
   String _activeAccessory = 'Cap';
 
@@ -101,8 +104,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   bool _focusPaused = false;
   Timer? _focusTimer;
 
-  bool get _hasActiveFocus => _activeFocusConfig != null && _focusRemainingSeconds > 0;
-  bool get _focusComplete => _activeFocusConfig != null && _focusRemainingSeconds <= 0;
+  bool get _hasActiveFocus =>
+      _activeFocusConfig != null && _focusRemainingSeconds > 0;
+  bool get _focusComplete =>
+      _activeFocusConfig != null && _focusRemainingSeconds <= 0;
 
   @override
   void initState() {
@@ -166,21 +171,24 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           members: 89,
           tag: 'Exam prep',
           similarity: 94,
-          description: 'Short daily sprints for students who want accountability.',
+          description:
+              'Short daily sprints for students who want accountability.',
         ),
         CommunityGroup(
           name: 'Portfolio Builders',
           members: 142,
           tag: 'Career',
           similarity: 88,
-          description: 'Share portfolio progress and get feedback from builders.',
+          description:
+              'Share portfolio progress and get feedback from builders.',
         ),
         CommunityGroup(
           name: 'Calm Wellness Crew',
           members: 76,
           tag: 'Wellness',
           similarity: 81,
-          description: 'Build low-pressure routines around sleep, movement, and reflection.',
+          description:
+              'Build low-pressure routines around sleep, movement, and reflection.',
         ),
       ];
 
@@ -331,7 +339,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       await sync.setCoins(_coins);
       await sync.updateStreak(_streak);
       await sync.updateMood(_selectedMood);
-      await sync.updatePetState(_petHappiness, _activePetSkin, _activeAccessory);
+      await sync.updatePetState(
+          _petHappiness, _activePetSkin, _activeAccessory);
     } catch (e) {
       debugPrint('Profile write failed: $e');
     }
@@ -409,7 +418,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       if (!mounted) return;
       _showHelpfulError(
         title: '$provider sign-in failed',
-        message: 'Firebase could not complete sign-in. Check that Firebase Auth is enabled and your app uses the correct Firebase project. Details: $e',
+        message:
+            'Firebase could not complete sign-in. Check that Firebase Auth is enabled and your app uses the correct Firebase project. Details: $e',
         actionLabel: 'Continue as guest',
         onAction: () => unawaited(_completeOnboardingWithAuth('Guest')),
       );
@@ -419,7 +429,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   void _showLinkedInUnavailable() {
     _showHelpfulError(
       title: 'LinkedIn is not configured yet',
-      message: 'The backend currently supports Firebase Google sign-in and anonymous guest preview. LinkedIn needs an OAuth provider setup before it can be a real login method.',
+      message:
+          'The backend currently supports Firebase Google sign-in and anonymous guest preview. LinkedIn needs an OAuth provider setup before it can be a real login method.',
       actionLabel: 'Preview as guest',
       onAction: () => unawaited(_completeOnboardingWithAuth('Guest')),
     );
@@ -427,9 +438,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   List<MicroTask> get _allTasks => _goals.expand((goal) => goal.tasks).toList();
 
-  List<MicroTask> get _todayTasks => _allTasks
-      .where((task) => dateOnly(task.scheduledDate) == today)
-      .toList();
+  List<MicroTask> get _todayTasks =>
+      _allTasks.where((task) => dateOnly(task.scheduledDate) == today).toList();
 
   GoalProject _goalForTask(MicroTask task) {
     return _goals.firstWhere((goal) => goal.id == task.goalId);
@@ -437,7 +447,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   int get _todayCompleted => _todayTasks.where((task) => task.done).length;
 
-  double get _todayProgress => _todayTasks.isEmpty ? 0 : _todayCompleted / _todayTasks.length;
+  double get _todayProgress =>
+      _todayTasks.isEmpty ? 0 : _todayCompleted / _todayTasks.length;
 
   int get _remainingMinutes => _todayTasks
       .where((task) => !task.done)
@@ -471,7 +482,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           title: Text(title),
           content: Text(message),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel')),
             FilledButton(
               onPressed: () {
                 Navigator.pop(context);
@@ -500,7 +513,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     if (title.isEmpty) {
       _showHelpfulError(
         title: 'Goal name is missing',
-        message: 'Please write one clear goal first. Example: "Prepare for midterm" or "Build my portfolio".',
+        message:
+            'Please write one clear goal first. Example: "Prepare for midterm" or "Build my portfolio".',
         actionLabel: 'Write goal',
         onAction: () {},
       );
@@ -525,7 +539,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       String title, TextEditingController chatController) async {
     final ai = context.read<GenkitService>();
     final fallbackSpecs = _draftSpecsFromTitles(_generateTaskTitles(title));
-    final deadlineDays = max(1, dateOnly(_newGoalDeadline).difference(today).inDays);
+    final deadlineDays =
+        max(1, dateOnly(_newGoalDeadline).difference(today).inDays);
     var draftSpecs = List<_DraftTaskSpec>.from(fallbackSpecs);
     var aiAvailable = false;
     String? agentStrategy;
@@ -559,7 +574,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           deadlineDays: deadlineDays,
         ),
       );
-      final aiSpecs = _draftSpecsFromGeneratedTasks(generated.tasks).take(6).toList();
+      final aiSpecs =
+          _draftSpecsFromGeneratedTasks(generated.tasks).take(6).toList();
       if (aiSpecs.isNotEmpty) {
         draftSpecs = aiSpecs;
         aiAvailable = true;
@@ -568,7 +584,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       debugPrint('AI task generation fallback used: $e');
     }
 
-    final agentSuffix = agentStrategy == null ? '' : ' and agent planner ($agentStrategy)';
+    final agentSuffix =
+        agentStrategy == null ? '' : ' and agent planner ($agentStrategy)';
     final messages = <Map<String, dynamic>>[
       {
         'role': 'assistant',
@@ -609,7 +626,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               try {
                 final reply = await ai.goalCoach.ask(
                   GoalCoachRequest(
-                    userMessage: "$request\nCurrent draft tasks: ${draftSpecs.map((task) => task.previewLabel).join('; ')}",
+                    userMessage:
+                        "$request\nCurrent draft tasks: ${draftSpecs.map((task) => task.previewLabel).join('; ')}",
                     goalTitle: title,
                     conversationHistory: history,
                     progressPercent: 0,
@@ -622,7 +640,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                     .take(6)
                     .toList();
                 if (suggested.isNotEmpty) {
-                  draftSpecs = _draftSpecsFromTitles(suggested).take(6).toList();
+                  draftSpecs =
+                      _draftSpecsFromTitles(suggested).take(6).toList();
                 }
 
                 if (!dialogContext.mounted) return;
@@ -647,7 +666,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                 setLocalState(() {
                   messages.add({
                     'role': 'assistant',
-                    'text': 'The AI coach endpoint is unavailable right now, so I refined the plan locally. You can still finalize this draft.',
+                    'text':
+                        'The AI coach endpoint is unavailable right now, so I refined the plan locally. You can still finalize this draft.',
                     'tasks': _draftPreviewLabels(draftSpecs),
                   });
                   isAiThinking = false;
@@ -662,10 +682,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               final tasks = (message['tasks'] as List?)?.cast<String>();
 
               return Align(
-                alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                alignment:
+                    isUser ? Alignment.centerRight : Alignment.centerLeft,
                 child: Container(
                   constraints: const BoxConstraints(maxWidth: 680),
-                  margin: EdgeInsets.only(left: isUser ? 44 : 0, right: isUser ? 0 : 44),
+                  margin: EdgeInsets.only(
+                      left: isUser ? 44 : 0, right: isUser ? 0 : 44),
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
                     color: bubbleColor,
@@ -686,12 +708,14 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                             CircleAvatar(
                               radius: 15,
                               backgroundColor: gdPrimarySoft,
-                              child: Icon(Icons.auto_awesome_rounded, size: 16, color: gdPrimary),
+                              child: Icon(Icons.auto_awesome_rounded,
+                                  size: 16, color: gdPrimary),
                             ),
                             SizedBox(width: 8),
                             Text(
                               'AI Assistant',
-                              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w900),
+                              style: TextStyle(
+                                  color: gdMuted, fontWeight: FontWeight.w900),
                             ),
                           ],
                         ),
@@ -718,7 +742,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                   height: 26,
                                   alignment: Alignment.center,
                                   decoration: BoxDecoration(
-                                    color: isUser ? Colors.white.withOpacity(0.14) : Colors.white,
+                                    color: isUser
+                                        ? Colors.white.withOpacity(0.14)
+                                        : Colors.white,
                                     borderRadius: BorderRadius.circular(999),
                                     border: Border.all(
                                       color: isUser ? Colors.white24 : gdBorder,
@@ -759,7 +785,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
             return Dialog(
               backgroundColor: Colors.transparent,
-              insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
+              insetPadding:
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
               child: ConstrainedBox(
                 constraints: BoxConstraints(
                   maxWidth: 880,
@@ -816,7 +843,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                               child: IconButton(
                                 tooltip: 'Close',
                                 onPressed: () => Navigator.pop(dialogContext),
-                                icon: const Icon(Icons.close_rounded, color: gdMuted),
+                                icon: const Icon(Icons.close_rounded,
+                                    color: gdMuted),
                               ),
                             ),
                           ],
@@ -831,8 +859,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                             ),
                             padding: const EdgeInsets.all(16),
                             child: ListView.separated(
-                              itemCount: messages.length + (isAiThinking ? 1 : 0),
-                              separatorBuilder: (_, __) => const SizedBox(height: 12),
+                              itemCount:
+                                  messages.length + (isAiThinking ? 1 : 0),
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 12),
                               itemBuilder: (context, index) {
                                 if (index < messages.length) {
                                   return buildMessageBubble(messages[index]);
@@ -843,7 +873,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                     avatar: SizedBox(
                                       width: 16,
                                       height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2),
                                     ),
                                     label: Text('AI is thinking...'),
                                   ),
@@ -867,14 +898,17 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                   hintText: 'Adjust the AI plan...',
                                   filled: true,
                                   fillColor: const Color(0xFFF7F5EF),
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 18, vertical: 18),
                                   enabledBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(24),
-                                    borderSide: const BorderSide(color: Color(0xFFE6DFD2)),
+                                    borderSide: const BorderSide(
+                                        color: Color(0xFFE6DFD2)),
                                   ),
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(24),
-                                    borderSide: const BorderSide(color: gdPrimary, width: 1.6),
+                                    borderSide: const BorderSide(
+                                        color: gdPrimary, width: 1.6),
                                   ),
                                 ),
                               ),
@@ -886,8 +920,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                 style: FilledButton.styleFrom(
                                   backgroundColor: gdPrimary,
                                   foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 24),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(24)),
                                 ),
                                 onPressed: isAiThinking ? null : sendMessage,
                                 child: const Text('Send'),
@@ -903,7 +939,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                               backgroundColor: const Color(0xFF10B981),
                               foregroundColor: Colors.white,
                               minimumSize: const Size.fromHeight(64),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(24)),
                             ),
                             onPressed: isAiThinking
                                 ? null
@@ -932,7 +969,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     }
   }
 
-  Future<void> _finishCreateGoal(String title, {List<_DraftTaskSpec>? approvedTaskSpecs}) async {
+  Future<void> _finishCreateGoal(String title,
+      {List<_DraftTaskSpec>? approvedTaskSpecs}) async {
     final goalId = DateTime.now().microsecondsSinceEpoch;
     final colors = _categoryColors(_newGoalCategory);
     final steps = approvedTaskSpecs == null
@@ -965,7 +1003,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         await sync.createGoal(goal);
       } catch (e) {
         debugPrint('Goal persistence failed: $e');
-        _showMessage('Goal created locally, but Firebase save failed. Check Firestore rules/network.');
+        _showMessage(
+            'Goal created locally, but Firebase save failed. Check Firestore rules/network.');
         return;
       }
     }
@@ -974,25 +1013,48 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   List<Color> _categoryColors(String category) {
     switch (category) {
-      case 'Career': return [gdGradientCareerFrom, gdGradientCareerTo];
-      case 'Wellness': return [gdGradientWellnessFrom, gdGradientWellnessTo];
-      case 'Finance': return [gdGradientFinanceFrom, gdGradientFinanceTo];
-      case 'Creative': return [gdGradientCreativeFrom, gdGradientCreativeTo];
-      default: return [gdGradientStudyFrom, gdGradientStudyTo];
+      case 'Career':
+        return [gdGradientCareerFrom, gdGradientCareerTo];
+      case 'Wellness':
+        return [gdGradientWellnessFrom, gdGradientWellnessTo];
+      case 'Finance':
+        return [gdGradientFinanceFrom, gdGradientFinanceTo];
+      case 'Creative':
+        return [gdGradientCreativeFrom, gdGradientCreativeTo];
+      default:
+        return [gdGradientStudyFrom, gdGradientStudyTo];
     }
   }
 
   List<String> _generateTaskTitles(String title) {
     final lower = title.toLowerCase();
-    if (lower.contains('exam') || lower.contains('midterm') || lower.contains('study')) {
-      return ['List topics to review', 'Study the hardest topic for 20 minutes', 'Solve practice questions', 'Review mistakes and make flashcards'];
+    if (lower.contains('exam') ||
+        lower.contains('midterm') ||
+        lower.contains('study')) {
+      return [
+        'List topics to review',
+        'Study the hardest topic for 20 minutes',
+        'Solve practice questions',
+        'Review mistakes and make flashcards'
+      ];
     } else if (lower.contains('portfolio') || lower.contains('project')) {
-      return ['Define the project outcome', 'Create the first rough draft', 'Improve one visible section', 'Share for feedback'];
+      return [
+        'Define the project outcome',
+        'Create the first rough draft',
+        'Improve one visible section',
+        'Share for feedback'
+      ];
     }
-    return ['Write the desired outcome', 'Break the goal into 3 milestones', 'Do the smallest first action', 'Review progress and adjust tomorrow'];
+    return [
+      'Write the desired outcome',
+      'Break the goal into 3 milestones',
+      'Do the smallest first action',
+      'Review progress and adjust tomorrow'
+    ];
   }
 
-  List<String> _refineTaskTitlesFromPrompt(List<String> currentTitles, String request, String goalTitle) {
+  List<String> _refineTaskTitlesFromPrompt(
+      List<String> currentTitles, String request, String goalTitle) {
     final lower = request.toLowerCase();
     List<String> updated = List<String>.from(currentTitles);
 
@@ -1064,11 +1126,11 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     return specs.map((task) => task.previewLabel).toList();
   }
 
-  List<_DraftTaskSpec> _draftSpecsFromGeneratedTasks(List<GeneratedTask> tasks) {
-    final deadlineDays = max(1, dateOnly(_newGoalDeadline).difference(today).inDays);
-    return tasks
-        .where((task) => task.title.trim().isNotEmpty)
-        .map((task) {
+  List<_DraftTaskSpec> _draftSpecsFromGeneratedTasks(
+      List<GeneratedTask> tasks) {
+    final deadlineDays =
+        max(1, dateOnly(_newGoalDeadline).difference(today).inDays);
+    return tasks.where((task) => task.title.trim().isNotEmpty).map((task) {
       final duration = task.durationMinutes.clamp(5, 90).toInt();
       return _DraftTaskSpec(
         title: task.title.trim(),
@@ -1119,11 +1181,14 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     return _generateMicroTasksFromTitles(_generateTaskTitles(title), goalId);
   }
 
-  List<MicroTask> _generateMicroTasksFromTitles(List<String> taskTitles, int goalId) {
-    return _generateMicroTasksFromSpecs(_draftSpecsFromTitles(taskTitles), goalId);
+  List<MicroTask> _generateMicroTasksFromTitles(
+      List<String> taskTitles, int goalId) {
+    return _generateMicroTasksFromSpecs(
+        _draftSpecsFromTitles(taskTitles), goalId);
   }
 
-  List<MicroTask> _generateMicroTasksFromSpecs(List<_DraftTaskSpec> taskSpecs, int goalId) {
+  List<MicroTask> _generateMicroTasksFromSpecs(
+      List<_DraftTaskSpec> taskSpecs, int goalId) {
     final baseTaskId = DateTime.now().microsecondsSinceEpoch;
     return List.generate(taskSpecs.length, (index) {
       final spec = taskSpecs[index];
@@ -1186,7 +1251,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     if (title.isEmpty) {
       _showHelpfulError(
         title: 'Community name is missing',
-        message: 'Write a short community name first, then you can invite people later.',
+        message:
+            'Write a short community name first, then you can invite people later.',
         actionLabel: 'Try again',
         onAction: () {},
       );
@@ -1199,7 +1265,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       tag: 'Created by you',
       similarity: 100,
       joined: true,
-      description: 'A new accountability group for people working on similar goals.',
+      description:
+          'A new accountability group for people working on similar goals.',
     );
     setState(() {
       _communities.insert(0, community);
@@ -1272,7 +1339,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     if (_coins < 50) {
       _showHelpfulError(
         title: 'Not enough coins',
-        message: 'A mystery chest costs 50 coins. Complete a few tasks first, then try again.',
+        message:
+            'A mystery chest costs 50 coins. Complete a few tasks first, then try again.',
         actionLabel: 'Got it',
         onAction: () {},
       );
@@ -1280,10 +1348,30 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     }
     final skins = [
       defaultPet,
-      const PetSkin(name: 'Peach', from: Color(0xFFFFB4A2), to: Color(0xFFFFD6A5), accent: Color(0xFFFFF1E6)),
-      const PetSkin(name: 'Lunar', from: Color(0xFF64748B), to: Color(0xFF1E293B), accent: Color(0xFFE2E8F0)),
+      const PetSkin(
+          name: 'Peach',
+          from: Color(0xFFFFB4A2),
+          to: Color(0xFFFFD6A5),
+          accent: Color(0xFFFFF1E6)),
+      const PetSkin(
+          name: 'Lunar',
+          from: Color(0xFF64748B),
+          to: Color(0xFF1E293B),
+          accent: Color(0xFFE2E8F0)),
+      const PetSkin(
+          name: 'Bloom',
+          from: Color(0xFFFB7185),
+          to: Color(0xFF8B5CF6),
+          accent: Color(0xFFFFE4E6)),
     ];
-    final accessories = ['Cap', 'Star badge', 'Tiny scarf', 'Focus glasses'];
+    final accessories = [
+      'Cap',
+      'Star badge',
+      'Tiny scarf',
+      'Focus glasses',
+      'Trailblazer suit',
+      'Calm cloak'
+    ];
     final skin = skins[Random().nextInt(skins.length)];
     final accessory = accessories[Random().nextInt(accessories.length)];
     setState(() {
@@ -1296,11 +1384,24 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _showMessage('Chest opened: ${skin.name} skin + $accessory unlocked!');
   }
 
+  void _equipPetSkin(PetSkin skin) {
+    setState(() => _activePetSkin = skin);
+    unawaited(_persistProfileStats());
+    _showMessage('${skin.name} skin equipped.');
+  }
+
+  void _equipPetAccessory(String accessory) {
+    setState(() => _activeAccessory = accessory);
+    unawaited(_persistProfileStats());
+    _showMessage('$accessory equipped.');
+  }
+
   void _feedPet() {
     if (_coins < 10) {
       _showHelpfulError(
         title: 'Not enough coins',
-        message: 'Complete one task first. Each completed task gives coins you can use for your companion.',
+        message:
+            'Complete one task first. Each completed task gives coins you can use for your companion.',
         actionLabel: 'Go to home',
         onAction: () => setState(() => _selectedIndex = 2),
       );
@@ -1336,7 +1437,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       isScrollControlled: true,
       showDragHandle: true,
       backgroundColor: gdSurface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (context) => FocusSetupSheet(todayTasks: unfinishedToday),
     );
     if (!mounted || config == null) return;
@@ -1376,7 +1478,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _focusTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
       if (_focusPaused) return;
-      setState(() => _focusRemainingSeconds = max(0, _focusRemainingSeconds - 1));
+      setState(
+          () => _focusRemainingSeconds = max(0, _focusRemainingSeconds - 1));
       if (_focusRemainingSeconds == 0) timer.cancel();
     });
     _openActiveFocusDialog();
@@ -1401,8 +1504,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         );
       },
       transitionBuilder: (context, animation, secondaryAnimation, child) {
-        final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-        return FadeTransition(opacity: curved, child: ScaleTransition(scale: Tween<double>(begin: 0.98, end: 1).animate(curved), child: child));
+        final curved =
+            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+        return FadeTransition(
+            opacity: curved,
+            child: ScaleTransition(
+                scale: Tween<double>(begin: 0.98, end: 1).animate(curved),
+                child: child));
       },
     );
   }
@@ -1492,16 +1600,24 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                             const CircleAvatar(
                               radius: 36,
                               backgroundColor: gdPrimarySoft,
-                              child: Icon(Icons.account_circle_rounded, size: 42, color: gdPrimary),
+                              child: Icon(Icons.account_circle_rounded,
+                                  size: 42, color: gdPrimary),
                             ),
                             const SizedBox(width: 14),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(displayName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: gdInk)),
+                                  Text(displayName,
+                                      style: const TextStyle(
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.w900,
+                                          color: gdInk)),
                                   const SizedBox(height: 4),
-                                  Text('Signed in with $_signedInWith', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                                  Text('Signed in with $_signedInWith',
+                                      style: const TextStyle(
+                                          color: gdMuted,
+                                          fontWeight: FontWeight.w700)),
                                 ],
                               ),
                             ),
@@ -1509,9 +1625,17 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                         ),
                         const SizedBox(height: 18),
                         Row(children: [
-                          Expanded(child: StatMiniCard(icon: Icons.paid_rounded, label: 'Coins', value: '$_coins')),
+                          Expanded(
+                              child: StatMiniCard(
+                                  icon: Icons.paid_rounded,
+                                  label: 'Coins',
+                                  value: '$_coins')),
                           const SizedBox(width: 10),
-                          Expanded(child: StatMiniCard(icon: Icons.local_fire_department_rounded, label: 'Streak', value: '$_streak days')),
+                          Expanded(
+                              child: StatMiniCard(
+                                  icon: Icons.local_fire_department_rounded,
+                                  label: 'Streak',
+                                  value: '$_streak days')),
                         ]),
                       ],
                     ),
@@ -1524,10 +1648,22 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: const [
-                        Text('Account', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: gdInk)),
+                        Text('Account',
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                color: gdInk)),
                         SizedBox(height: 10),
-                        ListTile(leading: Icon(Icons.mail_rounded), title: Text('Email / login method'), subtitle: Text('Manage account connection from settings.')),
-                        ListTile(leading: Icon(Icons.shield_rounded), title: Text('Privacy'), subtitle: Text('Control what friends and communities can see.')),
+                        ListTile(
+                            leading: Icon(Icons.mail_rounded),
+                            title: Text('Email / login method'),
+                            subtitle: Text(
+                                'Manage account connection from settings.')),
+                        ListTile(
+                            leading: Icon(Icons.shield_rounded),
+                            title: Text('Privacy'),
+                            subtitle: Text(
+                                'Control what friends and communities can see.')),
                       ],
                     ),
                   ),
@@ -1539,7 +1675,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                     padding: EdgeInsets.all(18),
                     child: Text(
                       'Friends are now managed from the Community page under the Friends tab.',
-                      style: TextStyle(color: gdInk, fontWeight: FontWeight.w800, height: 1.4),
+                      style: TextStyle(
+                          color: gdInk,
+                          fontWeight: FontWeight.w800,
+                          height: 1.4),
                     ),
                   ),
                 ),
@@ -1619,17 +1758,24 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(goal.title, style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800)),
+              Text(goal.title,
+                  style: const TextStyle(
+                      color: gdMuted, fontWeight: FontWeight.w800)),
               const SizedBox(height: 14),
               PrioritySelector(
                 value: draftPriority,
-                onChanged: (value) => setLocalState(() => draftPriority = value),
+                onChanged: (value) =>
+                    setLocalState(() => draftPriority = value),
               ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.pop(context, draftPriority), child: const Text('Save priority')),
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(context, draftPriority),
+                child: const Text('Save priority')),
           ],
         ),
       ),
@@ -1724,9 +1870,14 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         happiness: _petHappiness,
         pet: _activePetSkin,
         accessory: _activeAccessory,
+        todayTasks: _todayTasks,
+        goalForTask: _goalForTask,
         onFeed: _feedPet,
         onOpenChest: _openPetChest,
         onPetInteract: _interactWithPet,
+        onToggleTask: _toggleTask,
+        onEquipSkin: _equipPetSkin,
+        onEquipAccessory: _equipPetAccessory,
       ),
     ];
 
@@ -1739,7 +1890,11 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       onProfile: _openProfile,
       onSettings: _openSettings,
       hasActiveFocus: _hasActiveFocus || _focusComplete,
-      focusLabel: _activeFocusConfig == null ? null : (_focusComplete ? 'Done' : _formatFocusTime(_focusRemainingSeconds)),
+      focusLabel: _activeFocusConfig == null
+          ? null
+          : (_focusComplete
+              ? 'Done'
+              : _formatFocusTime(_focusRemainingSeconds)),
     );
   }
 }
