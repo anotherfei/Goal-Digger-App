@@ -83,8 +83,11 @@ Respond ONLY with valid JSON — no commentary:
       prompt,
       config: {
         temperature: 0.3,
-        maxOutputTokens: 512,
+        maxOutputTokens: 1024,
         responseMimeType: "application/json",
+        // gemini-2.5-flash is a thinking model; thinking tokens would eat the
+        // output budget and truncate the JSON. Disable it for structured output.
+        thinkingConfig: { thinkingBudget: 0 },
       },
     });
 
@@ -103,6 +106,7 @@ Respond ONLY with valid JSON — no commentary:
     };
   } catch (e) {
     // AI unavailable — fall back to deterministic plan
+    console.error("[agent/planner] LLM call failed, using static plan:", e);
     return staticFallbackPlan(input);
   }
 }

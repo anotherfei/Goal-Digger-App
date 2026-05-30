@@ -71,8 +71,9 @@ Rules:
           prompt,
           config: {
             temperature: 0.65,
-            maxOutputTokens: 512,
+            maxOutputTokens: 1024,
             responseMimeType: "application/json",
+            thinkingConfig: { thinkingBudget: 0 },
           },
         });
 

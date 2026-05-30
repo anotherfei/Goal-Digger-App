@@ -43,8 +43,9 @@ Respond ONLY with valid JSON: { "milestones": ["...", "...", "..."] }`.trim();
         prompt,
         config: {
           temperature: 0.5,
-          maxOutputTokens: 256,
+          maxOutputTokens: 512,
           responseMimeType: "application/json",
+          thinkingConfig: { thinkingBudget: 0 },
         },
       });
 
@@ -58,8 +59,9 @@ Respond ONLY with valid JSON: { "milestones": ["...", "...", "..."] }`.trim();
         return { milestones: cleaned };
       }
       // Not enough milestones from AI — fall through to static
-    } catch {
-      // AI unavailable
+      console.warn("[createMilestones] AI returned <2 milestones, using static");
+    } catch (e) {
+      console.error("[createMilestones] LLM call failed, using static:", e);
     }
 
     // Deterministic fallback milestones

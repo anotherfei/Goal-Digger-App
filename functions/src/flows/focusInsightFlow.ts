@@ -67,8 +67,9 @@ Respond ONLY with valid JSON: { "insight": "..." }`.trim();
           prompt,
           config: {
             temperature: 0.6,
-            maxOutputTokens: 80,
+            maxOutputTokens: 512,
             responseMimeType: "application/json",
+            thinkingConfig: { thinkingBudget: 0 },
           },
         });
 

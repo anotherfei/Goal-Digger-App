@@ -38,5 +38,6 @@ export function getAI(): ReturnType<typeof genkit> {
 }
 
 // Default model used by all flows and tools.
-// Gemini 2.0 Flash gives the best latency/quality trade-off for this workload.
-export const defaultModel = "googleai/gemini-2.0-flash";
+// Gemini 2.5 Flash gives the best latency/quality trade-off for this workload.
+
+export const defaultModel = "googleai/gemini-2.5-flash";
