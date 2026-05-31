@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -14,6 +15,7 @@ import '../features/companion/companion_page.dart';
 import '../features/focus/widgets/focus_widgets.dart';
 import '../features/onboarding/onboarding_screen.dart';
 import '../features/planner/planner_page.dart';
+import '../features/profile/profile_screen.dart';
 import '../features/responsive/responsive_goal_shell.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/tasks/tasks_page.dart';
@@ -22,10 +24,8 @@ import '../firebase/auth/auth_state.dart';
 import '../firebase/firestore/repositories/user_repository.dart';
 import '../firebase/sync/app_sync_service.dart';
 import '../genkit/genkit_service.dart';
-import '../genkit/models/ai_models.dart';
 import '../models/models.dart';
 import '../shared/widgets/shared_widgets.dart';
-
 
 class _DraftTaskSpec {
   const _DraftTaskSpec({
@@ -57,6 +57,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   final TextEditingController _communityController = TextEditingController();
 
   bool _onboarded = false;
+  String? _profileDisplayName;
   String _signedInWith = 'Guest';
   int _selectedIndex = 2;
   late List<GoalProject> _goals;
@@ -84,6 +85,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   bool _isProcessing = false;
   double _processingProgress = 0;
   Timer? _processingTimer;
+  Timer? _moodAdviceTimer;
+  bool _moodAdvisorAvailable = true;
+  int _moodAdviceRequestSerial = 0;
 
   String _selectedMood = 'Okay';
   int _petHappiness = 62;
@@ -92,7 +96,11 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   bool _goalReminders = true;
   bool _friendProgressSharing = true;
   List<String> _friends = ['Maya Chen', 'Leo Tan', 'Ari Putra'];
-  final List<String> _friendSuggestions = ['Nina Rahman', 'Jay Lim', 'Sofia Hart'];
+  final List<String> _friendSuggestions = [
+    'Nina Rahman',
+    'Jay Lim',
+    'Sofia Hart'
+  ];
   PetSkin _activePetSkin = defaultPet;
   String _activeAccessory = 'Cap';
 
@@ -101,8 +109,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   bool _focusPaused = false;
   Timer? _focusTimer;
 
-  bool get _hasActiveFocus => _activeFocusConfig != null && _focusRemainingSeconds > 0;
-  bool get _focusComplete => _activeFocusConfig != null && _focusRemainingSeconds <= 0;
+  bool get _hasActiveFocus =>
+      _activeFocusConfig != null && _focusRemainingSeconds > 0;
+  bool get _focusComplete =>
+      _activeFocusConfig != null && _focusRemainingSeconds <= 0;
 
   @override
   void initState() {
@@ -143,6 +153,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
     if (_activeUid == uid) return;
     _activeUid = uid;
+    _moodAdvisorAvailable = true;
     _activateSync(uid);
     unawaited(_ensureUserProfile(authState));
   }
@@ -166,21 +177,24 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           members: 89,
           tag: 'Exam prep',
           similarity: 94,
-          description: 'Short daily sprints for students who want accountability.',
+          description:
+              'Short daily sprints for students who want accountability.',
         ),
         CommunityGroup(
           name: 'Portfolio Builders',
           members: 142,
           tag: 'Career',
           similarity: 88,
-          description: 'Share portfolio progress and get feedback from builders.',
+          description:
+              'Share portfolio progress and get feedback from builders.',
         ),
         CommunityGroup(
           name: 'Calm Wellness Crew',
           members: 76,
           tag: 'Wellness',
           similarity: 81,
-          description: 'Build low-pressure routines around sleep, movement, and reflection.',
+          description:
+              'Build low-pressure routines around sleep, movement, and reflection.',
         ),
       ];
 
@@ -188,6 +202,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   void dispose() {
     _watchedAuthState?.removeListener(_onAuthStateChanged);
     _processingTimer?.cancel();
+    _moodAdviceTimer?.cancel();
     _focusTimer?.cancel();
     _disposeSync();
     _goalController.dispose();
@@ -212,9 +227,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   void _resetForSignedOutState() {
     _activeUid = null;
+    _moodAdviceTimer?.cancel();
+    _moodAdviceRequestSerial++;
+    _moodAdvisorAvailable = true;
     _disposeSync();
     setState(() {
       _onboarded = false;
+      _profileDisplayName = null;
       _signedInWith = 'Guest';
       _selectedIndex = 2;
       _goals = seedGoals(today);
@@ -258,6 +277,11 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _profileSub = sync.profileStream.listen(
       (profile) {
         if (!mounted || profile == null) return;
+        final user = context.read<AuthService>().currentUser;
+        final authDisplayName = user?.displayName?.trim();
+        final syncedDisplayName = authDisplayName?.isNotEmpty == true
+            ? authDisplayName!
+            : profile.displayName.trim();
         setState(() {
           _coins = profile.coins;
           _streak = profile.streak;
@@ -265,13 +289,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           _activePetSkin = profile.activePetSkin;
           _activeAccessory = profile.activeAccessory;
           _selectedMood = profile.selectedMood;
+          _profileDisplayName = syncedDisplayName.isNotEmpty
+              ? syncedDisplayName
+              : _profileDisplayName;
           _goalReminders = profile.goalReminders;
           _friendProgressSharing = profile.friendProgressSharing;
           _friends = profile.friends.isEmpty
               ? ['Maya Chen', 'Leo Tan', 'Ari Putra']
               : List<String>.from(profile.friends);
           _onboarded = profile.onboarded;
-          final user = context.read<AuthService>().currentUser;
           final providerId = user?.providerData.isNotEmpty == true
               ? user!.providerData.first.providerId
               : null;
@@ -279,7 +305,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               ? 'Guest'
               : providerId == 'google.com'
                   ? 'Google'
-                  : 'Firebase';
+                  : providerId == 'password'
+                      ? 'Email'
+                      : 'Firebase';
         });
       },
       onError: (Object error) => debugPrint('Profile sync error: $error'),
@@ -331,9 +359,20 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       await sync.setCoins(_coins);
       await sync.updateStreak(_streak);
       await sync.updateMood(_selectedMood);
-      await sync.updatePetState(_petHappiness, _activePetSkin, _activeAccessory);
+      await sync.updatePetState(
+          _petHappiness, _activePetSkin, _activeAccessory);
     } catch (e) {
       debugPrint('Profile write failed: $e');
+    }
+  }
+
+  Future<void> _persistMood(String mood) async {
+    final sync = _sync;
+    if (sync == null) return;
+    try {
+      await sync.updateMood(mood);
+    } catch (e) {
+      debugPrint('Mood write failed: $e');
     }
   }
 
@@ -379,57 +418,86 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       } else {
         await authState.signInAsGuest();
       }
-
-      final user = context.read<AuthService>().currentUser ?? authState.user;
-      if (user == null) {
-        throw StateError('Firebase did not return a signed-in user.');
-      }
-
-      await _userRepository.createOrUpdateProfile(
-        uid: user.uid,
-        displayName: user.displayName?.trim().isNotEmpty == true
-            ? user.displayName!.trim()
-            : provider == 'Guest'
-                ? 'Guest User'
-                : 'Goal Digger User',
-        email: user.email,
-        photoUrl: user.photoURL,
-      );
-      await _userRepository.markOnboarded(user.uid);
-      _activeUid = user.uid;
-      _activateSync(user.uid);
-
-      if (!mounted) return;
-      setState(() {
-        _signedInWith = provider;
-        _onboarded = true;
-      });
-      _showMessage('Welcome! You signed in with $provider.');
+      await _finishAuthenticatedOnboarding(provider, authState);
     } catch (e) {
-      if (!mounted) return;
-      _showHelpfulError(
-        title: '$provider sign-in failed',
-        message: 'Firebase could not complete sign-in. Check that Firebase Auth is enabled and your app uses the correct Firebase project. Details: $e',
-        actionLabel: 'Continue as guest',
-        onAction: () => unawaited(_completeOnboardingWithAuth('Guest')),
-      );
+      _showAuthFailure(provider, e);
     }
   }
 
-  void _showLinkedInUnavailable() {
+  Future<void> _completeOnboardingWithEmail({
+    required String email,
+    required String password,
+    required bool isSignUp,
+    String? displayName,
+  }) async {
+    final authState = context.read<AuthState>();
+    try {
+      if (isSignUp) {
+        await authState.createAccountWithEmail(
+          email: email,
+          password: password,
+          displayName: displayName,
+        );
+      } else {
+        await authState.signInWithEmail(email, password);
+      }
+      await _finishAuthenticatedOnboarding('Email', authState);
+    } catch (e) {
+      _showAuthFailure('Email', e);
+    }
+  }
+
+  Future<void> _finishAuthenticatedOnboarding(
+    String provider,
+    AuthState authState,
+  ) async {
+    final user = context.read<AuthService>().currentUser ?? authState.user;
+    if (user == null) {
+      if (authState.errorMessage != null) return;
+      throw StateError('Firebase did not return a signed-in user.');
+    }
+
+    final displayName = user.displayName?.trim().isNotEmpty == true
+        ? user.displayName!.trim()
+        : provider == 'Guest'
+            ? 'Guest User'
+            : 'Goal Digger User';
+
+    await _userRepository.createOrUpdateProfile(
+      uid: user.uid,
+      displayName: displayName,
+      email: user.email,
+      photoUrl: user.photoURL,
+    );
+    await _userRepository.markOnboarded(user.uid);
+    _activeUid = user.uid;
+    _activateSync(user.uid);
+
+    if (!mounted) return;
+    authState.clearError();
+    setState(() {
+      _profileDisplayName = displayName;
+      _signedInWith = provider;
+      _onboarded = true;
+    });
+    _showMessage('Welcome! You signed in with $provider.');
+  }
+
+  void _showAuthFailure(String provider, Object error) {
+    if (!mounted) return;
     _showHelpfulError(
-      title: 'LinkedIn is not configured yet',
-      message: 'The backend currently supports Firebase Google sign-in and anonymous guest preview. LinkedIn needs an OAuth provider setup before it can be a real login method.',
-      actionLabel: 'Preview as guest',
+      title: '$provider sign-in failed',
+      message:
+          'Firebase could not complete sign-in. Check that Firebase Auth is enabled and your app uses the correct Firebase project. Details: $error',
+      actionLabel: 'Continue as guest',
       onAction: () => unawaited(_completeOnboardingWithAuth('Guest')),
     );
   }
 
   List<MicroTask> get _allTasks => _goals.expand((goal) => goal.tasks).toList();
 
-  List<MicroTask> get _todayTasks => _allTasks
-      .where((task) => dateOnly(task.scheduledDate) == today)
-      .toList();
+  List<MicroTask> get _todayTasks =>
+      _allTasks.where((task) => dateOnly(task.scheduledDate) == today).toList();
 
   GoalProject _goalForTask(MicroTask task) {
     return _goals.firstWhere((goal) => goal.id == task.goalId);
@@ -437,7 +505,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   int get _todayCompleted => _todayTasks.where((task) => task.done).length;
 
-  double get _todayProgress => _todayTasks.isEmpty ? 0 : _todayCompleted / _todayTasks.length;
+  double get _todayProgress =>
+      _todayTasks.isEmpty ? 0 : _todayCompleted / _todayTasks.length;
 
   int get _remainingMinutes => _todayTasks
       .where((task) => !task.done)
@@ -471,7 +540,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           title: Text(title),
           content: Text(message),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel')),
             FilledButton(
               onPressed: () {
                 Navigator.pop(context);
@@ -500,7 +571,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     if (title.isEmpty) {
       _showHelpfulError(
         title: 'Goal name is missing',
-        message: 'Please write one clear goal first. Example: "Prepare for midterm" or "Build my portfolio".',
+        message:
+            'Please write one clear goal first. Example: "Prepare for midterm" or "Build my portfolio".',
         actionLabel: 'Write goal',
         onAction: () {},
       );
@@ -580,7 +652,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       String title, TextEditingController chatController) async {
     final ai = context.read<GenkitService>();
     final fallbackSpecs = _draftSpecsFromTitles(_generateTaskTitles(title));
-    final deadlineDays = max(1, dateOnly(_newGoalDeadline).difference(today).inDays);
+    final deadlineDays =
+        max(1, dateOnly(_newGoalDeadline).difference(today).inDays);
     var draftSpecs = List<_DraftTaskSpec>.from(fallbackSpecs);
     var aiAvailable = false;
     var fromAgent = false;
@@ -823,10 +896,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               final tasks = (message['tasks'] as List?)?.cast<String>();
 
               return Align(
-                alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                alignment:
+                    isUser ? Alignment.centerRight : Alignment.centerLeft,
                 child: Container(
                   constraints: const BoxConstraints(maxWidth: 680),
-                  margin: EdgeInsets.only(left: isUser ? 44 : 0, right: isUser ? 0 : 44),
+                  margin: EdgeInsets.only(
+                      left: isUser ? 44 : 0, right: isUser ? 0 : 44),
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
                     color: bubbleColor,
@@ -847,12 +922,14 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                             CircleAvatar(
                               radius: 15,
                               backgroundColor: gdPrimarySoft,
-                              child: Icon(Icons.auto_awesome_rounded, size: 16, color: gdPrimary),
+                              child: Icon(Icons.auto_awesome_rounded,
+                                  size: 16, color: gdPrimary),
                             ),
                             SizedBox(width: 8),
                             Text(
                               'AI Assistant',
-                              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w900),
+                              style: TextStyle(
+                                  color: gdMuted, fontWeight: FontWeight.w900),
                             ),
                           ],
                         ),
@@ -879,7 +956,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                   height: 26,
                                   alignment: Alignment.center,
                                   decoration: BoxDecoration(
-                                    color: isUser ? Colors.white.withOpacity(0.14) : Colors.white,
+                                    color: isUser
+                                        ? Colors.white.withValues(alpha: 0.14)
+                                        : Colors.white,
                                     borderRadius: BorderRadius.circular(999),
                                     border: Border.all(
                                       color: isUser ? Colors.white24 : gdBorder,
@@ -920,7 +999,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
             return Dialog(
               backgroundColor: Colors.transparent,
-              insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
+              insetPadding:
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
               child: ConstrainedBox(
                 constraints: BoxConstraints(
                   maxWidth: 880,
@@ -932,7 +1012,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                     borderRadius: BorderRadius.circular(34),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.12),
+                        color: Colors.black.withValues(alpha: 0.12),
                         blurRadius: 28,
                         offset: const Offset(0, 16),
                       ),
@@ -977,7 +1057,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                               child: IconButton(
                                 tooltip: 'Close',
                                 onPressed: () => Navigator.pop(dialogContext),
-                                icon: const Icon(Icons.close_rounded, color: gdMuted),
+                                icon: const Icon(Icons.close_rounded,
+                                    color: gdMuted),
                               ),
                             ),
                           ],
@@ -992,8 +1073,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                             ),
                             padding: const EdgeInsets.all(16),
                             child: ListView.separated(
-                              itemCount: messages.length + (isAiThinking ? 1 : 0),
-                              separatorBuilder: (_, __) => const SizedBox(height: 12),
+                              itemCount:
+                                  messages.length + (isAiThinking ? 1 : 0),
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 12),
                               itemBuilder: (context, index) {
                                 if (index < messages.length) {
                                   return buildMessageBubble(messages[index]);
@@ -1004,7 +1087,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                     avatar: SizedBox(
                                       width: 16,
                                       height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2),
                                     ),
                                     label: Text('AI is thinking...'),
                                   ),
@@ -1031,14 +1115,17 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                       : 'Adjust the AI plan...',
                                   filled: true,
                                   fillColor: const Color(0xFFF7F5EF),
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 18, vertical: 18),
                                   enabledBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(24),
-                                    borderSide: const BorderSide(color: Color(0xFFE6DFD2)),
+                                    borderSide: const BorderSide(
+                                        color: Color(0xFFE6DFD2)),
                                   ),
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(24),
-                                    borderSide: const BorderSide(color: gdPrimary, width: 1.6),
+                                    borderSide: const BorderSide(
+                                        color: gdPrimary, width: 1.6),
                                   ),
                                 ),
                               ),
@@ -1050,8 +1137,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                 style: FilledButton.styleFrom(
                                   backgroundColor: gdPrimary,
                                   foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 24),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(24)),
                                 ),
                                 onPressed: isAiThinking ? null : sendMessage,
                                 child: const Text('Send'),
@@ -1067,7 +1156,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                               backgroundColor: const Color(0xFF10B981),
                               foregroundColor: Colors.white,
                               minimumSize: const Size.fromHeight(64),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(24)),
                             ),
                             onPressed: isAiThinking
                                 ? null
@@ -1096,7 +1186,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     }
   }
 
-  Future<void> _finishCreateGoal(String title, {List<_DraftTaskSpec>? approvedTaskSpecs}) async {
+  Future<void> _finishCreateGoal(String title,
+      {List<_DraftTaskSpec>? approvedTaskSpecs}) async {
     final goalId = DateTime.now().microsecondsSinceEpoch;
     final colors = _categoryColors(_newGoalCategory);
     final steps = approvedTaskSpecs == null
@@ -1129,7 +1220,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         await sync.createGoal(goal);
       } catch (e) {
         debugPrint('Goal persistence failed: $e');
-        _showMessage('Goal created locally, but Firebase save failed. Check Firestore rules/network.');
+        _showMessage(
+            'Goal created locally, but Firebase save failed. Check Firestore rules/network.');
         return;
       }
     }
@@ -1138,25 +1230,48 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   List<Color> _categoryColors(String category) {
     switch (category) {
-      case 'Career': return [gdGradientCareerFrom, gdGradientCareerTo];
-      case 'Wellness': return [gdGradientWellnessFrom, gdGradientWellnessTo];
-      case 'Finance': return [gdGradientFinanceFrom, gdGradientFinanceTo];
-      case 'Creative': return [gdGradientCreativeFrom, gdGradientCreativeTo];
-      default: return [gdGradientStudyFrom, gdGradientStudyTo];
+      case 'Career':
+        return [gdGradientCareerFrom, gdGradientCareerTo];
+      case 'Wellness':
+        return [gdGradientWellnessFrom, gdGradientWellnessTo];
+      case 'Finance':
+        return [gdGradientFinanceFrom, gdGradientFinanceTo];
+      case 'Creative':
+        return [gdGradientCreativeFrom, gdGradientCreativeTo];
+      default:
+        return [gdGradientStudyFrom, gdGradientStudyTo];
     }
   }
 
   List<String> _generateTaskTitles(String title) {
     final lower = title.toLowerCase();
-    if (lower.contains('exam') || lower.contains('midterm') || lower.contains('study')) {
-      return ['List topics to review', 'Study the hardest topic for 20 minutes', 'Solve practice questions', 'Review mistakes and make flashcards'];
+    if (lower.contains('exam') ||
+        lower.contains('midterm') ||
+        lower.contains('study')) {
+      return [
+        'List topics to review',
+        'Study the hardest topic for 20 minutes',
+        'Solve practice questions',
+        'Review mistakes and make flashcards'
+      ];
     } else if (lower.contains('portfolio') || lower.contains('project')) {
-      return ['Define the project outcome', 'Create the first rough draft', 'Improve one visible section', 'Share for feedback'];
+      return [
+        'Define the project outcome',
+        'Create the first rough draft',
+        'Improve one visible section',
+        'Share for feedback'
+      ];
     }
-    return ['Write the desired outcome', 'Break the goal into 3 milestones', 'Do the smallest first action', 'Review progress and adjust tomorrow'];
+    return [
+      'Write the desired outcome',
+      'Break the goal into 3 milestones',
+      'Do the smallest first action',
+      'Review progress and adjust tomorrow'
+    ];
   }
 
-  List<String> _refineTaskTitlesFromPrompt(List<String> currentTitles, String request, String goalTitle) {
+  List<String> _refineTaskTitlesFromPrompt(
+      List<String> currentTitles, String request, String goalTitle) {
     final lower = request.toLowerCase();
     List<String> updated = List<String>.from(currentTitles);
 
@@ -1228,11 +1343,11 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     return specs.map((task) => task.previewLabel).toList();
   }
 
-  List<_DraftTaskSpec> _draftSpecsFromGeneratedTasks(List<GeneratedTask> tasks) {
-    final deadlineDays = max(1, dateOnly(_newGoalDeadline).difference(today).inDays);
-    return tasks
-        .where((task) => task.title.trim().isNotEmpty)
-        .map((task) {
+  List<_DraftTaskSpec> _draftSpecsFromGeneratedTasks(
+      List<GeneratedTask> tasks) {
+    final deadlineDays =
+        max(1, dateOnly(_newGoalDeadline).difference(today).inDays);
+    return tasks.where((task) => task.title.trim().isNotEmpty).map((task) {
       final duration = task.durationMinutes.clamp(5, 90).toInt();
       return _DraftTaskSpec(
         title: task.title.trim(),
@@ -1283,11 +1398,14 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     return _generateMicroTasksFromTitles(_generateTaskTitles(title), goalId);
   }
 
-  List<MicroTask> _generateMicroTasksFromTitles(List<String> taskTitles, int goalId) {
-    return _generateMicroTasksFromSpecs(_draftSpecsFromTitles(taskTitles), goalId);
+  List<MicroTask> _generateMicroTasksFromTitles(
+      List<String> taskTitles, int goalId) {
+    return _generateMicroTasksFromSpecs(
+        _draftSpecsFromTitles(taskTitles), goalId);
   }
 
-  List<MicroTask> _generateMicroTasksFromSpecs(List<_DraftTaskSpec> taskSpecs, int goalId) {
+  List<MicroTask> _generateMicroTasksFromSpecs(
+      List<_DraftTaskSpec> taskSpecs, int goalId) {
     final baseTaskId = DateTime.now().microsecondsSinceEpoch;
     return List.generate(taskSpecs.length, (index) {
       final spec = taskSpecs[index];
@@ -1350,7 +1468,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     if (title.isEmpty) {
       _showHelpfulError(
         title: 'Community name is missing',
-        message: 'Write a short community name first, then you can invite people later.',
+        message:
+            'Write a short community name first, then you can invite people later.',
         actionLabel: 'Try again',
         onAction: () {},
       );
@@ -1363,7 +1482,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       tag: 'Created by you',
       similarity: 100,
       joined: true,
-      description: 'A new accountability group for people working on similar goals.',
+      description:
+          'A new accountability group for people working on similar goals.',
     );
     setState(() {
       _communities.insert(0, community);
@@ -1436,7 +1556,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     if (_coins < 50) {
       _showHelpfulError(
         title: 'Not enough coins',
-        message: 'A mystery chest costs 50 coins. Complete a few tasks first, then try again.',
+        message:
+            'A mystery chest costs 50 coins. Complete a few tasks first, then try again.',
         actionLabel: 'Got it',
         onAction: () {},
       );
@@ -1444,8 +1565,16 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     }
     final skins = [
       defaultPet,
-      const PetSkin(name: 'Peach', from: Color(0xFFFFB4A2), to: Color(0xFFFFD6A5), accent: Color(0xFFFFF1E6)),
-      const PetSkin(name: 'Lunar', from: Color(0xFF64748B), to: Color(0xFF1E293B), accent: Color(0xFFE2E8F0)),
+      const PetSkin(
+          name: 'Peach',
+          from: Color(0xFFFFB4A2),
+          to: Color(0xFFFFD6A5),
+          accent: Color(0xFFFFF1E6)),
+      const PetSkin(
+          name: 'Lunar',
+          from: Color(0xFF64748B),
+          to: Color(0xFF1E293B),
+          accent: Color(0xFFE2E8F0)),
     ];
     final accessories = ['Cap', 'Star badge', 'Tiny scarf', 'Focus glasses'];
     final skin = skins[Random().nextInt(skins.length)];
@@ -1464,7 +1593,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     if (_coins < 10) {
       _showHelpfulError(
         title: 'Not enough coins',
-        message: 'Complete one task first. Each completed task gives coins you can use for your companion.',
+        message:
+            'Complete one task first. Each completed task gives coins you can use for your companion.',
         actionLabel: 'Go to home',
         onAction: () => setState(() => _selectedIndex = 2),
       );
@@ -1500,7 +1630,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       isScrollControlled: true,
       showDragHandle: true,
       backgroundColor: gdSurface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (context) => FocusSetupSheet(todayTasks: unfinishedToday),
     );
     if (!mounted || config == null) return;
@@ -1508,12 +1639,20 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   void _handleMoodChanged(String value) {
+    if (value == _selectedMood) return;
+
     setState(() => _selectedMood = value);
-    unawaited(_persistProfileStats());
-    unawaited(_requestMoodAdvice(value));
+    unawaited(_persistMood(value));
+
+    if (!_moodAdvisorAvailable) return;
+    _moodAdviceTimer?.cancel();
+    _moodAdviceTimer = Timer(const Duration(milliseconds: 450), () {
+      unawaited(_requestMoodAdvice(value));
+    });
   }
 
   Future<void> _requestMoodAdvice(String mood) async {
+    final requestSerial = ++_moodAdviceRequestSerial;
     try {
       final advice = await context.read<GenkitService>().moodAdvisor.advise(
             MoodAdvisorRequest(
@@ -1523,9 +1662,16 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               streak: _streak,
             ),
           );
-      if (!mounted) return;
+      if (!mounted ||
+          requestSerial != _moodAdviceRequestSerial ||
+          mood != _selectedMood) {
+        return;
+      }
       _showMessage('AI mood plan: ${advice.message}');
     } catch (e) {
+      if (e.toString().contains('not-found')) {
+        _moodAdvisorAvailable = false;
+      }
       debugPrint('Mood advisor unavailable: $e');
     }
   }
@@ -1540,7 +1686,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _focusTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
       if (_focusPaused) return;
-      setState(() => _focusRemainingSeconds = max(0, _focusRemainingSeconds - 1));
+      setState(
+          () => _focusRemainingSeconds = max(0, _focusRemainingSeconds - 1));
       if (_focusRemainingSeconds == 0) timer.cancel();
     });
     _openActiveFocusDialog();
@@ -1552,7 +1699,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     showGeneralDialog<void>(
       context: context,
       barrierDismissible: false,
-      barrierColor: Colors.black.withOpacity(0.18),
+      barrierColor: Colors.black.withValues(alpha: 0.18),
       transitionDuration: const Duration(milliseconds: 220),
       pageBuilder: (context, animation, secondaryAnimation) {
         return FocusCountdownDialog(
@@ -1565,8 +1712,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         );
       },
       transitionBuilder: (context, animation, secondaryAnimation, child) {
-        final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-        return FadeTransition(opacity: curved, child: ScaleTransition(scale: Tween<double>(begin: 0.98, end: 1).animate(curved), child: child));
+        final curved =
+            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+        return FadeTransition(
+            opacity: curved,
+            child: ScaleTransition(
+                scale: Tween<double>(begin: 0.98, end: 1).animate(curved),
+                child: child));
       },
     );
   }
@@ -1625,94 +1777,170 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   void _openProfile() {
     final authState = context.read<AuthState>();
-    final displayName = authState.displayName;
+    final user = context.read<AuthService>().currentUser ?? authState.user;
+    final displayName = _currentProfileDisplayName(user, authState);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
-        builder: (context) => Scaffold(
-          backgroundColor: gdBackground,
-          appBar: AppBar(
-            centerTitle: true,
-            title: const Text('Profile'),
-            leading: IconButton(
-              tooltip: 'Close profile',
-              icon: const Icon(Icons.close_rounded),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ),
-          body: SafeArea(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-              children: [
-                AppCard(
-                  color: gdSurface,
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const CircleAvatar(
-                              radius: 36,
-                              backgroundColor: gdPrimarySoft,
-                              child: Icon(Icons.account_circle_rounded, size: 42, color: gdPrimary),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(displayName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: gdInk)),
-                                  const SizedBox(height: 4),
-                                  Text('Signed in with $_signedInWith', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 18),
-                        Row(children: [
-                          Expanded(child: StatMiniCard(icon: Icons.paid_rounded, label: 'Coins', value: '$_coins')),
-                          const SizedBox(width: 10),
-                          Expanded(child: StatMiniCard(icon: Icons.local_fire_department_rounded, label: 'Streak', value: '$_streak days')),
-                        ]),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                AppCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text('Account', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: gdInk)),
-                        SizedBox(height: 10),
-                        ListTile(leading: Icon(Icons.mail_rounded), title: Text('Email / login method'), subtitle: Text('Manage account connection from settings.')),
-                        ListTile(leading: Icon(Icons.shield_rounded), title: Text('Privacy'), subtitle: Text('Control what friends and communities can see.')),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                AppCard(
-                  color: gdPrimarySoft,
-                  child: const Padding(
-                    padding: EdgeInsets.all(18),
-                    child: Text(
-                      'Friends are now managed from the Community page under the Friends tab.',
-                      style: TextStyle(color: gdInk, fontWeight: FontWeight.w800, height: 1.4),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+        builder: (context) => ProfileScreen(
+          displayName: displayName,
+          email: user?.email ?? '',
+          photoUrl: user?.photoURL,
+          signedInWith: _signedInWith,
+          isGuest: user?.isAnonymous ?? authState.isGuest,
+          emailVerified: authState.emailVerified,
+          providerIds: authState.providerIds,
+          coins: _coins,
+          streak: _streak,
+          petHappiness: _petHappiness,
+          pet: _activePetSkin,
+          accessory: _activeAccessory,
+          selectedMood: _selectedMood,
+          goals: _goals,
+          tasks: _allTasks,
+          communities: _communities,
+          friends: _friends,
+          routines: _routines,
+          goalReminders: _goalReminders,
+          friendProgressSharing: _friendProgressSharing,
+          onDisplayNameChanged: _updateDisplayName,
+          onSendEmailVerification: authState.sendEmailVerification,
+          onRefreshEmailVerification: authState.reloadUser,
+          onSendPasswordReset: authState.sendPasswordResetEmail,
+          onUpgradeGuestWithEmail: _upgradeGuestWithEmail,
+          onUpgradeGuestWithGoogle: _upgradeGuestWithGoogle,
+          onGoalRemindersChanged: _setGoalReminders,
+          onFriendProgressSharingChanged: _setFriendProgressSharing,
+          onSignOut: () => unawaited(_handleSignOut()),
+          onDeleteAccount: _deleteCurrentAccount,
         ),
       ),
     );
+  }
+
+  String _currentProfileDisplayName(
+    firebase_auth.User? user,
+    AuthState authState,
+  ) {
+    if (_profileDisplayName?.trim().isNotEmpty == true) {
+      return _profileDisplayName!.trim();
+    }
+    if (user?.displayName?.trim().isNotEmpty == true) {
+      return user!.displayName!.trim();
+    }
+    return authState.displayName;
+  }
+
+  Future<bool> _updateDisplayName(String displayName) async {
+    final authService = context.read<AuthService>();
+    try {
+      final cleaned = displayName.trim();
+      await authService.updateDisplayName(displayName);
+      final user = authService.currentUser;
+      if (user == null) return false;
+      if (mounted) {
+        setState(() => _profileDisplayName = cleaned);
+      }
+      try {
+        await _userRepository.createOrUpdateProfile(
+          uid: user.uid,
+          displayName: cleaned,
+          email: user.email,
+          photoUrl: user.photoURL,
+        );
+      } catch (e) {
+        debugPrint('Display name profile sync failed: $e');
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Display name update failed: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _upgradeGuestWithEmail({
+    required String displayName,
+    required String email,
+    required String password,
+  }) async {
+    final authState = context.read<AuthState>();
+    final authService = context.read<AuthService>();
+    final upgraded = await authState.upgradeGuestWithEmail(
+      displayName: displayName,
+      email: email,
+      password: password,
+    );
+    final user = authService.currentUser ?? authState.user;
+    if (!upgraded || user == null) return false;
+
+    try {
+      await _userRepository.createOrUpdateProfile(
+        uid: user.uid,
+        displayName: displayName.trim(),
+        email: user.email ?? email.trim(),
+        photoUrl: user.photoURL,
+      );
+      await _userRepository.markOnboarded(user.uid);
+      if (mounted) {
+        setState(() {
+          _profileDisplayName = displayName.trim();
+          _signedInWith = 'Email';
+        });
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Guest upgrade profile sync failed: $e');
+      if (mounted) {
+        setState(() {
+          _profileDisplayName = displayName.trim();
+          _signedInWith = 'Email';
+        });
+      }
+      return true;
+    }
+  }
+
+  Future<GuestGoogleUpgradeResult?> _upgradeGuestWithGoogle() async {
+    final authState = context.read<AuthState>();
+    final authService = context.read<AuthService>();
+    final upgraded = await authState.upgradeGuestWithGoogle();
+    final user = authService.currentUser ?? authState.user;
+    if (!upgraded || user == null) return null;
+
+    final displayName = user.displayName?.trim().isNotEmpty == true
+        ? user.displayName!.trim()
+        : _profileDisplayName?.trim().isNotEmpty == true
+            ? _profileDisplayName!.trim()
+            : 'Goal Digger User';
+    final email = user.email ?? '';
+
+    try {
+      await _userRepository.createOrUpdateProfile(
+        uid: user.uid,
+        displayName: displayName,
+        email: email,
+        photoUrl: user.photoURL,
+      );
+      await _userRepository.markOnboarded(user.uid);
+    } catch (e) {
+      debugPrint('Guest Google upgrade profile sync failed: $e');
+    }
+
+    if (mounted) {
+      setState(() {
+        _profileDisplayName = displayName;
+        _signedInWith = 'Google';
+      });
+    }
+
+    return GuestGoogleUpgradeResult(displayName: displayName, email: email);
+  }
+
+  Future<bool> _deleteCurrentAccount() async {
+    final deleted = await context.read<AuthState>().deleteCurrentUser();
+    if (!deleted || !mounted) return false;
+    _resetForSignedOutState();
+    return true;
   }
 
   void _addRoutine(RoutineItem routine) {
@@ -1722,6 +1950,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       unawaited(sync.createRoutine(routine).catchError((Object e) {
         debugPrint('Routine sync failed: $e');
         _showMessage('Routine added locally, but Firebase save failed.');
+        return routine;
       }));
     }
     _showMessage('Routine added.');
@@ -1783,17 +2012,24 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(goal.title, style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800)),
+              Text(goal.title,
+                  style: const TextStyle(
+                      color: gdMuted, fontWeight: FontWeight.w800)),
               const SizedBox(height: 14),
               PrioritySelector(
                 value: draftPriority,
-                onChanged: (value) => setLocalState(() => draftPriority = value),
+                onChanged: (value) =>
+                    setLocalState(() => draftPriority = value),
               ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.pop(context, draftPriority), child: const Text('Save priority')),
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(context, draftPriority),
+                child: const Text('Save priority')),
           ],
         ),
       ),
@@ -1811,12 +2047,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   @override
   Widget build(BuildContext context) {
-    // context.watch triggers rebuild when AuthState notifies.
+    // Rebuild the root only when the auth status itself changes. Loading and
+    // error changes are only needed by onboarding, and rebuilding the signed-in
+    // shell during modal cleanup can upset Flutter's inherited-widget tree.
+    final authStatus =
+        context.select<AuthState, AuthStatus>((authState) => authState.status);
+
     // All side effects (sync activation, Firestore writes) are handled
     // in _onAuthStateChanged via the addListener wired in didChangeDependencies.
-    final authState = context.watch<AuthState>();
-
-    if (!authState.isKnown) {
+    if (authStatus == AuthStatus.unknown) {
       return const Scaffold(
         backgroundColor: gdBackground,
         body: Center(child: CircularProgressIndicator()),
@@ -1824,10 +2063,22 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     }
 
     if (!_onboarded) {
-      return OnboardingScreen(
-        onGoogle: () => unawaited(_completeOnboardingWithAuth('Google')),
-        onLinkedIn: _showLinkedInUnavailable,
-        onGuest: () => unawaited(_completeOnboardingWithAuth('Guest')),
+      return Consumer<AuthState>(
+        builder: (context, authState, _) => OnboardingScreen(
+          isLoading: authState.isLoading,
+          errorMessage: authState.errorMessage,
+          onClearError: authState.clearError,
+          onPasswordReset: authState.sendPasswordResetEmail,
+          onEmailAuth: (email, password, displayName, isSignUp) =>
+              _completeOnboardingWithEmail(
+            email: email,
+            password: password,
+            displayName: displayName,
+            isSignUp: isSignUp,
+          ),
+          onGoogle: () => unawaited(_completeOnboardingWithAuth('Google')),
+          onGuest: () => unawaited(_completeOnboardingWithAuth('Guest')),
+        ),
       );
     }
 
@@ -1903,7 +2154,11 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       onProfile: _openProfile,
       onSettings: _openSettings,
       hasActiveFocus: _hasActiveFocus || _focusComplete,
-      focusLabel: _activeFocusConfig == null ? null : (_focusComplete ? 'Done' : _formatFocusTime(_focusRemainingSeconds)),
+      focusLabel: _activeFocusConfig == null
+          ? null
+          : (_focusComplete
+              ? 'Done'
+              : _formatFocusTime(_focusRemainingSeconds)),
     );
   }
 }
