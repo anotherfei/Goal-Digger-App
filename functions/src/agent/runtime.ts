@@ -52,6 +52,9 @@ interface ScheduleResult {
 
 interface MilestonesResult {
   milestones?: string[];
+  feasibilityNote?: string | null;
+  requestedCount?: number | null;
+  needsConfirmation?: boolean;
 }
 
 interface AgentRunResult {
@@ -61,6 +64,8 @@ interface AgentRunResult {
   reflections: unknown[];
   // Structured, ready-to-consume outputs (the client reads these directly):
   milestones: string[];
+  milestoneNote: string | null;
+  milestoneNeedsConfirmation: boolean;
   habitInsight: string | null;
   burnoutRisk: string | null;
   schedule: ScheduleResult | null;
@@ -187,7 +192,7 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
       ? exec("analyzeHabits", { goal, memory, context }, "Analyze productivity signals")
       : Promise.resolve(null),
     selected.has("createMilestones")
-      ? exec("createMilestones", { goal }, "Generate milestone roadmap")
+      ? exec("createMilestones", { goal, context }, "Generate milestone roadmap")
       : Promise.resolve(null),
   ]);
   const habitAnalysis = habitRes as HabitAnalysis | null;
@@ -276,6 +281,8 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
     executionResults,
     reflections,
     milestones,
+    milestoneNote: milestonesResult?.feasibilityNote ?? null,
+    milestoneNeedsConfirmation: milestonesResult?.needsConfirmation ?? false,
     habitInsight: analysis.productivityInsight ?? null,
     burnoutRisk: analysis.burnoutRisk ?? null,
     schedule: scheduleResult,

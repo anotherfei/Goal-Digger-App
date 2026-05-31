@@ -521,6 +521,61 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     }
   }
 
+  // Loose yes/no detection for the "are you sure?" feasibility confirmation.
+  bool _isAffirmativeReply(String text) {
+    final s = text.trim().toLowerCase();
+    return RegExp(
+      r"^(y|ya|yes|yeah|yep|yup|sure|ok|okay|confirm|confirmed|do it|go ahead|proceed|absolutely|definitely|i'?m sure|still want|keep all)\b",
+    ).hasMatch(s);
+  }
+
+  bool _isNegativeReply(String text) {
+    final s = text.trim().toLowerCase();
+    return RegExp(
+      r"^(n|no|nope|nah|cancel|stop|never mind|nevermind|don'?t|do not|keep it|leave it|that'?s fine|fewer|less)\b",
+    ).hasMatch(s);
+  }
+
+  // Centered, non-dismissible loading card shown while the AI generates a plan.
+  Widget _buildGeneratingLoader(String label) {
+    return PopScope(
+      canPop: false,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 26),
+          decoration: BoxDecoration(
+            color: gdSurface,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 38,
+                height: 38,
+                child: CircularProgressIndicator(strokeWidth: 3, color: gdPrimary),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: gdInk,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'This may take a few seconds…',
+                style: TextStyle(color: gdMuted, fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _runGoalBreakdownDialog(
       String title, TextEditingController chatController) async {
     final ai = context.read<GenkitService>();
@@ -536,6 +591,19 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     String? agentBurnoutRisk;
     var agentDegraded = false;
     List<_DraftTaskSpec> agentSpecs = const [];
+
+    // Block the UI with a non-dismissible loader while the agent generates the
+    // first plan, so the user can't tap other things mid-generation.
+    var loaderOpen = false;
+    if (mounted) {
+      loaderOpen = true;
+      // ignore: unawaited_futures
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _buildGeneratingLoader('Generating your plan…'),
+      );
+    }
 
     // Step 1: Run the planning agent. It plans, executes tools (habit analysis,
     // milestones, burnout-aware scheduling) and reflects — we consume ALL of it.
@@ -561,7 +629,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       agentBurnoutRisk = agentPlan.burnoutRisk;
       agentScheduleNote = agentPlan.schedule['scheduleNote']?.toString();
       if (agentPlan.milestones.isNotEmpty) {
-        agentSpecs = _draftSpecsFromTitles(agentPlan.milestones).take(6).toList();
+        agentSpecs = _draftSpecsFromTitles(agentPlan.milestones).toList();
       }
     } catch (e) {
       debugPrint('Agent planner unavailable: $e');
@@ -583,7 +651,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
             deadlineDays: deadlineDays,
           ),
         );
-        final aiSpecs = _draftSpecsFromGeneratedTasks(generated.tasks).take(6).toList();
+        final aiSpecs = _draftSpecsFromGeneratedTasks(generated.tasks).toList();
         if (aiSpecs.isNotEmpty) {
           draftSpecs = aiSpecs;
           aiAvailable = true;
@@ -629,26 +697,47 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       },
     ];
 
+    // Generation done — close the blocking loader before showing the plan.
+    if (loaderOpen && mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      loaderOpen = false;
+    }
+
     final result = await showDialog<List<_DraftTaskSpec>>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
         var isAiThinking = false;
+        // When the agent scales back an unrealistic request, it asks "are you
+        // sure?". We stash the original request here so a "yes" re-issues it as
+        // a confirmed (forced) request, and a "no" keeps the scaled-back plan.
+        String? pendingForceRequest;
         return StatefulBuilder(
           builder: (dialogContext, setLocalState) {
             Future<void> sendMessage() async {
               final request = chatController.text.trim();
               if (request.isEmpty || isAiThinking) return;
 
-              final history = messages
-                  .where((message) => message['text'] is String)
-                  .map(
-                    (message) => ChatMessage(
-                      role: message['role'] == 'user' ? 'user' : 'model',
-                      content: message['text'] as String,
-                    ),
-                  )
-                  .toList();
+              final pending = pendingForceRequest;
+
+              // User declined the "are you sure?" question — keep current plan.
+              if (pending != null && _isNegativeReply(request)) {
+                setLocalState(() {
+                  messages.add({'role': 'user', 'text': request});
+                  messages.add({
+                    'role': 'assistant',
+                    'text': "Got it — I'll keep the plan as it is.",
+                    'tasks': _draftPreviewLabels(draftSpecs),
+                  });
+                  chatController.clear();
+                  pendingForceRequest = null;
+                });
+                return;
+              }
+
+              // User confirmed — re-issue the original request, forced this time.
+              final useForce = pending != null && _isAffirmativeReply(request);
+              final effectiveRequest = useForce ? pending : request;
 
               setLocalState(() {
                 isAiThinking = true;
@@ -657,31 +746,52 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               });
 
               try {
-                final reply = await ai.goalCoach.ask(
-                  GoalCoachRequest(
-                    userMessage: "$request\nCurrent draft tasks: ${draftSpecs.map((task) => task.previewLabel).join('; ')}",
-                    goalTitle: title,
-                    conversationHistory: history,
-                    progressPercent: 0,
+                // Route refinements through the planning agent so requests like
+                // "10 milestones" or "2 per day" reach the createMilestones tool,
+                // which sizes the roadmap (and flags unrealistic asks) for us.
+                final refinedPlan = await ai.agentPlanner.plan(
+                  AgentPlannerRequest(
+                    goal: title,
+                    context: {
+                      'category': _newGoalCategory,
+                      'priority': _newGoalPriority,
+                      'deadlineDays': deadlineDays,
+                      'completedToday': _todayCompleted,
+                      'totalToday': _todayTasks.length,
+                      'mood': _selectedMood,
+                      'streak': _streak,
+                      'specialRequest': effectiveRequest,
+                      if (useForce) 'force': true,
+                    },
                   ),
                 );
 
-                final suggested = reply.suggestedActions
+                final refinedTitles = refinedPlan.milestones
                     .map((task) => task.trim())
                     .where((task) => task.isNotEmpty)
-                    .take(6)
                     .toList();
-                if (suggested.isNotEmpty) {
-                  draftSpecs = _draftSpecsFromTitles(suggested).take(6).toList();
+                if (refinedTitles.isNotEmpty) {
+                  draftSpecs = _draftSpecsFromTitles(refinedTitles).toList();
                 }
+
+                // Prefer the agent's feasibility note (e.g. "…Are you sure you
+                // still want all 30? (yes / no)"); otherwise confirm the count.
+                final note = refinedPlan.milestoneNote?.trim();
+                final replyText = (note != null && note.isNotEmpty)
+                    ? note
+                    : (refinedTitles.isNotEmpty
+                        ? 'Updated the plan to ${refinedTitles.length} milestones.'
+                        : 'I refined the plan based on your request.');
 
                 if (!dialogContext.mounted) return;
                 setLocalState(() {
+                  // Remember the request only while a confirmation is pending.
+                  pendingForceRequest = refinedPlan.milestoneNeedsConfirmation
+                      ? effectiveRequest
+                      : null;
                   messages.add({
                     'role': 'assistant',
-                    'text': reply.reply.trim().isEmpty
-                        ? 'I refined the plan based on your request.'
-                        : reply.reply.trim(),
+                    'text': replyText,
                     'tasks': _draftPreviewLabels(draftSpecs),
                   });
                   isAiThinking = false;
@@ -692,12 +802,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                   request,
                   title,
                 );
-                draftSpecs = _draftSpecsFromTitles(refined).take(6).toList();
+                draftSpecs = _draftSpecsFromTitles(refined).toList();
                 if (!dialogContext.mounted) return;
                 setLocalState(() {
+                  pendingForceRequest = null;
                   messages.add({
                     'role': 'assistant',
-                    'text': 'The AI coach endpoint is unavailable right now, so I refined the plan locally. You can still finalize this draft.',
+                    'text': 'The AI planner is unavailable right now, so I refined the plan locally. You can still finalize this draft.',
                     'tasks': _draftPreviewLabels(draftSpecs),
                   });
                   isAiThinking = false;
@@ -909,12 +1020,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                             Expanded(
                               child: TextField(
                                 controller: chatController,
+                                enabled: !isAiThinking,
                                 minLines: 1,
                                 maxLines: 4,
                                 textInputAction: TextInputAction.send,
                                 onSubmitted: (_) => sendMessage(),
                                 decoration: InputDecoration(
-                                  hintText: 'Adjust the AI plan...',
+                                  hintText: isAiThinking
+                                      ? 'AI is thinking…'
+                                      : 'Adjust the AI plan...',
                                   filled: true,
                                   fillColor: const Color(0xFFF7F5EF),
                                   contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),

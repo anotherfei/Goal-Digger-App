@@ -288,6 +288,8 @@ class AgentPlannerResponse {
     required this.memoryUpdated,
     this.strategy,
     this.milestones = const [],
+    this.milestoneNote,
+    this.milestoneNeedsConfirmation = false,
     this.habitInsight,
     this.burnoutRisk,
     this.schedule = const {},
@@ -303,6 +305,14 @@ class AgentPlannerResponse {
 
   /// Ready-to-use milestone titles produced by the createMilestones tool.
   final List<String> milestones;
+
+  /// Feasibility note when the requested milestone count was scaled back or
+  /// flagged as demanding (null when the request was honored as-is).
+  final String? milestoneNote;
+
+  /// True when [milestoneNote] is a yes/no question — the agent scaled an
+  /// unrealistic request back and is asking the user to confirm the full amount.
+  final bool milestoneNeedsConfirmation;
 
   /// AI productivity insight from the analyzeHabits tool, if it ran.
   final String? habitInsight;
@@ -344,6 +354,9 @@ class AgentPlannerResponse {
           .map((e) => e.toString())
           .where((s) => s.trim().isNotEmpty)
           .toList(),
+      milestoneNote: json['milestoneNote']?.toString(),
+      milestoneNeedsConfirmation:
+          json['milestoneNeedsConfirmation'] as bool? ?? false,
       habitInsight: json['habitInsight']?.toString(),
       burnoutRisk: json['burnoutRisk']?.toString(),
       schedule: _asStrMap(json['schedule']),
