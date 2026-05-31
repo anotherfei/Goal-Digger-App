@@ -148,6 +148,30 @@ class AuthState extends ChangeNotifier {
     }
   }
 
+  Future<bool> upgradeGuestWithGoogle() async {
+    _setLoading(true);
+    try {
+      await _authService.upgradeGuestWithGoogle();
+      _user = _authService.currentUser;
+      _status = _user == null
+          ? AuthStatus.signedOut
+          : _user!.isAnonymous
+              ? AuthStatus.guest
+              : AuthStatus.signedIn;
+      _errorMessage = null;
+      return true;
+    } on AuthException catch (e) {
+      _errorMessage = e.message;
+      return false;
+    } catch (e) {
+      _errorMessage = 'Could not bind Google to this guest account.';
+      debugPrint('upgradeGuestWithGoogle error: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   Future<bool> sendPasswordResetEmail(String email) async {
     _setLoading(true);
     try {

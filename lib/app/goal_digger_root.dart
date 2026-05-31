@@ -1617,6 +1617,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           onRefreshEmailVerification: authState.reloadUser,
           onSendPasswordReset: authState.sendPasswordResetEmail,
           onUpgradeGuestWithEmail: _upgradeGuestWithEmail,
+          onUpgradeGuestWithGoogle: _upgradeGuestWithGoogle,
           onGoalRemindersChanged: _setGoalReminders,
           onFriendProgressSharingChanged: _setFriendProgressSharing,
           onSignOut: () => unawaited(_handleSignOut()),
@@ -1706,6 +1707,42 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       }
       return true;
     }
+  }
+
+  Future<GuestGoogleUpgradeResult?> _upgradeGuestWithGoogle() async {
+    final authState = context.read<AuthState>();
+    final authService = context.read<AuthService>();
+    final upgraded = await authState.upgradeGuestWithGoogle();
+    final user = authService.currentUser ?? authState.user;
+    if (!upgraded || user == null) return null;
+
+    final displayName = user.displayName?.trim().isNotEmpty == true
+        ? user.displayName!.trim()
+        : _profileDisplayName?.trim().isNotEmpty == true
+            ? _profileDisplayName!.trim()
+            : 'Goal Digger User';
+    final email = user.email ?? '';
+
+    try {
+      await _userRepository.createOrUpdateProfile(
+        uid: user.uid,
+        displayName: displayName,
+        email: email,
+        photoUrl: user.photoURL,
+      );
+      await _userRepository.markOnboarded(user.uid);
+    } catch (e) {
+      debugPrint('Guest Google upgrade profile sync failed: $e');
+    }
+
+    if (mounted) {
+      setState(() {
+        _profileDisplayName = displayName;
+        _signedInWith = 'Google';
+      });
+    }
+
+    return GuestGoogleUpgradeResult(displayName: displayName, email: email);
   }
 
   Future<bool> _deleteCurrentAccount() async {

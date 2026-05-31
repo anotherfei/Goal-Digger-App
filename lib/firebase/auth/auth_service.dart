@@ -146,6 +146,48 @@ class AuthService {
     }
   }
 
+  Future<UserCredential> upgradeGuestWithGoogle() async {
+    final user = currentUser;
+    if (user == null || !user.isAnonymous) {
+      throw const AuthException('Start from a guest account first.');
+    }
+
+    await _googleSignIn.signOut();
+    final googleUser = await _googleSignIn.signIn();
+    if (googleUser == null) {
+      throw const AuthException('Google sign-in was cancelled by the user.');
+    }
+
+    final googleAuth = await googleUser.authentication;
+    final credential = GoogleAuthProvider.credential(
+      accessToken: googleAuth.accessToken,
+      idToken: googleAuth.idToken,
+    );
+
+    try {
+      final result = await user.linkWithCredential(credential);
+      final cleanedName = googleUser.displayName?.trim();
+      final photoUrl = googleUser.photoUrl?.trim();
+      if (cleanedName != null && cleanedName.isNotEmpty) {
+        await result.user?.updateDisplayName(cleanedName);
+      }
+      if (photoUrl != null && photoUrl.isNotEmpty) {
+        await result.user?.updatePhotoURL(photoUrl);
+      }
+      await result.user?.reload();
+      return result;
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'credential-already-in-use' ||
+          e.code == 'email-already-in-use' ||
+          e.code == 'account-exists-with-different-credential') {
+        throw const AuthException(
+          'That Google account already belongs to another Goal Digger account.',
+        );
+      }
+      throw AuthException(_firebaseAuthMessage(e));
+    }
+  }
+
   Future<void> sendPasswordResetEmail(String email) async {
     try {
       await _auth.sendPasswordResetEmail(email: email.trim());

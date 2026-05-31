@@ -9,6 +9,18 @@ typedef GuestUpgradeCallback = Future<bool> Function({
   required String email,
   required String password,
 });
+typedef GuestGoogleUpgradeCallback = Future<GuestGoogleUpgradeResult?>
+    Function();
+
+class GuestGoogleUpgradeResult {
+  const GuestGoogleUpgradeResult({
+    required this.displayName,
+    required this.email,
+  });
+
+  final String displayName;
+  final String email;
+}
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
@@ -38,6 +50,7 @@ class ProfileScreen extends StatefulWidget {
     required this.onRefreshEmailVerification,
     required this.onSendPasswordReset,
     required this.onUpgradeGuestWithEmail,
+    required this.onUpgradeGuestWithGoogle,
     required this.onGoalRemindersChanged,
     required this.onFriendProgressSharingChanged,
     required this.onSignOut,
@@ -69,6 +82,7 @@ class ProfileScreen extends StatefulWidget {
   final Future<bool> Function() onRefreshEmailVerification;
   final Future<bool> Function(String email) onSendPasswordReset;
   final GuestUpgradeCallback onUpgradeGuestWithEmail;
+  final GuestGoogleUpgradeCallback onUpgradeGuestWithGoogle;
   final ValueChanged<bool> onGoalRemindersChanged;
   final ValueChanged<bool> onFriendProgressSharingChanged;
   final VoidCallback onSignOut;
@@ -94,7 +108,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late final TextEditingController _upgradeConfirmPasswordController;
   bool _isEditingDisplayName = false;
   bool _savingDisplayName = false;
-  bool _upgradingGuest = false;
+  bool _upgradingGuestWithEmail = false;
+  bool _upgradingGuestWithGoogle = false;
   bool _hideUpgradePassword = true;
 
   String get displayName => _displayName;
@@ -127,6 +142,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       widget.onSendPasswordReset;
   GuestUpgradeCallback get onUpgradeGuestWithEmail =>
       widget.onUpgradeGuestWithEmail;
+  GuestGoogleUpgradeCallback get onUpgradeGuestWithGoogle =>
+      widget.onUpgradeGuestWithGoogle;
   ValueChanged<bool> get onGoalRemindersChanged =>
       widget.onGoalRemindersChanged;
   ValueChanged<bool> get onFriendProgressSharingChanged =>
@@ -247,12 +264,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         passwordController: _upgradePasswordController,
                         confirmPasswordController:
                             _upgradeConfirmPasswordController,
-                        isLoading: _upgradingGuest,
+                        isEmailLoading: _upgradingGuestWithEmail,
+                        isGoogleLoading: _upgradingGuestWithGoogle,
                         obscurePassword: _hideUpgradePassword,
                         onTogglePasswordVisibility: () => setState(
                           () => _hideUpgradePassword = !_hideUpgradePassword,
                         ),
-                        onSubmit: () => _upgradeGuestAccount(context),
+                        onSubmitEmail: () => _upgradeGuestWithEmail(context),
+                        onSubmitGoogle: () => _upgradeGuestWithGoogle(context),
                       ),
                     ],
                     const SizedBox(height: 14),
@@ -391,7 +410,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Future<void> _upgradeGuestAccount(BuildContext context) async {
+  Future<void> _upgradeGuestWithEmail(BuildContext context) async {
+    if (_upgradingGuestWithGoogle) return;
     final cleanedName = _upgradeNameController.text.trim();
     final cleanedEmail = _upgradeEmailController.text.trim();
     final password = _upgradePasswordController.text;
@@ -414,7 +434,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
-    setState(() => _upgradingGuest = true);
+    setState(() => _upgradingGuestWithEmail = true);
     final upgraded = await onUpgradeGuestWithEmail(
       displayName: cleanedName,
       email: cleanedEmail,
@@ -422,7 +442,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
     if (!mounted) return;
     setState(() {
-      _upgradingGuest = false;
+      _upgradingGuestWithEmail = false;
       if (upgraded) {
         _displayName = cleanedName;
         _displayNameController.text = cleanedName;
@@ -441,6 +461,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
       upgraded
           ? 'Guest progress saved. Check your email to verify the account.'
           : 'Could not upgrade guest account.',
+    );
+  }
+
+  Future<void> _upgradeGuestWithGoogle(BuildContext context) async {
+    if (_upgradingGuestWithEmail) return;
+    setState(() => _upgradingGuestWithGoogle = true);
+    final result = await onUpgradeGuestWithGoogle();
+    if (!mounted) return;
+    setState(() {
+      _upgradingGuestWithGoogle = false;
+      if (result != null) {
+        final googleName = result.displayName.trim();
+        if (googleName.isNotEmpty) {
+          _displayName = googleName;
+          _displayNameController.text = googleName;
+        }
+        _email = result.email;
+        _signedInWith = 'Google';
+        _isGuest = false;
+        _emailVerified = true;
+        _providerIds = const ['google.com'];
+        _upgradePasswordController.clear();
+        _upgradeConfirmPasswordController.clear();
+      }
+    });
+    if (!context.mounted) return;
+    _showSnack(
+      context,
+      result != null
+          ? 'Guest progress saved to your Google account.'
+          : 'Could not bind Google to this guest account.',
     );
   }
 
@@ -700,20 +751,26 @@ class _GuestUpgradeSection extends StatelessWidget {
     required this.emailController,
     required this.passwordController,
     required this.confirmPasswordController,
-    required this.isLoading,
+    required this.isEmailLoading,
+    required this.isGoogleLoading,
     required this.obscurePassword,
     required this.onTogglePasswordVisibility,
-    required this.onSubmit,
+    required this.onSubmitEmail,
+    required this.onSubmitGoogle,
   });
 
   final TextEditingController nameController;
   final TextEditingController emailController;
   final TextEditingController passwordController;
   final TextEditingController confirmPasswordController;
-  final bool isLoading;
+  final bool isEmailLoading;
+  final bool isGoogleLoading;
   final bool obscurePassword;
   final VoidCallback onTogglePasswordVisibility;
-  final VoidCallback onSubmit;
+  final VoidCallback onSubmitEmail;
+  final VoidCallback onSubmitGoogle;
+
+  bool get _isLoading => isEmailLoading || isGoogleLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -728,12 +785,31 @@ class _GuestUpgradeSection extends StatelessWidget {
               icon: Icons.lock_person_rounded,
               title: 'Save guest progress',
               subtitle:
-                  'Bind this guest session to email login without losing goals or tasks.',
+                  'Bind this guest session to email or Google without losing goals or tasks.',
             ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _isLoading ? null : onSubmitGoogle,
+                icon: isGoogleLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.g_mobiledata_rounded, size: 30),
+                label: Text(
+                  isGoogleLoading ? 'Connecting Google...' : 'Bind to Google',
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const _InlineDivider(label: 'or use email'),
             const SizedBox(height: 16),
             TextField(
               controller: nameController,
-              enabled: !isLoading,
+              enabled: !_isLoading,
               textInputAction: TextInputAction.next,
               decoration: const InputDecoration(
                 labelText: 'Display name',
@@ -743,7 +819,7 @@ class _GuestUpgradeSection extends StatelessWidget {
             const SizedBox(height: 12),
             TextField(
               controller: emailController,
-              enabled: !isLoading,
+              enabled: !_isLoading,
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
               decoration: const InputDecoration(
@@ -754,7 +830,7 @@ class _GuestUpgradeSection extends StatelessWidget {
             const SizedBox(height: 12),
             TextField(
               controller: passwordController,
-              enabled: !isLoading,
+              enabled: !_isLoading,
               obscureText: obscurePassword,
               textInputAction: TextInputAction.next,
               decoration: InputDecoration(
@@ -762,7 +838,7 @@ class _GuestUpgradeSection extends StatelessWidget {
                 prefixIcon: const Icon(Icons.lock_rounded),
                 suffixIcon: IconButton(
                   tooltip: obscurePassword ? 'Show password' : 'Hide password',
-                  onPressed: isLoading ? null : onTogglePasswordVisibility,
+                  onPressed: _isLoading ? null : onTogglePasswordVisibility,
                   icon: Icon(
                     obscurePassword
                         ? Icons.visibility_rounded
@@ -774,10 +850,10 @@ class _GuestUpgradeSection extends StatelessWidget {
             const SizedBox(height: 12),
             TextField(
               controller: confirmPasswordController,
-              enabled: !isLoading,
+              enabled: !_isLoading,
               obscureText: obscurePassword,
               textInputAction: TextInputAction.done,
-              onSubmitted: (_) => isLoading ? null : onSubmit(),
+              onSubmitted: (_) => _isLoading ? null : onSubmitEmail(),
               decoration: const InputDecoration(
                 labelText: 'Confirm password',
                 prefixIcon: Icon(Icons.lock_reset_rounded),
@@ -787,20 +863,49 @@ class _GuestUpgradeSection extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: isLoading ? null : onSubmit,
-                icon: isLoading
+                onPressed: _isLoading ? null : onSubmitEmail,
+                icon: isEmailLoading
                     ? const SizedBox(
                         width: 18,
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.upgrade_rounded),
-                label: Text(isLoading ? 'Saving progress...' : 'Bind to email'),
+                label: Text(
+                  isEmailLoading ? 'Saving progress...' : 'Bind to email',
+                ),
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _InlineDivider extends StatelessWidget {
+  const _InlineDivider({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Expanded(child: Divider(height: 1)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: gdMuted,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        const Expanded(child: Divider(height: 1)),
+      ],
     );
   }
 }
