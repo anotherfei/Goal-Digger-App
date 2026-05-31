@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/gd_colors.dart';
 import '../../models/models.dart';
 import '../../shared/widgets/shared_widgets.dart';
 
@@ -33,7 +32,12 @@ class TasksPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return PageScaffold(
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 112),
+        padding: EdgeInsets.fromLTRB(
+          18,
+          14,
+          18,
+          GoalShellInsets.bottomOf(context),
+        ),
         children: [
           MoodCheckPanel(
             selectedMood: mood,

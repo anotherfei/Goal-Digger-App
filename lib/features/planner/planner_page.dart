@@ -46,7 +46,12 @@ class PlannerPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return PageScaffold(
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 112),
+        padding: EdgeInsets.fromLTRB(
+          18,
+          14,
+          18,
+          GoalShellInsets.bottomOf(context),
+        ),
         children: [
           AppCard(
             color: const Color(0xFFEAF1FF),
@@ -56,27 +61,57 @@ class PlannerPage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(children: const [
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('Create a goal', style: TextStyle(color: gdInk, fontSize: 26, height: 1.1, fontWeight: FontWeight.w900)),
-                      SizedBox(height: 8),
-                      Text('Pick a clear category, then review AI subtasks before they are scheduled.', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
-                    ])),
+                    Expanded(
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                          Text('Create a goal',
+                              style: TextStyle(
+                                  color: gdInk,
+                                  fontSize: 26,
+                                  height: 1.1,
+                                  fontWeight: FontWeight.w900)),
+                          SizedBox(height: 8),
+                          Text(
+                              'Pick a clear category, then review AI subtasks before they are scheduled.',
+                              style: TextStyle(
+                                  color: gdMuted, fontWeight: FontWeight.w700)),
+                        ])),
                   ]),
                   const SizedBox(height: 18),
                   Theme(
-                    data: Theme.of(context).copyWith(inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(fillColor: gdSurface)),
+                    data: Theme.of(context).copyWith(
+                        inputDecorationTheme: Theme.of(context)
+                            .inputDecorationTheme
+                            .copyWith(fillColor: gdSurface)),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        TextField(controller: goalController, textInputAction: TextInputAction.done, decoration: const InputDecoration(labelText: 'Goal', hintText: 'Example: Prepare for midterm'), onSubmitted: (_) => onCreateGoal()),
+                        TextField(
+                            controller: goalController,
+                            textInputAction: TextInputAction.done,
+                            decoration: const InputDecoration(
+                                labelText: 'Goal',
+                                hintText: 'Example: Prepare for midterm'),
+                            onSubmitted: (_) => onCreateGoal()),
                         const SizedBox(height: 12),
-                        OutlinedButton.icon(style: OutlinedButton.styleFrom(backgroundColor: gdSurface), onPressed: onDeadlinePick, icon: const Icon(Icons.event_rounded), label: Text('Deadline: ${shortDate(deadline)}')),
+                        OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                                backgroundColor: gdSurface),
+                            onPressed: onDeadlinePick,
+                            icon: const Icon(Icons.event_rounded),
+                            label: Text('Deadline: ${shortDate(deadline)}')),
                         const SizedBox(height: 14),
-                        CategorySelector(selected: category, onChanged: onCategoryChanged),
+                        CategorySelector(
+                            selected: category, onChanged: onCategoryChanged),
                         const SizedBox(height: 12),
-                        PrioritySelector(value: priority, onChanged: onPriorityChanged),
+                        PrioritySelector(
+                            value: priority, onChanged: onPriorityChanged),
                         const SizedBox(height: 14),
-                        FilledButton.icon(onPressed: isProcessing ? null : onCreateGoal, icon: const Icon(Icons.auto_awesome_rounded), label: const Text('Break down my goal')),
+                        FilledButton.icon(
+                            onPressed: isProcessing ? null : onCreateGoal,
+                            icon: const Icon(Icons.auto_awesome_rounded),
+                            label: const Text('Break down my goal')),
                       ],
                     ),
                   ),
@@ -86,13 +121,20 @@ class PlannerPage extends StatelessWidget {
           ),
           if (isProcessing) ...[
             const SizedBox(height: 14),
-            ProcessingProgressCard(progress: processingProgress, label: 'Creating your task plan'),
+            ProcessingProgressCard(
+                progress: processingProgress, label: 'Creating your task plan'),
           ],
           const SizedBox(height: 22),
           SectionTitle(title: 'Active goals', trailing: '${goals.length}'),
           const SizedBox(height: 10),
           if (goals.isEmpty)
-            EmptyStateCard(icon: Icons.flag_circle_rounded, title: 'No goals yet', message: 'Create your first project and Goal Digger will turn it into small, scheduled actions.', cta: 'Create your first project', onPressed: onCreateFirstGoal)
+            EmptyStateCard(
+                icon: Icons.flag_circle_rounded,
+                title: 'No goals yet',
+                message:
+                    'Create your first project and Goal Digger will turn it into small, scheduled actions.',
+                cta: 'Create your first project',
+                onPressed: onCreateFirstGoal)
           else
             ...goals.map((goal) => GoalCard(
                   goal: goal,

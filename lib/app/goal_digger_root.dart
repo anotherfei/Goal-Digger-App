@@ -85,6 +85,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   bool _isProcessing = false;
   double _processingProgress = 0;
   Timer? _processingTimer;
+  Timer? _moodAdviceTimer;
+  bool _moodAdvisorAvailable = true;
+  int _moodAdviceRequestSerial = 0;
 
   String _selectedMood = 'Okay';
   int _petHappiness = 62;
@@ -150,6 +153,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
     if (_activeUid == uid) return;
     _activeUid = uid;
+    _moodAdvisorAvailable = true;
     _activateSync(uid);
     unawaited(_ensureUserProfile(authState));
   }
@@ -198,6 +202,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   void dispose() {
     _watchedAuthState?.removeListener(_onAuthStateChanged);
     _processingTimer?.cancel();
+    _moodAdviceTimer?.cancel();
     _focusTimer?.cancel();
     _disposeSync();
     _goalController.dispose();
@@ -222,6 +227,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   void _resetForSignedOutState() {
     _activeUid = null;
+    _moodAdviceTimer?.cancel();
+    _moodAdviceRequestSerial++;
+    _moodAdvisorAvailable = true;
     _disposeSync();
     setState(() {
       _onboarded = false;
@@ -355,6 +363,16 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           _petHappiness, _activePetSkin, _activeAccessory);
     } catch (e) {
       debugPrint('Profile write failed: $e');
+    }
+  }
+
+  Future<void> _persistMood(String mood) async {
+    final sync = _sync;
+    if (sync == null) return;
+    try {
+      await sync.updateMood(mood);
+    } catch (e) {
+      debugPrint('Mood write failed: $e');
     }
   }
 
@@ -1463,12 +1481,20 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   void _handleMoodChanged(String value) {
+    if (value == _selectedMood) return;
+
     setState(() => _selectedMood = value);
-    unawaited(_persistProfileStats());
-    unawaited(_requestMoodAdvice(value));
+    unawaited(_persistMood(value));
+
+    if (!_moodAdvisorAvailable) return;
+    _moodAdviceTimer?.cancel();
+    _moodAdviceTimer = Timer(const Duration(milliseconds: 450), () {
+      unawaited(_requestMoodAdvice(value));
+    });
   }
 
   Future<void> _requestMoodAdvice(String mood) async {
+    final requestSerial = ++_moodAdviceRequestSerial;
     try {
       final advice = await context.read<GenkitService>().moodAdvisor.advise(
             MoodAdvisorRequest(
@@ -1478,9 +1504,16 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               streak: _streak,
             ),
           );
-      if (!mounted) return;
+      if (!mounted ||
+          requestSerial != _moodAdviceRequestSerial ||
+          mood != _selectedMood) {
+        return;
+      }
       _showMessage('AI mood plan: ${advice.message}');
     } catch (e) {
+      if (e.toString().contains('not-found')) {
+        _moodAdvisorAvailable = false;
+      }
       debugPrint('Mood advisor unavailable: $e');
     }
   }
