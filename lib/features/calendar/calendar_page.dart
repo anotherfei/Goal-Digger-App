@@ -16,6 +16,8 @@ class CalendarPage extends StatefulWidget {
     required this.onCreateGoal,
     required this.onAddRoutine,
     required this.onDeleteRoutine,
+    required this.onSyncTaskToGoogle,
+    required this.onSyncAllTasksToGoogle,
   });
 
   final List<MicroTask> tasks;
@@ -25,6 +27,8 @@ class CalendarPage extends StatefulWidget {
   final VoidCallback onCreateGoal;
   final ValueChanged<RoutineItem> onAddRoutine;
   final ValueChanged<RoutineItem> onDeleteRoutine;
+  final Future<void> Function(MicroTask task, GoalProject goal) onSyncTaskToGoogle;
+  final Future<void> Function() onSyncAllTasksToGoogle;
 
   @override
   State<CalendarPage> createState() => _CalendarPageState();
@@ -241,6 +245,15 @@ class _CalendarPageState extends State<CalendarPage> {
             ),
           ),
           const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: widget.onSyncAllTasksToGoogle,
+              icon: const Icon(Icons.sync_rounded),
+              label: const Text('Sync all tasks to Google Calendar'),
+            ),
+          ),
+          const SizedBox(height: 12),
           if (selectedTasks.isEmpty)
             EmptyStateCard(
                 icon: Icons.event_available_rounded,
@@ -250,8 +263,14 @@ class _CalendarPageState extends State<CalendarPage> {
                 cta: 'Create goal',
                 onPressed: widget.onCreateGoal)
           else
-            ...selectedTasks.map((task) => _CalendarTaskDetailTile(
-                task: task, goal: widget.goalForTask(task))),
+            ...selectedTasks.map((task) {
+              final goal = widget.goalForTask(task);
+
+              return _CalendarTaskDetailTile(
+                task: task,
+                goal: goal,
+              );
+            }),
           const SizedBox(height: 18),
           SectionTitle(
               title: 'Routines', trailing: '${widget.routines.length}'),
@@ -331,7 +350,11 @@ class _CalendarPageState extends State<CalendarPage> {
 }
 
 class _CalendarTaskDetailTile extends StatelessWidget {
-  const _CalendarTaskDetailTile({required this.task, required this.goal});
+  const _CalendarTaskDetailTile({
+    required this.task,
+    required this.goal,
+  });
+
   final MicroTask task;
   final GoalProject goal;
 
@@ -342,15 +365,20 @@ class _CalendarTaskDetailTile extends StatelessWidget {
       child: ListTile(
         minVerticalPadding: 12,
         leading: CircleAvatar(
-            backgroundColor: gdPrimarySoft,
-            child: Icon(task.load.icon, color: gdPrimary)),
-        title: Text(task.title,
-            style: const TextStyle(fontWeight: FontWeight.w900)),
+          backgroundColor: gdPrimarySoft,
+          child: Icon(task.load.icon, color: gdPrimary),
+        ),
+        title: Text(
+          task.title,
+          style: const TextStyle(fontWeight: FontWeight.w900),
+        ),
         subtitle: Text(
-            '${goal.title} · ${shortDate(task.scheduledDate)} · ${task.durationMinutes} min · ${task.load.label}',
-            style:
-                const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
-        trailing: const Chip(label: Text('View only')),
+          '${goal.title} · ${shortDate(task.scheduledDate)} · ${task.durationMinutes} min · ${task.load.label}',
+          style: const TextStyle(
+            color: gdMuted,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
     );
   }
