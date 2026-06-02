@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import 'services/google_calendar_service.dart';
 
 import 'app/goal_digger_app.dart';
+import 'core/theme/theme_controller.dart';
 import 'firebase/auth/auth_service.dart';
 import 'firebase/auth/auth_state.dart';
 import 'firebase/firebase_initializer.dart';
@@ -48,6 +49,11 @@ Future<void> main() async {
 
         // AuthService itself (for lower-level token access)
         Provider<AuthService>.value(value: authService),
+
+        // Theme preference (light / dark / system), persisted across launches
+        ChangeNotifierProvider<ThemeController>(
+          create: (_) => ThemeController()..load(),
+        ),
       ],
       child: const GoalDiggerApp(),
     ),

@@ -1,4 +1,4 @@
-import '../core/theme/gd_colors.dart';
+import '../core/theme/gd_design.dart';
 import '../core/utils/date_helpers.dart';
 import '../models/models.dart';
 

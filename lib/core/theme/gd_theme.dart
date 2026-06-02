@@ -1,122 +1,378 @@
 import 'package:flutter/material.dart';
 
-import 'gd_colors.dart';
+import 'gd_design.dart';
+
+/* -------------------------------------------------------------------------- */
+/*  GOAL DIGGER — THEME                                                        */
+/*                                                                            */
+/*  Maps the semantic design language (gd_design.dart) onto a Material 3       */
+/*  ThemeData. Every value below is expressed through a colour ROLE or a       */
+/*  token, so the look stays coherent and the palette can be re-tuned in one   */
+/*  place. Intent:                                                             */
+/*    • a calm, low-glare reading surface for focused work;                    */
+/*    • blue chrome that recedes so category colour + reward gold can pop;     */
+/*    • soft, generously rounded, comfortably-tappable controls;               */
+/*    • a confident, legible type scale.                                       */
+/* -------------------------------------------------------------------------- */
+
+const String _fontFamily = 'PlusJakartaSans';
 
 ThemeData buildGoalDiggerTheme() {
   final scheme = ColorScheme.fromSeed(
-    seedColor: gdPrimary,
-    brightness: Brightness.light,
+    seedColor: GdColors.brand,
+    brightness: GdColors.brightness,
+  ).copyWith(
+    primary: GdColors.brand,
+    onPrimary: GdColors.onColor,
+    primaryContainer: GdColors.brandSoft,
+    onPrimaryContainer: GdColors.brandStrong,
+    secondary: GdColors.warm,
+    onSecondary: GdColors.onColor,
+    secondaryContainer: GdColors.warmSoft,
+    onSecondaryContainer: GdColors.ink,
+    tertiary: GdColors.focus,
+    onTertiary: GdColors.onColor,
+    surface: GdColors.surface,
+    onSurface: GdColors.ink,
+    surfaceContainerHighest: GdColors.surfaceMuted,
+    onSurfaceVariant: GdColors.inkMuted,
+    error: GdColors.danger,
+    onError: GdColors.onColor,
+    errorContainer: GdColors.dangerSoft,
+    outline: GdColors.borderStrong,
+    outlineVariant: GdColors.border,
+    shadow: GdColors.shadow,
+    scrim: GdColors.scrim,
+    // Disable M3's automatic surface tinting so cards stay true white/grey
+    // instead of drifting toward lilac as they elevate.
+    surfaceTint: Colors.transparent,
   );
 
   return ThemeData(
     useMaterial3: true,
-    fontFamily: 'PlusJakartaSans',
-    scaffoldBackgroundColor: gdBackground,
-    colorScheme: scheme.copyWith(
-      primary: gdPrimary,
-      onPrimary: Colors.white,
-      secondary: gdAccent,
-      onSecondary: Colors.white,
-      tertiary: gdGradientCreativeFrom,
-      surface: gdSurface,
-      onSurface: gdInk,
-      error: gdError,
+    fontFamily: _fontFamily,
+    scaffoldBackgroundColor: GdColors.canvas,
+    colorScheme: scheme,
+    splashFactory: InkSparkle.splashFactory,
+    iconTheme: IconThemeData(color: GdColors.brand),
+    dividerTheme: DividerThemeData(
+      color: GdColors.border,
+      thickness: 1,
+      space: GdSpace.xl,
     ),
-    appBarTheme: const AppBarTheme(
+    appBarTheme: AppBarTheme(
       centerTitle: false,
-      backgroundColor: gdBackground,
-      foregroundColor: gdInk,
+      backgroundColor: GdColors.canvas,
+      surfaceTintColor: Colors.transparent,
+      foregroundColor: GdColors.ink,
       elevation: 0,
+      scrolledUnderElevation: 0,
       titleTextStyle: TextStyle(
-        color: gdInk,
+        fontFamily: _fontFamily,
+        color: GdColors.ink,
         fontSize: 22,
         fontWeight: FontWeight.w900,
         letterSpacing: -0.5,
       ),
     ),
-    navigationBarTheme: const NavigationBarThemeData(
+    navigationBarTheme: NavigationBarThemeData(
       height: 72,
-      labelTextStyle: WidgetStatePropertyAll(
-        TextStyle(fontWeight: FontWeight.w800, color: gdInk),
+      elevation: 0,
+      backgroundColor: GdColors.surface,
+      surfaceTintColor: Colors.transparent,
+      indicatorColor: GdColors.brandSoft,
+      indicatorShape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(GdRadius.md),
       ),
-      iconTheme: WidgetStatePropertyAll(
-        IconThemeData(color: gdMuted),
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      labelTextStyle: WidgetStateProperty.resolveWith(
+        (states) => TextStyle(
+          fontFamily: _fontFamily,
+          fontWeight: FontWeight.w800,
+          fontSize: 12,
+          color: states.contains(WidgetState.selected)
+              ? GdColors.brand
+              : GdColors.inkMuted,
+        ),
+      ),
+      iconTheme: WidgetStateProperty.resolveWith(
+        (states) => IconThemeData(
+          color: states.contains(WidgetState.selected)
+              ? GdColors.brand
+              : GdColors.inkMuted,
+        ),
       ),
     ),
-    textTheme: const TextTheme(
+    textTheme: TextTheme(
       headlineLarge: TextStyle(
-        color: gdInk,
+        color: GdColors.ink,
         fontSize: 34,
         height: 1.05,
         fontWeight: FontWeight.w900,
         letterSpacing: -1.2,
       ),
       headlineMedium: TextStyle(
-        color: gdInk,
+        color: GdColors.ink,
         fontSize: 26,
         height: 1.1,
         fontWeight: FontWeight.w900,
         letterSpacing: -0.7,
       ),
       titleLarge: TextStyle(
-        color: gdInk,
+        color: GdColors.ink,
         fontSize: 20,
         fontWeight: FontWeight.w900,
+        letterSpacing: -0.3,
       ),
       titleMedium: TextStyle(
-        color: gdInk,
+        color: GdColors.ink,
         fontSize: 16,
         fontWeight: FontWeight.w900,
       ),
-      bodyLarge: TextStyle(color: gdInk, fontSize: 16, height: 1.45),
-      bodyMedium: TextStyle(color: gdInk, fontSize: 14, height: 1.4),
-      bodySmall: TextStyle(color: gdMuted, fontSize: 12, height: 1.35),
-    ),
-    chipTheme: ChipThemeData(
-      backgroundColor: gdPrimarySoft,
-      selectedColor: gdPrimary,
-      labelStyle: const TextStyle(color: gdInk, fontWeight: FontWeight.w800),
-      secondaryLabelStyle: const TextStyle(
-        color: Colors.white,
+      titleSmall: TextStyle(
+        color: GdColors.ink,
+        fontSize: 14,
         fontWeight: FontWeight.w800,
       ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+      bodyLarge: TextStyle(color: GdColors.ink, fontSize: 16, height: 1.45),
+      bodyMedium: TextStyle(color: GdColors.ink, fontSize: 14, height: 1.4),
+      bodySmall: TextStyle(color: GdColors.inkMuted, fontSize: 12, height: 1.35),
+      labelLarge: TextStyle(
+        color: GdColors.ink,
+        fontSize: 14,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.1,
+      ),
+      labelSmall: TextStyle(
+        color: GdColors.inkMuted,
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.3,
+      ),
+    ),
+    cardTheme: CardThemeData(
+      color: GdColors.surface,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shadowColor: GdColors.shadow,
+      shape: RoundedRectangleBorder(borderRadius: GdRadius.card),
+    ),
+    chipTheme: ChipThemeData(
+      backgroundColor: GdColors.brandSoft,
+      selectedColor: GdColors.brand,
+      disabledColor: GdColors.surfaceMuted,
+      labelStyle: TextStyle(
+        color: GdColors.ink,
+        fontWeight: FontWeight.w800,
+        fontFamily: _fontFamily,
+      ),
+      secondaryLabelStyle: TextStyle(
+        color: GdColors.onColor,
+        fontWeight: FontWeight.w800,
+        fontFamily: _fontFamily,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: GdSpace.md, vertical: 6),
+      shape: const StadiumBorder(),
       side: BorderSide.none,
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: gdSurface,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      fillColor: GdColors.surface,
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: GdSpace.lg,
+        vertical: GdSpace.lg,
+      ),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: GdRadius.field,
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
-        borderSide: const BorderSide(color: gdBorder),
+        borderRadius: GdRadius.field,
+        borderSide: BorderSide(color: GdColors.border),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
-        borderSide: const BorderSide(color: gdPrimary, width: 2),
+        borderRadius: GdRadius.field,
+        borderSide: BorderSide(color: GdColors.brand, width: 2),
       ),
-      labelStyle: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
-      hintStyle: const TextStyle(color: gdHint),
+      errorBorder: OutlineInputBorder(
+        borderRadius: GdRadius.field,
+        borderSide: BorderSide(color: GdColors.danger),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: GdRadius.field,
+        borderSide: BorderSide(color: GdColors.danger, width: 2),
+      ),
+      labelStyle:
+          TextStyle(color: GdColors.inkMuted, fontWeight: FontWeight.w700),
+      hintStyle: TextStyle(color: GdColors.inkFaint),
+      prefixIconColor: GdColors.inkMuted,
+      suffixIconColor: GdColors.inkMuted,
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        minimumSize: const Size(0, gdTouchTarget),
-        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: GdColors.brand,
+        foregroundColor: GdColors.onColor,
+        disabledBackgroundColor: GdColors.borderStrong,
+        minimumSize: const Size(0, GdSpace.touchTarget),
+        padding: const EdgeInsets.symmetric(horizontal: GdSpace.xl),
+        textStyle: const TextStyle(
+          fontFamily: _fontFamily,
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: GdRadius.control),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        minimumSize: const Size(0, gdTouchTarget),
-        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
-        side: const BorderSide(color: gdBorderStrong),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        foregroundColor: GdColors.brand,
+        minimumSize: const Size(0, GdSpace.touchTarget),
+        padding: const EdgeInsets.symmetric(horizontal: GdSpace.xl),
+        textStyle: const TextStyle(
+          fontFamily: _fontFamily,
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+        ),
+        side: BorderSide(color: GdColors.borderStrong),
+        shape: RoundedRectangleBorder(borderRadius: GdRadius.control),
       ),
     ),
-    iconTheme: const IconThemeData(color: gdPrimary),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: GdColors.brand,
+        textStyle: const TextStyle(
+          fontFamily: _fontFamily,
+          fontSize: 14,
+          fontWeight: FontWeight.w800,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: GdRadius.control),
+      ),
+    ),
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      backgroundColor: GdColors.brand,
+      foregroundColor: GdColors.onColor,
+      elevation: 4,
+      highlightElevation: 6,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(GdRadius.lg),
+      ),
+    ),
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? GdColors.onColor
+            : GdColors.surface,
+      ),
+      trackColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? GdColors.brand
+            : GdColors.borderStrong,
+      ),
+      trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
+    ),
+    checkboxTheme: CheckboxThemeData(
+      fillColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? GdColors.brand
+            : Colors.transparent,
+      ),
+      checkColor: WidgetStatePropertyAll(GdColors.onColor),
+      side: BorderSide(color: GdColors.borderStrong, width: 1.5),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(GdSpace.sm),
+      ),
+    ),
+    sliderTheme: SliderThemeData(
+      activeTrackColor: GdColors.brand,
+      inactiveTrackColor: GdColors.brandSoft,
+      thumbColor: GdColors.brand,
+      overlayColor: GdColors.brand.withValues(alpha: 0.18),
+    ),
+    progressIndicatorTheme: ProgressIndicatorThemeData(
+      color: GdColors.brand,
+      linearTrackColor: GdColors.brandSoft,
+      circularTrackColor: GdColors.brandSoft,
+    ),
+    listTileTheme: ListTileThemeData(
+      iconColor: GdColors.brand,
+      textColor: GdColors.ink,
+      titleTextStyle: TextStyle(
+        fontFamily: _fontFamily,
+        color: GdColors.ink,
+        fontSize: 15,
+        fontWeight: FontWeight.w800,
+      ),
+      subtitleTextStyle: TextStyle(
+        fontFamily: _fontFamily,
+        color: GdColors.inkMuted,
+        fontSize: 13,
+      ),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: GdColors.surface,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(GdRadius.xl),
+      ),
+      titleTextStyle: TextStyle(
+        fontFamily: _fontFamily,
+        color: GdColors.ink,
+        fontSize: 20,
+        fontWeight: FontWeight.w900,
+        letterSpacing: -0.3,
+      ),
+      contentTextStyle: TextStyle(
+        fontFamily: _fontFamily,
+        color: GdColors.inkMuted,
+        fontSize: 15,
+        height: 1.45,
+      ),
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: GdColors.surface,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      showDragHandle: true,
+      dragHandleColor: GdColors.borderStrong,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: GdRadius.xlRadius),
+      ),
+    ),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: GdColors.inverseSurface,
+      contentTextStyle: TextStyle(
+        fontFamily: _fontFamily,
+        color: GdColors.onInverse,
+        fontWeight: FontWeight.w700,
+      ),
+      actionTextColor: GdColors.reward,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(GdRadius.md),
+      ),
+    ),
+    tooltipTheme: TooltipThemeData(
+      decoration: BoxDecoration(
+        color: GdColors.inverseSurface,
+        borderRadius: BorderRadius.circular(GdSpace.sm),
+      ),
+      textStyle: TextStyle(
+        fontFamily: _fontFamily,
+        color: GdColors.onInverse,
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+    tabBarTheme: TabBarThemeData(
+      labelColor: GdColors.brand,
+      unselectedLabelColor: GdColors.inkMuted,
+      indicatorColor: GdColors.brand,
+      dividerColor: Colors.transparent,
+      labelStyle: TextStyle(fontFamily: _fontFamily, fontWeight: FontWeight.w900),
+      unselectedLabelStyle:
+          TextStyle(fontFamily: _fontFamily, fontWeight: FontWeight.w700),
+    ),
   );
 }
