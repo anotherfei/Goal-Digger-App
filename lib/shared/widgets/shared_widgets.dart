@@ -947,24 +947,78 @@ class GoalCard extends StatelessWidget {
               ),
             ]),
             const Divider(height: 26),
-            const Text('Subtasks',
-                style: TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 8),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              for (var i = 0; i < goal.tasks.length; i++)
-                ActionChip(
-                  avatar:
-                      Icon(goal.tasks[i].load.icon, size: 18, color: gdPrimary),
-                  label: Text('Step ${i + 1}',
-                      style: const TextStyle(
-                          color: gdInk, fontWeight: FontWeight.w900)),
-                  backgroundColor: goal.tasks[i].done
-                      ? gdPrimarySoft
-                      : const Color(0xFFF1F5F9),
-                  side: const BorderSide(color: gdBorder),
-                  onPressed: () => _showTaskDetail(context, goal.tasks[i]),
+            Theme(
+              data:
+                  Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: EdgeInsets.zero,
+                title: const Text('Subtasks',
+                    style:
+                        TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
+                subtitle: Text(
+                  '$completed/${goal.tasks.length} complete',
+                  style: const TextStyle(
+                      color: gdMuted, fontWeight: FontWeight.w800),
                 ),
-            ]),
+                children: [
+                  if (goal.tasks.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(0, 4, 0, 8),
+                      child: Text('No subtasks scheduled yet.',
+                          style: TextStyle(
+                              color: gdMuted, fontWeight: FontWeight.w700)),
+                    )
+                  else
+                    SizedBox(
+                      height: min(goal.tasks.length * 58.0, 288),
+                      child: ListView.separated(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        itemCount: goal.tasks.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final task = goal.tasks[index];
+                          return ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            tileColor: task.done
+                                ? gdPrimarySoft.withValues(alpha: 0.45)
+                                : null,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                            leading: Icon(task.load.icon,
+                                color: task.done ? gdMuted : gdPrimary),
+                            title: Text(
+                              task.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: task.done ? gdMuted : gdInk,
+                                decoration: task.done
+                                    ? TextDecoration.lineThrough
+                                    : TextDecoration.none,
+                                decorationThickness: 2,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '${task.durationMinutes} min · ${longDate(task.scheduledDate)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: task.done
+                                      ? gdMuted.withValues(alpha: 0.72)
+                                      : gdMuted,
+                                  fontWeight: FontWeight.w700),
+                            ),
+                            onTap: () => _showTaskDetail(context, task),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ]),
         ),
       ]),
