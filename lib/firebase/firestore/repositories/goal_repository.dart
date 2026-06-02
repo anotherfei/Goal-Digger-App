@@ -96,7 +96,11 @@ class GoalRepository {
   // ── Delete ────────────────────────────────────────────────────────────────
 
   Future<void> deleteGoal(String uid, String goalId) async {
-    await _deleteSubCollection(FirestorePaths.tasksCol(uid, goalId));
+    // Tasks live in the embedded `tasksMap` field on the goal document, not in
+    // a `tasks` sub-collection — deleting the goal doc removes them too. The
+    // old `_deleteSubCollection(tasksCol(...))` call queried a sub-collection
+    // that (a) never exists and (b) has no matching security rule, so it threw
+    // PERMISSION_DENIED and aborted the delete before the goal was removed.
     await _svc.deleteDoc(FirestorePaths.goalDoc(uid, goalId));
   }
 
@@ -239,21 +243,4 @@ class GoalRepository {
         progress:   goal.progress,
         tasks:      goal.tasks,
       );
-
-  // ENHANCE: loop until all documents are deleted — Firestore doesn't allow
-  // batches > 500, and sub-collections could have more than 100 documents
-  // (the original limit was 100 and the batch was never committed in chunks).
-  Future<void> _deleteSubCollection(String path) async {
-    const batchSize = 400; // stay under the 500-op limit
-    while (true) {
-      final snap = await _svc.colRef(path).limit(batchSize).get();
-      if (snap.docs.isEmpty) break;
-      final batch = _svc.batch;
-      for (final doc in snap.docs) {
-        batch.delete(doc.reference);
-      }
-      await batch.commit();
-      if (snap.docs.length < batchSize) break; // last page
-    }
-  }
 }

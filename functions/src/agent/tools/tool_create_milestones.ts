@@ -11,6 +11,7 @@
 // that it will be demanding.
 
 import { getAI, defaultModel } from "../../ai";
+import { evaluateGoal, goalGuardMessage } from "../goal_guard";
 import { parseModelJson } from "../../json";
 
 // How many milestone-sized chunks a motivated person can realistically take on
@@ -189,6 +190,25 @@ export const createMilestonesTool = {
 
   async execute(args: CreateMilestonesArgs): Promise<MilestoneResult> {
     const goal = String(args.goal ?? "the goal").trim();
+    const goalReview = await evaluateGoal(
+      goal,
+      {
+        ...(args.context ?? {}),
+        ...(args.specialRequest ? { specialRequest: args.specialRequest } : {}),
+      }
+    );
+    if (!goalReview.allowed) {
+      return {
+        milestones: [],
+        count: 0,
+        durationDays: resolveDurationDays(args),
+        requestedCount: null,
+        feasibilityNote: goalGuardMessage(goalReview),
+        needsConfirmation: false,
+        honoredRequest: false,
+      };
+    }
+
     const specialRequest = String(
       args.specialRequest ?? args.context?.specialRequest ?? args.context?.notes ?? ""
     ).trim();

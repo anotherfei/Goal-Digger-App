@@ -286,6 +286,11 @@ class AgentPlannerResponse {
     required this.plan,
     required this.reflections,
     required this.memoryUpdated,
+    this.goalGuardEvaluated = false,
+    this.goalRejected = false,
+    this.goalRejectionType,
+    this.goalRejectionReason,
+    this.goalRefinementPrompt,
     this.strategy,
     this.milestones = const [],
     this.milestoneNote,
@@ -299,6 +304,21 @@ class AgentPlannerResponse {
   final Map<String, dynamic> plan;
   final List<Map<String, dynamic>> reflections;
   final bool memoryUpdated;
+
+  /// True when the backend response included the goal_guard.ts verdict field.
+  final bool goalGuardEvaluated;
+
+  /// True when the backend refused to generate todos for this goal.
+  final bool goalRejected;
+
+  /// Why the goal was rejected ("unclear", "too_broad", "impossible", "harmful").
+  final String? goalRejectionType;
+
+  /// Human-readable reason explaining why no todos were generated.
+  final String? goalRejectionReason;
+
+  /// Prompt asking the user to sharpen or redefine the goal.
+  final String? goalRefinementPrompt;
 
   /// One-line description of the planning approach the agent chose.
   final String? strategy;
@@ -349,6 +369,11 @@ class AgentPlannerResponse {
           .map((entry) => _asStrMap(entry))
           .toList(),
       memoryUpdated: json['memoryUpdated'] as bool? ?? false,
+      goalGuardEvaluated: json.containsKey('goalRejected'),
+      goalRejected: json['goalRejected'] as bool? ?? false,
+      goalRejectionType: json['goalRejectionType']?.toString(),
+      goalRejectionReason: json['goalRejectionReason']?.toString(),
+      goalRefinementPrompt: json['goalRefinementPrompt']?.toString(),
       strategy: (json['strategy'] ?? plan['strategy'])?.toString(),
       milestones: (json['milestones'] as List<dynamic>? ?? [])
           .map((e) => e.toString())
