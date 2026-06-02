@@ -35,12 +35,14 @@ const fnOptions = {
   memory: "256MiB" as const,
 };
 
+
 // Only allow authenticated Firebase users
 const requireAuth = (auth: { uid?: string } | undefined) => {
   if (!auth?.uid) {
     throw new HttpsError("unauthenticated", "You must be signed in.");
   }
 };
+
 
 // ── Define flows ONCE at module load ──────────────────────────────────────────
 // Genkit registers flows by name internally. Calling defineFlow() on every
@@ -88,6 +90,7 @@ export const agentPlanner = onCall(fnOptions, async (req) => {
 // ── Streaming endpoint (SSE) ──────────────────────────────────────────────────
 // onCall doesn't support streaming, so goalCoachStream is an onRequest function.
 // The Flutter GenkitClient verifies the token manually for this endpoint.
+
 
 export const goalCoachStream = onRequest(
   { ...fnOptions, cors: true },
