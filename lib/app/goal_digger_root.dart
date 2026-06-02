@@ -1284,7 +1284,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     try {
       await _runGoalBreakdownDialog(title, chatController);
     } finally {
-      // Guaranteed disposal — regardless of how the dialog was dismissed.
+      FocusManager.instance.primaryFocus?.unfocus();
+      await WidgetsBinding.instance.endOfFrame;
+      // Guaranteed disposal after the dialog route has torn down its frame.
       chatController.dispose();
     }
   }
@@ -1393,6 +1395,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       );
     }
 
+    void closeGoalDialog(
+      BuildContext dialogContext, [
+      _GoalPlanApprovalResult? result,
+    ]) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      Navigator.of(dialogContext, rootNavigator: true)
+          .pop<_GoalPlanApprovalResult>(result);
+    }
+
     Future<List<_DraftTaskSpec>> generatedOrLocalSpecs(String goal) async {
       try {
         final generated = await ai.taskGenerator.generate(
@@ -1429,6 +1440,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       showDialog<void>(
         context: context,
         barrierDismissible: false,
+        useRootNavigator: true,
         builder: (_) => _buildGeneratingLoader('Generating your plan…'),
       );
     }
@@ -1525,6 +1537,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     final result = await showDialog<_GoalPlanApprovalResult>(
       context: context,
       barrierDismissible: false,
+      useRootNavigator: true,
       builder: (dialogContext) {
         var isAiThinking = false;
         // When the agent scales back an unrealistic request, it asks "are you
@@ -1828,7 +1841,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                               ),
                               child: IconButton(
                                 tooltip: 'Close',
-                                onPressed: () => Navigator.pop(dialogContext),
+                                onPressed: () => closeGoalDialog(dialogContext),
                                 icon: const Icon(Icons.close_rounded,
                                     color: gdMuted),
                               ),
@@ -1936,7 +1949,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                               ),
                               onPressed: isAiThinking || draftSpecs.isEmpty
                                   ? null
-                                  : () => Navigator.pop(
+                                  : () => closeGoalDialog(
                                         dialogContext,
                                         _GoalPlanApprovalResult(
                                           title: currentTitle,
