@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/gd_colors.dart';
+import '../../core/theme/gd_design.dart';
 import '../../core/utils/date_helpers.dart';
 import '../../models/models.dart';
 import '../../shared/widgets/shared_widgets.dart';
@@ -54,13 +54,13 @@ class PlannerPage extends StatelessWidget {
         ),
         children: [
           AppCard(
-            color: const Color(0xFFEAF1FF),
+            color: gdPrimarySoft,
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(children: const [
+                  Row(children: [
                     Expanded(
                         child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,

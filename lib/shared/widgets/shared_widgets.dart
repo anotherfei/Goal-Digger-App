@@ -3,7 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../../core/constants/gd_constants.dart';
-import '../../core/theme/gd_colors.dart';
+import '../../core/theme/gd_design.dart';
 import '../../core/utils/date_helpers.dart';
 import '../../models/models.dart';
 
@@ -45,26 +45,23 @@ class PageScaffold extends StatelessWidget {
   }
 }
 
+/// The app's base canvas. Deliberately a single flat, calm colour rather than
+/// a gradient: the background is the quietest layer in a focus tool, so it
+/// should add zero visual energy and let content + reward colour do the work.
+/// (Energy/gradients are reserved for gamified surfaces like the pet and
+/// rewards.)
 class AmbientBackground extends StatelessWidget {
   const AmbientBackground({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // Depend on Theme so this repaints when brightness changes. Without it,
+    // `const AmbientBackground()` is never rebuilt on a theme switch and the
+    // canvas colour freezes at the brightness used on first launch.
+    Theme.of(context);
     return Positioned.fill(
       child: IgnorePointer(
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                gdBackground,
-                const Color(0xFFE0F2FE).withValues(alpha: 0.7),
-                const Color(0xFFFCE7F3).withValues(alpha: 0.45),
-              ],
-            ),
-          ),
-        ),
+        child: ColoredBox(color: GdColors.canvas),
       ),
     );
   }
@@ -83,14 +80,8 @@ class AppCard extends StatelessWidget {
       margin: margin,
       decoration: BoxDecoration(
         color: color ?? gdSurface,
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-        ],
+        borderRadius: GdRadius.card,
+        boxShadow: GdShadows.soft,
       ),
       clipBehavior: Clip.antiAlias,
       child: child,
@@ -130,11 +121,11 @@ class PageHero extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title,
-                      style: Theme.of(context).textTheme.headlineMedium),
+                      style: GdText.headlineMedium),
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: gdMuted, fontWeight: FontWeight.w600),
                   ),
                 ],
@@ -157,26 +148,31 @@ class MoodCheckPanel extends StatelessWidget {
   final String selectedMood;
   final ValueChanged<String> onMoodChanged;
 
-  static const _moods = [
-    _MoodOption(
-      label: 'Tired',
+  // A getter so the option colours resolve against the live light/dark tokens
+  // each build instead of baking at first access.
+  static List<_MoodOption> get _moods => [
+        _MoodOption(
+          label: 'Tired',
       icon: Icons.spa_rounded,
-      color: gdGradientWellnessTo,
-      softColor: gdAccentSoft,
+      // Low energy → a calm, restorative green (settle and recover gently).
+      color: GdColors.positive,
+      softColor: GdColors.positiveSoft,
       subtitle: 'Light pace',
     ),
     _MoodOption(
       label: 'Okay',
       icon: Icons.tune_rounded,
-      color: gdPrimary,
-      softColor: gdPrimarySoft,
+      // Balanced → steady brand blue (neutral-positive).
+      color: GdColors.brand,
+      softColor: GdColors.brandSoft,
       subtitle: 'Balanced',
     ),
     _MoodOption(
       label: 'Great',
       icon: Icons.bolt_rounded,
-      color: gdGradientStudyFrom,
-      softColor: Color(0xFFFFF7ED),
+      // High energy → energising warm coral (enthusiasm, push further).
+      color: GdColors.warm,
+      softColor: GdColors.warmSoft,
       subtitle: 'Stretch',
     ),
   ];
@@ -200,14 +196,14 @@ class MoodCheckPanel extends StatelessWidget {
                     color: gdPrimarySoft,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.favorite_rounded,
                     color: gdPrimary,
                     size: 21,
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -302,15 +298,7 @@ class _MoodButton extends StatelessWidget {
             color: selected ? option.color : gdBorder,
             width: selected ? 1.6 : 1,
           ),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: option.color.withValues(alpha: 0.14),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ]
-              : null,
+          boxShadow: selected ? GdShadows.glow(option.color) : null,
         ),
         child: Material(
           color: Colors.transparent,
@@ -327,12 +315,12 @@ class _MoodButton extends StatelessWidget {
                     height: 42,
                     decoration: BoxDecoration(
                       color: selected
-                          ? option.color.withValues(alpha: 0.14)
+                          ? option.color.withValues(alpha: GdAlpha.soft)
                           : gdSurface,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: selected
-                            ? option.color.withValues(alpha: 0.24)
+                            ? option.color.withValues(alpha: GdAlpha.muted)
                             : gdBorder,
                       ),
                     ),
@@ -360,7 +348,7 @@ class _MoodButton extends StatelessWidget {
                     textAlign: TextAlign.center,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: gdMuted,
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
@@ -414,7 +402,7 @@ class ProcessingProgressCard extends StatelessWidget {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(label,
-                            style: Theme.of(context).textTheme.titleMedium),
+                            style: GdText.titleMedium),
                       ),
                     ],
                   ),
@@ -423,7 +411,7 @@ class ProcessingProgressCard extends StatelessWidget {
                     secondsRemaining == 0
                         ? 'Almost ready...'
                         : 'About $secondsRemaining seconds remaining',
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: gdMuted, fontWeight: FontWeight.w700),
                   ),
                 ],
@@ -473,12 +461,12 @@ class TodayProgressCard extends StatelessWidget {
                 children: [
                   Text(
                     'Today',
-                    style: Theme.of(context).textTheme.headlineMedium,
+                    style: GdText.headlineMedium,
                   ),
                   const SizedBox(height: 8),
                   Text(
                     '$completed/$total done',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: gdInk,
                       fontSize: 16,
                       fontWeight: FontWeight.w900,
@@ -487,7 +475,7 @@ class TodayProgressCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     'About $remainingMinutes minutes left',
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: gdMuted, fontWeight: FontWeight.w800),
                   ),
                 ],
@@ -528,7 +516,7 @@ class CircularProgressBadge extends StatelessWidget {
             child: CircularProgressIndicator(
               value: safeProgress,
               strokeWidth: strokeWidth,
-              backgroundColor: const Color(0xFFE2E8F0),
+              backgroundColor: gdBorder,
               color: gdPrimary,
             ),
           ),
@@ -574,7 +562,7 @@ class HelpfulErrorBox extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline_rounded, color: gdError),
+          Icon(Icons.info_outline_rounded, color: gdError),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -582,12 +570,12 @@ class HelpfulErrorBox extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: gdError, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 4),
                 Text(message,
-                    style: const TextStyle(color: gdInk, height: 1.4)),
+                    style: TextStyle(color: gdInk, height: 1.4)),
                 if (showAction) ...[
                   const SizedBox(height: 8),
                   TextButton(onPressed: onAction, child: Text(actionLabel)),
@@ -630,13 +618,13 @@ class EmptyStateCard extends StatelessWidget {
               child: Icon(icon, color: gdPrimary, size: 48),
             ),
             const SizedBox(height: 16),
-            Text(title, style: Theme.of(context).textTheme.headlineMedium),
+            Text(title, style: GdText.headlineMedium),
             const SizedBox(height: 8),
             Text(
               message,
               textAlign: TextAlign.center,
               style:
-                  const TextStyle(color: gdMuted, fontWeight: FontWeight.w600),
+                  TextStyle(color: gdMuted, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 18),
             FilledButton.icon(
@@ -663,11 +651,11 @@ class SectionTitle extends StatelessWidget {
       children: [
         Expanded(
             child:
-                Text(title, style: Theme.of(context).textTheme.headlineMedium)),
+                Text(title, style: GdText.headlineMedium)),
         if (trailing != null)
           Text(
             trailing!,
-            style: const TextStyle(
+            style: TextStyle(
               color: gdMuted,
               fontWeight: FontWeight.w900,
               letterSpacing: 0.4,
@@ -684,27 +672,12 @@ class CategorySelector extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onChanged;
 
-  IconData _iconFor(String category) {
-    switch (category) {
-      case 'Career':
-        return Icons.work_rounded;
-      case 'Wellness':
-        return Icons.favorite_rounded;
-      case 'Finance':
-        return Icons.savings_rounded;
-      case 'Creative':
-        return Icons.palette_rounded;
-      case 'Study':
-        return Icons.school_rounded;
-      default:
-        return Icons.more_horiz_rounded;
-    }
-  }
+  IconData _iconFor(String category) => GdCategory.iconFor(category);
 
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('Category',
+      Text('Category',
           style: TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
       const SizedBox(height: 8),
       Wrap(spacing: 8, runSpacing: 8, children: [
@@ -749,10 +722,10 @@ class StatMiniCard extends StatelessWidget {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Icon(icon, color: gdPrimary),
           const SizedBox(height: 8),
-          Text(value, style: Theme.of(context).textTheme.titleLarge),
+          Text(value, style: GdText.titleLarge),
           Text(label,
               style:
-                  const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                  TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
         ]),
       ),
     );
@@ -770,7 +743,7 @@ class PrioritySelector extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const Text(
+        Text(
           'Priority',
           style: TextStyle(color: gdInk, fontWeight: FontWeight.w900),
         ),
@@ -832,10 +805,10 @@ class GoalCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(task.title,
-                  style: Theme.of(context).textTheme.headlineMedium),
+                  style: GdText.headlineMedium),
               const SizedBox(height: 10),
               Text(goal.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: gdMuted, fontWeight: FontWeight.w800)),
               const SizedBox(height: 16),
               AppCard(
@@ -847,12 +820,12 @@ class GoalCard extends StatelessWidget {
                           style: const TextStyle(fontWeight: FontWeight.w900)),
                       subtitle: Text(
                           'Scheduled on ${longDate(task.scheduledDate)}',
-                          style: const TextStyle(
+                          style: TextStyle(
                               color: gdMuted, fontWeight: FontWeight.w700)))),
               const SizedBox(height: 12),
               Text(
                   task.done ? 'Status: completed' : 'Status: not completed yet',
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: gdInk, fontWeight: FontWeight.w800)),
             ],
           ),
@@ -882,16 +855,16 @@ class GoalCard extends StatelessWidget {
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Expanded(
                   child: Text(goal.title,
-                      style: Theme.of(context).textTheme.titleLarge)),
+                      style: GdText.titleLarge)),
               Chip(
                   backgroundColor: gdPrimarySoft,
                   label: Text(goal.category,
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: gdPrimary, fontWeight: FontWeight.w900))),
               IconButton(
                   tooltip: 'Remove goal',
                   onPressed: onDelete,
-                  icon: const Icon(Icons.close_rounded, color: gdError)),
+                  icon: Icon(Icons.close_rounded, color: gdError)),
             ]),
             const SizedBox(height: 10),
             Row(children: [
@@ -906,7 +879,7 @@ class GoalCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                     Text('$completed/${goal.tasks.length} tasks done',
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: gdMuted, fontWeight: FontWeight.w800)),
                     const SizedBox(height: 6),
                     Row(children: [
@@ -924,11 +897,11 @@ class GoalCard extends StatelessWidget {
                     ]),
                     const SizedBox(height: 6),
                     Row(children: [
-                      const Icon(Icons.star_rounded,
+                      Icon(Icons.star_rounded,
                           size: 18, color: gdStarGold),
                       const SizedBox(width: 4),
                       Text('Priority ${goal.importance}/5',
-                          style: const TextStyle(
+                          style: TextStyle(
                               color: gdMuted, fontWeight: FontWeight.w900)),
                     ]),
                   ])),
@@ -953,17 +926,17 @@ class GoalCard extends StatelessWidget {
               child: ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: EdgeInsets.zero,
-                title: const Text('Subtasks',
+                title: Text('Subtasks',
                     style:
                         TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
                 subtitle: Text(
                   '$completed/${goal.tasks.length} complete',
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: gdMuted, fontWeight: FontWeight.w800),
                 ),
                 children: [
                   if (goal.tasks.isEmpty)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.fromLTRB(0, 4, 0, 8),
                       child: Text('No subtasks scheduled yet.',
                           style: TextStyle(
@@ -1050,11 +1023,7 @@ class MoodAdjustmentNotice extends StatelessWidget {
             : 'Goal Digger keeps today’s tasks at their normal size.';
 
     return AppCard(
-      color: mood == 'Tired'
-          ? const Color(0xFFF0FDF4)
-          : mood == 'Great'
-              ? const Color(0xFFFFF7ED)
-              : gdCardLight,
+      color: GdMood.surface(mood),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Row(
@@ -1069,12 +1038,12 @@ class MoodAdjustmentNotice extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title,
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontWeight: FontWeight.w900, color: gdInk)),
                   const SizedBox(height: 3),
                   Text(
                     message,
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: gdMuted,
                         fontWeight: FontWeight.w700,
                         height: 1.35),
@@ -1144,8 +1113,8 @@ class TaskCard extends StatelessWidget {
   }
 
   Color get _moodChipColor {
-    if (mood == 'Tired') return const Color(0xFFDCFCE7);
-    if (mood == 'Great') return const Color(0xFFFFEDD5);
+    if (mood == 'Tired') return GdColors.positiveSoft;
+    if (mood == 'Great') return GdColors.warmSoft;
     return gdPrimarySoft;
   }
 
@@ -1193,7 +1162,7 @@ class TaskCard extends StatelessWidget {
                               mood == 'Tired'
                                   ? 'Adjusted lighter'
                                   : 'Stretch option',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: gdInk,
                                 fontSize: 11,
                                 fontWeight: FontWeight.w900,
@@ -1205,7 +1174,7 @@ class TaskCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       '${goal.title} · ${shortDate(task.scheduledDate)} · $_adjustedMinutes min · ${task.load.label}',
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: gdMuted, fontWeight: FontWeight.w800),
                     ),
                     const SizedBox(height: 8),
@@ -1216,7 +1185,7 @@ class TaskCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             _moodTip,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 color: gdMuted, fontWeight: FontWeight.w600),
                           ),
                         ),
@@ -1327,7 +1296,7 @@ class RewardTile extends StatelessWidget {
           child: Icon(icon, color: gdPrimary),
         ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
-        subtitle: Text(subtitle, style: const TextStyle(color: gdMuted)),
+        subtitle: Text(subtitle, style: TextStyle(color: gdMuted)),
         trailing: Chip(
           avatar: const Icon(Icons.monetization_on_rounded, size: 18),
           label: Text('$price'),
