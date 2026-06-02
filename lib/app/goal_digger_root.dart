@@ -1842,7 +1842,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                               child: IconButton(
                                 tooltip: 'Close',
                                 onPressed: () => closeGoalDialog(dialogContext),
-                                icon: const Icon(Icons.close_rounded,
+                                icon: Icon(Icons.close_rounded,
                                     color: gdMuted),
                               ),
                             ),
