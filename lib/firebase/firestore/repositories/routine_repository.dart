@@ -8,7 +8,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
-import '../../../../models/models.dart';
+import '../../../models/models.dart';
 import '../firestore_paths.dart';
 import '../firestore_service.dart';
 

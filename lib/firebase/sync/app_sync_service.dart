@@ -9,8 +9,10 @@
 import 'package:flutter/foundation.dart';
 
 import '../../models/models.dart';
+import '../../features/notifications/models/notification_models.dart';
 import '../firestore/repositories/community_repository.dart';
 import '../firestore/repositories/goal_repository.dart';
+import '../firestore/repositories/notification_repository.dart';
 import '../firestore/repositories/routine_repository.dart';
 import '../firestore/repositories/user_repository.dart';
 
@@ -21,16 +23,19 @@ class AppSyncService {
     UserRepository? userRepo,
     CommunityRepository? communityRepo,
     RoutineRepository? routineRepo,
+    NotificationRepository? notificationRepo,
   })  : _goalRepo = goalRepo ?? GoalRepository(),
         _userRepo = userRepo ?? UserRepository(),
         _communityRepo = communityRepo ?? CommunityRepository(),
-        _routineRepo = routineRepo ?? RoutineRepository();
+        _routineRepo = routineRepo ?? RoutineRepository(),
+        _notificationRepo = notificationRepo ?? NotificationRepository();
 
   final String uid;
   final GoalRepository _goalRepo;
   final UserRepository _userRepo;
   final CommunityRepository _communityRepo;
   final RoutineRepository _routineRepo;
+  final NotificationRepository _notificationRepo;
 
   // ── Public streams ───────────────────────────────────────────────────────────
 
@@ -46,6 +51,9 @@ class AppSyncService {
 
   Stream<List<RoutineItem>> get routinesStream =>
       _routineRepo.watchRoutines(uid);
+
+  Stream<List<AppNotification>> get notificationsStream =>
+      _notificationRepo.watchNotifications(uid);
 
   // ── Convenience write delegates ──────────────────────────────────────────────
 
@@ -83,11 +91,13 @@ class AppSyncService {
   Future<void> updatePreferences({
     required bool goalReminders,
     required bool friendProgressSharing,
+    NotificationSettings? notificationSettings,
   }) =>
       _userRepo.updatePreferences(
         uid: uid,
         goalReminders: goalReminders,
         friendProgressSharing: friendProgressSharing,
+        notificationSettings: notificationSettings,
       );
 
   Future<void> updateFriends(List<String> friends) =>
@@ -115,6 +125,19 @@ class AppSyncService {
 
   Future<void> deleteRoutine(String routineId) =>
       _routineRepo.deleteRoutine(uid, routineId);
+
+  // Notifications
+  Future<void> addNotification(AppNotification notification) =>
+      _notificationRepo.addNotification(uid, notification);
+
+  Future<void> markNotificationRead(String notificationId) =>
+      _notificationRepo.markRead(uid, notificationId);
+
+  Future<void> markAllNotificationsRead() =>
+      _notificationRepo.markAllRead(uid);
+
+  Future<void> deleteNotification(String notificationId) =>
+      _notificationRepo.deleteNotification(uid, notificationId);
 
   // ── Cleanup ─────────────────────────────────────────────────────────────────
 

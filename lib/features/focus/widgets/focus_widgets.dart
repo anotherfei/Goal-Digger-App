@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/gd_constants.dart';
 import '../../../core/theme/gd_colors.dart';
+import '../../../core/utils/date_helpers.dart';
 import '../../../models/models.dart';
 import '../../../shared/widgets/shared_widgets.dart';
 
@@ -33,9 +34,14 @@ class FocusSessionConfig {
 }
 
 class FocusSetupSheet extends StatefulWidget {
-  const FocusSetupSheet({super.key, required this.todayTasks});
+  const FocusSetupSheet({
+    super.key,
+    required this.goals,
+    required this.today,
+  });
 
-  final List<MicroTask> todayTasks;
+  final List<GoalProject> goals;
+  final DateTime today;
 
   @override
   State<FocusSetupSheet> createState() => _FocusSetupSheetState();
@@ -65,7 +71,15 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedTask = widget.todayTasks.isEmpty ? null : widget.todayTasks.first;
+    final openTasks = _allOpenTasks();
+    final todayTasks = openTasks
+        .where((task) => dateOnly(task.scheduledDate) == dateOnly(widget.today))
+        .toList();
+    _selectedTask = todayTasks.isNotEmpty
+        ? todayTasks.first
+        : openTasks.isEmpty
+            ? null
+            : openTasks.first;
     _selectedDuration = _selectedTask?.durationMinutes ?? 25;
     _blockedApps = _selectedTask == null
         ? {'Instagram', 'TikTok', 'YouTube'}
@@ -83,6 +97,32 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
     final value = int.tryParse(_customDurationController.text.trim());
     if (value == null || value <= 0) return null;
     return value.clamp(1, 240).toInt();
+  }
+
+  List<MicroTask> _allOpenTasks() {
+    return widget.goals
+        .expand((goal) => goal.tasks)
+        .where((task) => !task.done)
+        .toList();
+  }
+
+  List<MicroTask> _openTasksForGoal(GoalProject goal) {
+    return goal.tasks.where((task) => !task.done).toList()
+      ..sort((a, b) {
+        final aToday = dateOnly(a.scheduledDate) == dateOnly(widget.today);
+        final bToday = dateOnly(b.scheduledDate) == dateOnly(widget.today);
+        if (aToday != bToday) return aToday ? -1 : 1;
+        return a.scheduledDate.compareTo(b.scheduledDate);
+      });
+  }
+
+  void _selectTask(MicroTask task) {
+    setState(() {
+      _selectedTask = task;
+      _selectedDuration = task.durationMinutes;
+      _useCustomDuration = false;
+      _blockUnrelatedApps = true;
+    });
   }
 
   void _startFocus() {
@@ -152,7 +192,7 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
               ],
             ),
             const SizedBox(height: 20),
-            Text('1. Choose today’s goal', style: Theme.of(context).textTheme.titleMedium),
+            Text('1. Choose focus task', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 10),
             AppCard(
               color: gdCardLight,
@@ -176,29 +216,26 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
                             });
                           },
                         ),
-                        for (final task in widget.todayTasks)
-                          ChoiceChip(
-                            selected: identical(_selectedTask, task),
-                            avatar: Icon(task.load.icon, size: 18),
-                            label: Text('${task.title} · ${task.durationMinutes}m'),
-                            onSelected: (_) {
-                              setState(() {
-                                _selectedTask = task;
-                                _selectedDuration = task.durationMinutes;
-                                _useCustomDuration = false;
-                                _blockUnrelatedApps = true;
-                              });
-                            },
-                          ),
                       ],
                     ),
-                    if (widget.todayTasks.isEmpty) ...[
+                    const SizedBox(height: 10),
+                    if (_allOpenTasks().isEmpty) ...[
                       const SizedBox(height: 10),
                       const Text(
-                        'No unfinished goal is scheduled for today, so this will start a custom focus session.',
+                        'No unfinished subtasks yet, so this will start a custom focus session.',
                         style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
                       ),
-                    ],
+                    ] else
+                      for (final goal in widget.goals.where(
+                        (goal) => _openTasksForGoal(goal).isNotEmpty,
+                      ))
+                        _GoalTaskExpansionTile(
+                          goal: goal,
+                          tasks: _openTasksForGoal(goal),
+                          today: widget.today,
+                          selectedTask: _selectedTask,
+                          onSelectTask: _selectTask,
+                        ),
                   ],
                 ),
               ),
@@ -332,6 +369,71 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
         ),
       ),
       ),
+    );
+  }
+}
+
+class _GoalTaskExpansionTile extends StatelessWidget {
+  const _GoalTaskExpansionTile({
+    required this.goal,
+    required this.tasks,
+    required this.today,
+    required this.selectedTask,
+    required this.onSelectTask,
+  });
+
+  final GoalProject goal;
+  final List<MicroTask> tasks;
+  final DateTime today;
+  final MicroTask? selectedTask;
+  final ValueChanged<MicroTask> onSelectTask;
+
+  @override
+  Widget build(BuildContext context) {
+    final todayCount = tasks
+        .where((task) => dateOnly(task.scheduledDate) == dateOnly(today))
+        .length;
+    final selectedInGoal = selectedTask != null && selectedTask!.goalId == goal.id;
+
+    return ExpansionTile(
+      initiallyExpanded: selectedInGoal || todayCount > 0,
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: const EdgeInsets.only(bottom: 8),
+      leading: CircleAvatar(
+        backgroundColor: gdPrimarySoft,
+        child: Icon(Icons.flag_rounded, color: goal.from),
+      ),
+      title: Text(
+        goal.title,
+        style: const TextStyle(fontWeight: FontWeight.w900, color: gdInk),
+      ),
+      subtitle: Text(
+        '${tasks.length} open subtasks${todayCount == 0 ? '' : ' - $todayCount today'}',
+        style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+      ),
+      children: [
+        for (final task in tasks)
+          ListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.only(left: 12, right: 4),
+            leading: Icon(task.load.icon, color: gdPrimary),
+            title: Text(
+              task.title,
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+            subtitle: Text(
+              '${shortDate(task.scheduledDate)} - ${task.durationMinutes}m - ${task.load.label}',
+              style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+            ),
+            trailing: Icon(
+              identical(selectedTask, task)
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              color: identical(selectedTask, task) ? gdPrimary : gdMuted,
+            ),
+            onTap: () => onSelectTask(task),
+          ),
+      ],
     );
   }
 }

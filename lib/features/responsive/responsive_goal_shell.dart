@@ -15,6 +15,9 @@ class ResponsiveGoalShell extends StatelessWidget {
     required this.onFocusMode,
     required this.onProfile,
     required this.onSettings,
+    required this.onNotifications,
+    required this.unreadNotifications,
+    required this.importantUnreadNotifications,
     required this.hasActiveFocus,
     required this.focusLabel,
   });
@@ -26,6 +29,9 @@ class ResponsiveGoalShell extends StatelessWidget {
   final VoidCallback onFocusMode;
   final VoidCallback onProfile;
   final VoidCallback onSettings;
+  final VoidCallback onNotifications;
+  final int unreadNotifications;
+  final int importantUnreadNotifications;
   final bool hasActiveFocus;
   final String? focusLabel;
 
@@ -53,6 +59,14 @@ class ResponsiveGoalShell extends StatelessWidget {
         centerTitle: true,
         title: const Text('Goal Digger'),
         actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: _NotificationIconButton(
+              unreadCount: unreadNotifications,
+              importantUnreadCount: importantUnreadNotifications,
+              onPressed: onNotifications,
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: IconButton.filledTonal(
@@ -103,6 +117,60 @@ class ResponsiveGoalShell extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _NotificationIconButton extends StatelessWidget {
+  const _NotificationIconButton({
+    required this.unreadCount,
+    required this.importantUnreadCount,
+    required this.onPressed,
+  });
+
+  final int unreadCount;
+  final int importantUnreadCount;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final badgeText = unreadCount > 9 ? '9+' : '$unreadCount';
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        IconButton.filledTonal(
+          tooltip: 'Notifications',
+          onPressed: onPressed,
+          icon: Icon(
+            importantUnreadCount > 0
+                ? Icons.notification_important_rounded
+                : Icons.notifications_rounded,
+          ),
+        ),
+        if (unreadCount > 0)
+          Positioned(
+            right: -2,
+            top: -2,
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: importantUnreadCount > 0 ? gdWarning : gdPrimary,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: gdSurface, width: 2),
+              ),
+              child: Text(
+                badgeText,
+                style: const TextStyle(
+                  color: gdOnDark,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

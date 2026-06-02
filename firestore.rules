@@ -16,6 +16,68 @@ service cloud.firestore {
       return val is string && val.size() > 0 && val.size() <= maxLen;
     }
 
+    function validOptionalString(val, maxLen) {
+      return val == null || (val is string && val.size() <= maxLen);
+    }
+
+    function validNotificationType(type) {
+      return type in [
+        'dailyPlan',
+        'taskReminder',
+        'streakSaver',
+        'deadlineWarning',
+        'routineReminder',
+        'focusComplete',
+        'moodNudge',
+        'reward',
+        'community',
+        'important'
+      ];
+    }
+
+    function validNotificationDelivery(delivery) {
+      return delivery in ['system', 'inApp'];
+    }
+
+    function validNotification(data, notificationId) {
+      return data.keys().hasOnly([
+          'id',
+          'title',
+          'body',
+          'type',
+          'delivery',
+          'createdAt',
+          'readAt',
+          'important',
+          'sourceId',
+          'payload',
+          'updatedAt'
+        ])
+        && data.keys().hasAll([
+          'id',
+          'title',
+          'body',
+          'type',
+          'delivery',
+          'createdAt',
+          'important'
+        ])
+        && validString(data.id, 140)
+        && data.id == notificationId
+        && validString(data.title, 120)
+        && data.body is string
+        && data.body.size() <= 500
+        && validNotificationType(data.type)
+        && validNotificationDelivery(data.delivery)
+        && data.createdAt is timestamp
+        && validOptionalString(data.sourceId, 140)
+        && (data.readAt == null || data.readAt is timestamp)
+        && data.important is bool
+        && (data.payload == null ||
+          (data.payload is map && data.payload.keys().size() <= 10))
+        && (data.updatedAt == null || data.updatedAt is timestamp);
+    }
+
     // ── User profiles ─────────────────────────────────────────────────────────
     // Users can read/write only their own profile document.
     match /users/{uid} {
@@ -36,6 +98,18 @@ service cloud.firestore {
     // Written exclusively by Firebase Functions (Admin SDK bypasses rules).
     // Users can read their own memory (e.g. to display streak analytics),
     // but cannot write directly — all writes go through Cloud Functions.
+    // Notifications / inbox
+    match /users/{uid}/notifications/{notificationId} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid)
+        && validNotification(request.resource.data, notificationId);
+      allow update: if isOwner(uid)
+        && validNotification(request.resource.data, notificationId)
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(uid);
+    }
+
     match /agent_memory/{uid} {
       allow read:  if isOwner(uid);
       allow write: if false; // Cloud Functions (Admin SDK) only
