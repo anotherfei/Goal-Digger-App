@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../core/constants/gd_constants.dart';
@@ -104,6 +105,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   Timer? _notificationScheduleDebounce;
   bool _notificationBridgeReady = false;
   bool _notificationPermissionPrompted = false;
+  Future<bool>? _notificationPermissionRequest;
 
   // Auth listener wiring — avoids calling side-effecting _bindAuthState
   // inside build(), which can trigger setState-during-build violations.
@@ -138,7 +140,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   FocusSessionConfig? _activeFocusConfig;
   int _focusRemainingSeconds = 0;
   bool _focusPaused = false;
+  bool _focusCompletionHandled = false;
   Timer? _focusTimer;
+  final Set<String> _sentDeadlineSystemNoticeIds = {};
 
   bool get _hasActiveFocus =>
       _activeFocusConfig != null && _focusRemainingSeconds > 0;
@@ -265,6 +269,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _moodAdviceTimer?.cancel();
     _moodAdviceRequestSerial++;
     _moodAdvisorAvailable = true;
+    _notificationPermissionRequest = null;
     _disposeSync();
     setState(() {
       _onboarded = false;
@@ -275,6 +280,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _routines = _defaultRoutines();
       _notifications = [];
       _locallyReadNotificationIds.clear();
+      _sentDeadlineSystemNoticeIds.clear();
       _notificationSettings = const NotificationSettings.defaults();
       _goalReminders = _notificationSettings.systemNotificationsEnabled;
       _friends = ['Maya Chen', 'Leo Tan', 'Ari Putra'];
@@ -606,6 +612,11 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     );
   }
 
+  void _showCoinRewardPrompt(int coins, String reason) {
+    if (coins <= 0) return;
+    _showMessage('${_activePetSkin.name} says: +$coins coins $reason.');
+  }
+
   void _showHelpfulError({
     required String title,
     required String message,
@@ -669,7 +680,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         id: 'important_android_notifications_disabled',
         title: 'Android notifications are off',
         body:
-            'Goal Digger cannot show task, routine, streak, deadline, or focus pop-ups until notification permission is enabled.',
+            'Goal Digger cannot show routine, streak, deadline, or focus pop-ups until notification permission is enabled.',
         type: AppNotificationType.important,
         important: true,
         sourceId: 'android_permission',
@@ -693,9 +704,47 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   Future<bool> _ensureAndroidNotificationPermission() async {
     if (await _androidNotifications.areNotificationsEnabled()) return true;
+    final pendingRequest = _notificationPermissionRequest;
+    if (pendingRequest != null) return pendingRequest;
     if (_notificationPermissionPrompted) return false;
     _notificationPermissionPrompted = true;
-    return _androidNotifications.requestPermission();
+    final request = () async {
+      final granted = await _androidNotifications.requestPermission();
+      if (!granted) return false;
+      return _androidNotifications.areNotificationsEnabled();
+    }();
+    _notificationPermissionRequest = request;
+    try {
+      return await request;
+    } finally {
+      _notificationPermissionRequest = null;
+    }
+  }
+
+  Future<void> _showSystemNotificationNow({
+    required String key,
+    required String title,
+    required String body,
+    required AppNotificationType type,
+    bool important = false,
+    String? sourceId,
+  }) async {
+    if (!_androidNotifications.isSupported) return;
+    if (!_notificationBridgeReady) {
+      _notificationBridgeReady = await _androidNotifications.initialize();
+    }
+    final allowed = await _ensureAndroidNotificationPermission();
+    if (!allowed) return;
+
+    final id = _stableNotificationId(key);
+    await _androidNotifications.cancel(id);
+    await _androidNotifications.showNow(
+      id: id,
+      title: title,
+      body: body,
+      important: important,
+      payload: '${type.name}:${sourceId ?? key}',
+    );
   }
 
   List<_SystemNotificationRequest> _buildSystemNotificationRequests() {
@@ -749,35 +798,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           type: AppNotificationType.dailyPlan,
           sourceId: dateKey(day),
         );
-      }
-    }
-
-    if (_notificationSettings.taskRemindersEnabled) {
-      for (var offset = 0; offset < 14; offset++) {
-        final day = addDays(start, offset);
-        final tasks = _unfinishedTasksForDay(day);
-        for (var index = 0; index < tasks.length; index++) {
-          final task = tasks[index];
-          final goal = _goalForTask(task);
-          final taskWindow = _dateAtNotificationTime(
-            day,
-            _notificationSettings.dailyPlanHour,
-            _notificationSettings.dailyPlanMinute,
-          ).add(Duration(minutes: 90 + index * 12));
-          addRequest(
-            key: 'task_${task.id}_${dateKey(day)}',
-            title: task.title,
-            body:
-                '${goal.title} - ${task.durationMinutes} min ${task.load.label.toLowerCase()} task.',
-            scheduledAt: taskWindow.subtract(
-              Duration(
-                minutes: _notificationSettings.taskReminderLeadMinutes,
-              ),
-            ),
-            type: AppNotificationType.taskReminder,
-            sourceId: task.id.toString(),
-          );
-        }
       }
     }
 
@@ -941,7 +961,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     return hash == 0 ? 1 : hash;
   }
 
-  void _addInAppNotification({
+  bool _addInAppNotification({
     String? id,
     required String title,
     required String body,
@@ -950,12 +970,16 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     String? sourceId,
     Map<String, dynamic>? payload,
   }) {
-    if (!important && !_notificationSettings.inAppNotificationsEnabled) return;
-    if (important && !_notificationSettings.importantInAppEnabled) return;
+    if (!important && !_notificationSettings.inAppNotificationsEnabled) {
+      return false;
+    }
+    if (important && !_notificationSettings.importantInAppEnabled) {
+      return false;
+    }
 
     final notificationId =
         id ?? 'local_${DateTime.now().microsecondsSinceEpoch}';
-    if (_notifications.any((item) => item.id == notificationId)) return;
+    if (_notifications.any((item) => item.id == notificationId)) return false;
 
     final notification = AppNotification(
       id: notificationId,
@@ -981,6 +1005,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     }
 
     if (important) _showImportantNotificationSnack(notification);
+    return true;
   }
 
   void _showImportantNotificationSnack(AppNotification notification) {
@@ -1002,22 +1027,37 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   void _ensureImportantDeadlineNotifications() {
-    if (!_notificationSettings.importantInAppEnabled) return;
     final todayKey = dateKey(today);
     for (final goal in _goals.where((goal) => goal.progress < 1)) {
       final daysLeft = daysBetween(today, goal.deadline);
       if (daysLeft > 1) continue;
       final id = 'important_deadline_${goal.id}_$todayKey';
+      final title = daysLeft < 0 ? 'Goal is overdue' : 'Goal deadline is near';
+      final body = daysLeft < 0
+          ? '${goal.title} is overdue. Pick one unfinished task to regain control.'
+          : '${goal.title} is due ${daysLeft == 0 ? 'today' : 'tomorrow'}.';
       _addInAppNotification(
         id: id,
-        title: daysLeft < 0 ? 'Goal is overdue' : 'Goal deadline is near',
-        body: daysLeft < 0
-            ? '${goal.title} is overdue. Pick one unfinished task to regain control.'
-            : '${goal.title} is due ${daysLeft == 0 ? 'today' : 'tomorrow'}.',
+        title: title,
+        body: body,
         type: AppNotificationType.important,
         important: true,
         sourceId: goal.id.toString(),
       );
+      if (_notificationSettings.systemNotificationsEnabled &&
+          _notificationSettings.deadlineWarningsEnabled &&
+          _sentDeadlineSystemNoticeIds.add(id)) {
+        unawaited(
+          _showSystemNotificationNow(
+            key: 'system_$id',
+            title: title,
+            body: body,
+            type: AppNotificationType.deadlineWarning,
+            important: true,
+            sourceId: goal.id.toString(),
+          ),
+        );
+      }
     }
   }
 
@@ -1030,6 +1070,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           onMarkRead: _markNotificationRead,
           onMarkAllRead: _markAllNotificationsRead,
           onDelete: _deleteNotification,
+          onOpenNotificationSettings: _openAndroidNotificationSettings,
         ),
       ),
     );
@@ -2003,11 +2044,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       }
     });
     if (task.done) {
-      _addInAppNotification(
-        title: 'Reward earned',
-        body: '+${task.points} coins for completing "${task.title}".',
-        type: AppNotificationType.reward,
-        sourceId: task.id.toString(),
+      _showCoinRewardPrompt(
+        task.points,
+        'for completing "${task.title}"',
       );
     }
     unawaited(_persistTaskToggle(goal, task));
@@ -2291,16 +2330,47 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _activeFocusConfig = config;
       _focusRemainingSeconds = config.durationMinutes * 60;
       _focusPaused = false;
+      _focusCompletionHandled = false;
     });
     _focusTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
       if (_focusPaused) return;
       setState(
           () => _focusRemainingSeconds = max(0, _focusRemainingSeconds - 1));
-      if (_focusRemainingSeconds == 0) timer.cancel();
+      if (_focusRemainingSeconds == 0) {
+        timer.cancel();
+        _handleFocusSessionCompleted();
+      }
     });
     _queueNotificationScheduleSync();
     _openActiveFocusDialog();
+  }
+
+  void _handleFocusSessionCompleted() {
+    final config = _activeFocusConfig;
+    if (_focusCompletionHandled || config == null) return;
+    _focusCompletionHandled = true;
+    _focusTimer?.cancel();
+    unawaited(SystemSound.play(SystemSoundType.alert));
+    _showMessage('Focus session complete. Nice work.');
+    if (_notificationSettings.systemNotificationsEnabled &&
+        _notificationSettings.focusNotificationsEnabled) {
+      unawaited(_showFocusCompleteSystemNotification(config));
+    }
+    _queueNotificationScheduleSync();
+  }
+
+  Future<void> _showFocusCompleteSystemNotification(
+    FocusSessionConfig config,
+  ) {
+    return _showSystemNotificationNow(
+      key: 'focus_complete',
+      title: 'Focus session complete',
+      body: '${config.title} is ready to wrap up.',
+      type: AppNotificationType.focusComplete,
+      important: true,
+      sourceId: config.title,
+    );
   }
 
   void _openActiveFocusDialog() {
@@ -2341,6 +2411,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   void _stopFocusSession() {
     final config = _activeFocusConfig;
     final completed = _focusRemainingSeconds <= 0;
+    if (completed) _handleFocusSessionCompleted();
     _focusTimer?.cancel();
 
     if (completed && config?.task != null && config!.task!.done == false) {
@@ -2351,6 +2422,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _activeFocusConfig = null;
       _focusRemainingSeconds = 0;
       _focusPaused = false;
+      _focusCompletionHandled = false;
     });
     _queueNotificationScheduleSync();
     Navigator.of(context, rootNavigator: true).maybePop();
@@ -2382,14 +2454,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           _petHappiness = min(100, _petHappiness + 4);
         });
         unawaited(_persistProfileStats());
-        _addInAppNotification(
-          title: 'Focus reward earned',
-          body: '+${insight.coinsEarned} coins for finishing ${config.durationMinutes} focused minutes.',
-          type: AppNotificationType.reward,
-          sourceId: config.title,
+        _showMessage(
+          '${_activePetSkin.name} says: +${insight.coinsEarned} coins for finishing ${config.durationMinutes} focused minutes. AI focus insight: ${insight.insight}',
         );
+      } else {
+        _showMessage('AI focus insight: ${insight.insight}');
       }
-      _showMessage('AI focus insight: ${insight.insight}');
     } catch (e) {
       debugPrint('Focus insight unavailable: $e');
     }

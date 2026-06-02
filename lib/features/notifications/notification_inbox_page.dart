@@ -12,12 +12,14 @@ class NotificationInboxPage extends StatefulWidget {
     required this.onMarkRead,
     required this.onMarkAllRead,
     required this.onDelete,
+    this.onOpenNotificationSettings,
   });
 
   final List<AppNotification> notifications;
   final ValueChanged<AppNotification> onMarkRead;
   final VoidCallback onMarkAllRead;
   final ValueChanged<AppNotification> onDelete;
+  final VoidCallback? onOpenNotificationSettings;
 
   @override
   State<NotificationInboxPage> createState() => _NotificationInboxPageState();
@@ -73,67 +75,70 @@ class _NotificationInboxPageState extends State<NotificationInboxPage> {
         ],
       ),
       body: SafeArea(
-        child: _visibleNotifications.isEmpty
-            ? ListView(
-                padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
-                children: [
-                  EmptyStateCard(
-                    icon: Icons.notifications_none_rounded,
-                    title: 'No notifications yet',
-                    message:
-                        'Important updates, rewards, community activity, and AI nudges will appear here.',
-                    cta: 'Close',
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              )
-            : ListView(
-                padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
-                children: [
-                  if (importantUnread.isNotEmpty) ...[
-                    SectionTitle(
-                      title: 'Important',
-                      trailing: '${importantUnread.length} unread',
-                    ),
-                    const SizedBox(height: 10),
-                    for (final notification in importantUnread)
-                      _NotificationTile(
-                        notification: notification,
-                        highlight: true,
-                        onMarkRead: () => _markRead(notification),
-                        onDelete: () => _delete(notification),
-                      ),
-                    const SizedBox(height: 12),
-                  ],
-                  SectionTitle(
-                    title: importantUnread.isEmpty
-                        ? 'All notifications'
-                        : 'Other notifications',
-                    trailing: unreadCount == 0 ? 'All read' : '$unreadCount unread',
-                  ),
-                  const SizedBox(height: 10),
-                  if (regularNotifications.isEmpty)
-                    const AppCard(
-                      child: Padding(
-                        padding: EdgeInsets.all(18),
-                        child: Text(
-                          'No other notifications.',
-                          style: TextStyle(
-                            color: gdMuted,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ),
-                  for (final notification in regularNotifications)
-                    _NotificationTile(
-                      notification: notification,
-                      highlight: notification.important && notification.isUnread,
-                      onMarkRead: () => _markRead(notification),
-                      onDelete: () => _delete(notification),
-                    ),
-                ],
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
+          children: [
+            if (widget.onOpenNotificationSettings != null) ...[
+              _NotificationSettingsSection(
+                onOpen: widget.onOpenNotificationSettings!,
               ),
+              const SizedBox(height: 14),
+            ],
+            if (_visibleNotifications.isEmpty)
+              EmptyStateCard(
+                icon: Icons.notifications_none_rounded,
+                title: 'No notifications yet',
+                message:
+                    'Important updates, rewards, community activity, and AI nudges will appear here.',
+                cta: 'Close',
+                onPressed: () => Navigator.pop(context),
+              )
+            else ...[
+              if (importantUnread.isNotEmpty) ...[
+                SectionTitle(
+                  title: 'Important',
+                  trailing: '${importantUnread.length} unread',
+                ),
+                const SizedBox(height: 10),
+                for (final notification in importantUnread)
+                  _NotificationTile(
+                    notification: notification,
+                    highlight: true,
+                    onMarkRead: () => _markRead(notification),
+                    onDelete: () => _delete(notification),
+                  ),
+                const SizedBox(height: 12),
+              ],
+              SectionTitle(
+                title: importantUnread.isEmpty
+                    ? 'All notifications'
+                    : 'Other notifications',
+                trailing: unreadCount == 0 ? 'All read' : '$unreadCount unread',
+              ),
+              const SizedBox(height: 10),
+              if (regularNotifications.isEmpty)
+                const AppCard(
+                  child: Padding(
+                    padding: EdgeInsets.all(18),
+                    child: Text(
+                      'No other notifications.',
+                      style: TextStyle(
+                        color: gdMuted,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              for (final notification in regularNotifications)
+                _NotificationTile(
+                  notification: notification,
+                  highlight: notification.important && notification.isUnread,
+                  onMarkRead: () => _markRead(notification),
+                  onDelete: () => _delete(notification),
+                ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -167,6 +172,43 @@ class _NotificationInboxPageState extends State<NotificationInboxPage> {
           .toList();
     });
     widget.onDelete(notification);
+  }
+}
+
+class _NotificationSettingsSection extends StatelessWidget {
+  const _NotificationSettingsSection({required this.onOpen});
+
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: ListTile(
+        minVerticalPadding: 12,
+        leading: const CircleAvatar(
+          backgroundColor: gdPrimarySoft,
+          child: Icon(Icons.settings_applications_rounded, color: gdPrimary),
+        ),
+        title: const Text(
+          'Android notification settings',
+          style: TextStyle(color: gdInk, fontWeight: FontWeight.w900),
+        ),
+        subtitle: const Text(
+          'Open system settings for sounds, permission, and notification bar behavior.',
+          style: TextStyle(
+            color: gdMuted,
+            fontWeight: FontWeight.w700,
+            height: 1.35,
+          ),
+        ),
+        trailing: IconButton(
+          tooltip: 'Open Android notification settings',
+          icon: const Icon(Icons.open_in_new_rounded),
+          onPressed: onOpen,
+        ),
+        onTap: onOpen,
+      ),
+    );
   }
 }
 

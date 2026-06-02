@@ -62,7 +62,7 @@ class NotificationSettings {
   const NotificationSettings.defaults()
       : systemNotificationsEnabled = true,
         dailyPlanEnabled = true,
-        taskRemindersEnabled = true,
+        taskRemindersEnabled = false,
         streakSaverEnabled = true,
         deadlineWarningsEnabled = true,
         routineRemindersEnabled = true,
@@ -95,7 +95,6 @@ class NotificationSettings {
   bool get hasAnySystemNotification =>
       systemNotificationsEnabled &&
       (dailyPlanEnabled ||
-          taskRemindersEnabled ||
           streakSaverEnabled ||
           deadlineWarningsEnabled ||
           routineRemindersEnabled ||

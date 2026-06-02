@@ -211,7 +211,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
                       subtitle: Text(
-                        'Daily plan, task, streak, deadline, routine, and focus pop-ups.',
+                        'Daily plan, streak, deadline, routine, and focus pop-ups.',
                         style: TextStyle(
                           color: gdMuted,
                           fontWeight: FontWeight.w700,
@@ -227,17 +227,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onChanged: (value) => onNotificationSettingsChanged(
                         notificationSettings.copyWith(
                           dailyPlanEnabled: value,
-                        ),
-                      ),
-                    ),
-                    _NotificationSwitch(
-                      value: notificationSettings.taskRemindersEnabled,
-                      enabled: goalReminders,
-                      title: 'Task reminders',
-                      subtitle: 'A pop-up for unfinished scheduled tasks.',
-                      onChanged: (value) => onNotificationSettingsChanged(
-                        notificationSettings.copyWith(
-                          taskRemindersEnabled: value,
                         ),
                       ),
                     ),
@@ -292,7 +281,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         style: TextStyle(fontWeight: FontWeight.w900),
                       ),
                       subtitle: const Text(
-                        'Also used as the base time for dated tasks.',
+                        'Also used as the base time for deadline alerts.',
                         style: TextStyle(
                           color: gdMuted,
                           fontWeight: FontWeight.w700,
@@ -362,38 +351,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             minute: notificationSettings.streakSaverMinute,
                           ).format(context),
                         ),
-                      ),
-                    ),
-                    ListTile(
-                      title: const Text(
-                        'Task lead time',
-                        style: TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      subtitle: const Text(
-                        'Used when a task has a specific date but no time.',
-                        style: TextStyle(
-                          color: gdMuted,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      trailing: DropdownButton<int>(
-                        value: notificationSettings.taskReminderLeadMinutes,
-                        onChanged: goalReminders
-                            ? (value) {
-                                if (value == null) return;
-                                onNotificationSettingsChanged(
-                                  notificationSettings.copyWith(
-                                    taskReminderLeadMinutes: value,
-                                  ),
-                                );
-                              }
-                            : null,
-                        items: const [
-                          DropdownMenuItem(value: 5, child: Text('5 min')),
-                          DropdownMenuItem(value: 15, child: Text('15 min')),
-                          DropdownMenuItem(value: 30, child: Text('30 min')),
-                          DropdownMenuItem(value: 60, child: Text('1 hr')),
-                        ],
                       ),
                     ),
                     ListTile(
