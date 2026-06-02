@@ -2136,16 +2136,52 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   void _deleteGoal(GoalProject goal) {
-    setState(() => _goals.removeWhere((item) => item.id == goal.id));
-    final sync = _sync;
-    if (sync != null) {
-      unawaited(sync.deleteGoal(goal.id.toString()).catchError((Object e) {
-        debugPrint('Delete goal sync failed: $e');
-      }));
+  setState(() => _goals.removeWhere((item) => item.id == goal.id));
+
+  unawaited(_deleteGoalEverywhere(goal));
+
+  _queueNotificationScheduleSync();
+  _showMessage('Removed ${goal.title}.');
+}
+
+Future<void> _deleteGoalEverywhere(GoalProject goal) async {
+  final user = context.read<AuthService>().currentUser;
+
+  if (user != null && !user.isAnonymous) {
+    try {
+      final deletedEvents = await context
+          .read<GoogleCalendarService>()
+          .deleteTaskEventsForGoal(goal);
+
+      debugPrint(
+        'Deleted $deletedEvents Google Calendar events for goal ${goal.title}.',
+      );
+    } catch (e) {
+      debugPrint('Google Calendar goal cleanup failed: $e');
+
+      if (mounted) {
+        _showMessage(
+          'Goal removed, but Google Calendar cleanup failed.',
+        );
+      }
     }
-    _queueNotificationScheduleSync();
-    _showMessage('Removed ${goal.title}.');
   }
+
+  final sync = _sync;
+
+  if (sync != null) {
+    try {
+      await sync.deleteGoal(goal.id.toString());
+    } catch (e) {
+      debugPrint('Delete goal sync failed: $e');
+
+      if (mounted) {
+        _showMessage('Goal removed locally, but Firebase delete failed.');
+      }
+    }
+  }
+}
+
 
   void _addCommunity() {
     final title = _communityController.text.trim();
