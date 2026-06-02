@@ -49,6 +49,16 @@ class _DraftTaskSpec {
       '$title · $durationMinutes min · ${load.label} · Day ${dayOffset + 1}';
 }
 
+class _GoalPlanApprovalResult {
+  const _GoalPlanApprovalResult({
+    required this.title,
+    required this.tasks,
+  });
+
+  final String title;
+  final List<_DraftTaskSpec> tasks;
+}
+
 class _SystemNotificationRequest {
   const _SystemNotificationRequest({
     required this.id,
@@ -1240,6 +1250,18 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     if (picked != null) setState(() => _newGoalDeadline = picked);
   }
 
+  String _goalGuardReplyFromPlan(AgentPlannerResponse plan) {
+    final reason = plan.goalRejectionReason?.trim();
+    final prompt = plan.goalRefinementPrompt?.trim();
+    final parts = [
+      if (reason != null && reason.isNotEmpty) reason,
+      if (prompt != null && prompt.isNotEmpty) prompt,
+    ];
+    return parts.isEmpty
+        ? "I can't generate todos for this goal as written. Please redefine it as a clear, constructive, achievable outcome."
+        : parts.join('\n\n');
+  }
+
   void _createGoalWithProgress() {
     final title = _goalController.text.trim();
     if (title.isEmpty) {
@@ -1262,7 +1284,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     try {
       await _runGoalBreakdownDialog(title, chatController);
     } finally {
-      // Guaranteed disposal — regardless of how the dialog was dismissed.
+      FocusManager.instance.primaryFocus?.unfocus();
+      await WidgetsBinding.instance.endOfFrame;
+      // Guaranteed disposal after the dialog route has torn down its frame.
       chatController.dispose();
     }
   }
@@ -1325,12 +1349,14 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   Future<void> _runGoalBreakdownDialog(
       String title, TextEditingController chatController) async {
     final ai = context.read<GenkitService>();
-    final fallbackSpecs = _draftSpecsFromTitles(_generateTaskTitles(title));
     final deadlineDays =
         max(1, dateOnly(_newGoalDeadline).difference(today).inDays);
-    var draftSpecs = List<_DraftTaskSpec>.from(fallbackSpecs);
+    var currentTitle = title;
+    var draftSpecs = <_DraftTaskSpec>[];
     var aiAvailable = false;
     var fromAgent = false;
+    var awaitingGoalRefinement = false;
+    String? guardReply;
     String? agentStrategy;
     String? agentHabitInsight;
     String? agentRecommendation;
@@ -1338,6 +1364,72 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     String? agentBurnoutRisk;
     var agentDegraded = false;
     List<_DraftTaskSpec> agentSpecs = const [];
+    const guardUnavailableReply =
+        "I can't verify this goal right now, so I won't generate todos for it.\n\nPlease try again, or rewrite it as a clear, constructive, achievable real-world outcome.";
+
+    Map<String, dynamic> agentContext(
+        {String? specialRequest, bool force = false}) {
+      return {
+        'category': _newGoalCategory,
+        'priority': _newGoalPriority,
+        'deadlineDays': deadlineDays,
+        'completedToday': _todayCompleted,
+        'totalToday': _todayTasks.length,
+        'mood': _selectedMood,
+        'streak': _streak,
+        if (specialRequest != null) 'specialRequest': specialRequest,
+        if (force) 'force': true,
+      };
+    }
+
+    Future<AgentPlannerResponse> requestAgentPlan(
+      String goal, {
+      String? specialRequest,
+      bool force = false,
+    }) {
+      return ai.agentPlanner.plan(
+        AgentPlannerRequest(
+          goal: goal,
+          context: agentContext(specialRequest: specialRequest, force: force),
+        ),
+      );
+    }
+
+    void closeGoalDialog(
+      BuildContext dialogContext, [
+      _GoalPlanApprovalResult? result,
+    ]) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      Navigator.of(dialogContext, rootNavigator: true)
+          .pop<_GoalPlanApprovalResult>(result);
+    }
+
+    Future<List<_DraftTaskSpec>> generatedOrLocalSpecs(String goal) async {
+      try {
+        final generated = await ai.taskGenerator.generate(
+          TaskGeneratorRequest(
+            goalTitle: goal,
+            category: _newGoalCategory,
+            priority: _newGoalPriority,
+            deadlineDays: deadlineDays,
+          ),
+        );
+        final aiSpecs = _draftSpecsFromGeneratedTasks(generated.tasks).toList();
+        if (aiSpecs.isNotEmpty) return aiSpecs;
+      } catch (e) {
+        debugPrint('AI task generation fallback used: $e');
+      }
+      return _draftSpecsFromTitles(_generateTaskTitles(goal)).toList();
+    }
+
+    void captureAgentMetadata(AgentPlannerResponse plan) {
+      agentStrategy = plan.strategy;
+      agentDegraded = plan.degraded;
+      agentHabitInsight = plan.habitInsight;
+      agentRecommendation = plan.primaryInsight;
+      agentBurnoutRisk = plan.burnoutRisk;
+      agentScheduleNote = plan.schedule['scheduleNote']?.toString();
+    }
 
     // Block the UI with a non-dismissible loader while the agent generates the
     // first plan, so the user can't tap other things mid-generation.
@@ -1348,111 +1440,104 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       showDialog<void>(
         context: context,
         barrierDismissible: false,
+        useRootNavigator: true,
         builder: (_) => _buildGeneratingLoader('Generating your plan…'),
       );
     }
 
-    // Step 1: Run the planning agent. It plans, executes tools (habit analysis,
-    // milestones, burnout-aware scheduling) and reflects — we consume ALL of it.
+    // Step 1: Run the planning agent. Its first backend step is goal_guard.ts;
+    // without that AI guard result, this dialog must not create tasks.
     try {
-      final agentPlan = await ai.agentPlanner.plan(
-        AgentPlannerRequest(
-          goal: title,
-          context: {
-            'category': _newGoalCategory,
-            'priority': _newGoalPriority,
-            'deadlineDays': deadlineDays,
-            'completedToday': _todayCompleted,
-            'totalToday': _todayTasks.length,
-            'mood': _selectedMood,
-            'streak': _streak,
-          },
-        ),
-      );
-      agentStrategy = agentPlan.strategy;
-      agentDegraded = agentPlan.degraded;
-      agentHabitInsight = agentPlan.habitInsight;
-      agentRecommendation = agentPlan.primaryInsight;
-      agentBurnoutRisk = agentPlan.burnoutRisk;
-      agentScheduleNote = agentPlan.schedule['scheduleNote']?.toString();
-      if (agentPlan.milestones.isNotEmpty) {
-        agentSpecs = _draftSpecsFromTitles(agentPlan.milestones).toList();
+      final agentPlan = await requestAgentPlan(currentTitle);
+      if (!agentPlan.goalGuardEvaluated) {
+        awaitingGoalRefinement = true;
+        guardReply = guardUnavailableReply;
+        draftSpecs = [];
+      } else if (agentPlan.goalRejected) {
+        awaitingGoalRefinement = true;
+        guardReply = _goalGuardReplyFromPlan(agentPlan);
+        draftSpecs = [];
+      } else {
+        captureAgentMetadata(agentPlan);
+        if (agentPlan.milestones.isNotEmpty) {
+          agentSpecs = _draftSpecsFromTitles(agentPlan.milestones).toList();
+        }
       }
     } catch (e) {
-      debugPrint('Agent planner unavailable: $e');
+      debugPrint('Agent planner unavailable before goal guard verification: $e');
+      awaitingGoalRefinement = true;
+      guardReply = guardUnavailableReply;
+      draftSpecs = [];
     }
 
-    if (agentSpecs.isNotEmpty) {
+    if (awaitingGoalRefinement) {
+      draftSpecs = [];
+    } else if (agentSpecs.isNotEmpty) {
       draftSpecs = agentSpecs;
       aiAvailable = true;
       fromAgent = true;
     } else {
       // Step 2 (fallback): the agent produced no milestones — try the task
       // generator, then fall back to the local heuristic plan.
-      try {
-        final generated = await ai.taskGenerator.generate(
-          TaskGeneratorRequest(
-            goalTitle: title,
-            category: _newGoalCategory,
-            priority: _newGoalPriority,
-            deadlineDays: deadlineDays,
-          ),
-        );
-        final aiSpecs = _draftSpecsFromGeneratedTasks(generated.tasks).toList();
-        if (aiSpecs.isNotEmpty) {
-          draftSpecs = aiSpecs;
-          aiAvailable = true;
-        }
-      } catch (e) {
-        debugPrint('AI task generation fallback used: $e');
-      }
+      draftSpecs = await generatedOrLocalSpecs(currentTitle);
+      aiAvailable = true;
     }
 
     // Compose the opening message from the agent's REAL output, not a cosmetic
     // suffix. Surface the habit insight, schedule note, and top recommendation.
     final intro = StringBuffer();
-    if (fromAgent && !agentDegraded) {
+    if (awaitingGoalRefinement) {
+      intro.write(guardReply ??
+          "I can't generate todos for this goal as written. Please redefine it as a clear, constructive, achievable outcome.");
+    } else if (fromAgent && !agentDegraded) {
       final strategy = agentStrategy?.trim();
       intro.write('I ran the planning agent');
       if (strategy != null && strategy.isNotEmpty) intro.write(' ($strategy)');
-      intro.write(' and broke "$title" into ${draftSpecs.length} milestones.');
+      intro.write(
+          ' and broke "$currentTitle" into ${draftSpecs.length} milestones.');
     } else if (aiAvailable) {
       intro.write(
-          'I used the AI task generator to break "$title" into ${draftSpecs.length} tasks.');
+          'I used the AI task generator to break "$currentTitle" into ${draftSpecs.length} tasks.');
     } else {
       intro.write(
-          'I could not reach the AI planner, so I prepared a local fallback plan for "$title".');
+          "I couldn't verify this goal with the AI planner, so I won't generate todos for it yet.");
     }
-    final habit = agentHabitInsight?.trim();
-    if (habit != null && habit.isNotEmpty) {
-      final risk = agentBurnoutRisk?.trim();
-      final riskTag = (risk != null && risk.isNotEmpty) ? ' (burnout risk: $risk)' : '';
-      intro.write('\n\n🧠 $habit$riskTag');
+    if (!awaitingGoalRefinement) {
+      final habit = agentHabitInsight?.trim();
+      if (habit != null && habit.isNotEmpty) {
+        final risk = agentBurnoutRisk?.trim();
+        final riskTag =
+            (risk != null && risk.isNotEmpty) ? ' (burnout risk: $risk)' : '';
+        intro.write('\n\n🧠 $habit$riskTag');
+      }
+      final note = agentScheduleNote?.trim();
+      if (note != null && note.isNotEmpty) intro.write('\n📅 $note');
+      final rec = agentRecommendation?.trim();
+      if (rec != null && rec.isNotEmpty) intro.write('\n👉 $rec');
+      intro.write(
+          '\n\nYou can ask me to make the plan easier, more detailed, or reorder it before scheduling.');
     }
-    final note = agentScheduleNote?.trim();
-    if (note != null && note.isNotEmpty) intro.write('\n📅 $note');
-    final rec = agentRecommendation?.trim();
-    if (rec != null && rec.isNotEmpty) intro.write('\n👉 $rec');
-    intro.write(
-        '\n\nYou can ask me to make the plan easier, more detailed, or reorder it before scheduling.');
 
-    final messages = <Map<String, dynamic>>[
-      {
-        'role': 'assistant',
-        'text': intro.toString(),
-        'tasks': _draftPreviewLabels(draftSpecs),
-      },
-    ];
+    final firstMessage = <String, dynamic>{
+      'role': 'assistant',
+      'text': intro.toString(),
+    };
+    if (!awaitingGoalRefinement) {
+      firstMessage['tasks'] = _draftPreviewLabels(draftSpecs);
+    }
+    final messages = <Map<String, dynamic>>[firstMessage];
 
     // Generation done — close the blocking loader before showing the plan.
     if (loaderOpen && mounted) {
       Navigator.of(context, rootNavigator: true).pop();
       loaderOpen = false;
     }
+    if (!mounted) return;
 
-    final result = await showDialog<List<_DraftTaskSpec>>(
+    final result = await showDialog<_GoalPlanApprovalResult>(
       context: context,
       barrierDismissible: false,
+      useRootNavigator: true,
       builder: (dialogContext) {
         var isAiThinking = false;
         // When the agent scales back an unrealistic request, it asks "are you
@@ -1468,7 +1553,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               final pending = pendingForceRequest;
 
               // User declined the "are you sure?" question — keep current plan.
-              if (pending != null && _isNegativeReply(request)) {
+              if (!awaitingGoalRefinement &&
+                  pending != null &&
+                  _isNegativeReply(request)) {
                 setLocalState(() {
                   messages.add({'role': 'user', 'text': request});
                   messages.add({
@@ -1483,8 +1570,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               }
 
               // User confirmed — re-issue the original request, forced this time.
-              final useForce = pending != null && _isAffirmativeReply(request);
+              final useForce = !awaitingGoalRefinement &&
+                  pending != null &&
+                  _isAffirmativeReply(request);
               final effectiveRequest = useForce ? pending : request;
+              final wasAwaitingGoalRefinement = awaitingGoalRefinement;
+              final goalToPlan =
+                  wasAwaitingGoalRefinement ? request : currentTitle;
 
               setLocalState(() {
                 isAiThinking = true;
@@ -1493,32 +1585,47 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               });
 
               try {
-                // Route refinements through the planning agent so requests like
-                // "10 milestones" or "2 per day" reach the createMilestones tool,
-                // which sizes the roadmap (and flags unrealistic asks) for us.
-                final refinedPlan = await ai.agentPlanner.plan(
-                  AgentPlannerRequest(
-                    goal: title,
-                    context: {
-                      'category': _newGoalCategory,
-                      'priority': _newGoalPriority,
-                      'deadlineDays': deadlineDays,
-                      'completedToday': _todayCompleted,
-                      'totalToday': _todayTasks.length,
-                      'mood': _selectedMood,
-                      'streak': _streak,
-                      'specialRequest': effectiveRequest,
-                      if (useForce) 'force': true,
-                    },
-                  ),
+                final refinedPlan = await requestAgentPlan(
+                  goalToPlan,
+                  specialRequest:
+                      wasAwaitingGoalRefinement ? null : effectiveRequest,
+                  force: useForce,
                 );
 
+                if (!refinedPlan.goalGuardEvaluated ||
+                    refinedPlan.goalRejected) {
+                  final replyText = refinedPlan.goalGuardEvaluated
+                      ? _goalGuardReplyFromPlan(refinedPlan)
+                      : guardUnavailableReply;
+
+                  if (!dialogContext.mounted) return;
+                  setLocalState(() {
+                    awaitingGoalRefinement = true;
+                    pendingForceRequest = null;
+                    draftSpecs = [];
+                    messages.add({
+                      'role': 'assistant',
+                      'text': replyText,
+                    });
+                    isAiThinking = false;
+                  });
+                  return;
+                }
+
+                captureAgentMetadata(refinedPlan);
                 final refinedTitles = refinedPlan.milestones
                     .map((task) => task.trim())
                     .where((task) => task.isNotEmpty)
                     .toList();
                 if (refinedTitles.isNotEmpty) {
                   draftSpecs = _draftSpecsFromTitles(refinedTitles).toList();
+                } else if (wasAwaitingGoalRefinement) {
+                  draftSpecs = await generatedOrLocalSpecs(goalToPlan);
+                }
+                if (wasAwaitingGoalRefinement) {
+                  currentTitle = goalToPlan;
+                  aiAvailable = true;
+                  fromAgent = refinedTitles.isNotEmpty;
                 }
 
                 // Prefer the agent's feasibility note (e.g. "…Are you sure you
@@ -1526,12 +1633,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                 final note = refinedPlan.milestoneNote?.trim();
                 final replyText = (note != null && note.isNotEmpty)
                     ? note
-                    : (refinedTitles.isNotEmpty
-                        ? 'Updated the plan to ${refinedTitles.length} milestones.'
-                        : 'I refined the plan based on your request.');
+                    : (wasAwaitingGoalRefinement
+                        ? 'That goal is clear enough to plan. I broke "$currentTitle" into ${draftSpecs.length} milestones.'
+                        : refinedTitles.isNotEmpty
+                            ? 'Updated the plan to ${refinedTitles.length} milestones.'
+                            : 'I refined the plan based on your request.');
 
                 if (!dialogContext.mounted) return;
                 setLocalState(() {
+                  awaitingGoalRefinement = false;
                   // Remember the request only while a confirmation is pending.
                   pendingForceRequest = refinedPlan.milestoneNeedsConfirmation
                       ? effectiveRequest
@@ -1544,19 +1654,20 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                   isAiThinking = false;
                 });
               } catch (e) {
-                final refined = _refineTaskTitlesFromPrompt(
-                  draftSpecs.map((task) => task.title).toList(),
-                  request,
-                  title,
-                );
-                draftSpecs = _draftSpecsFromTitles(refined).toList();
                 if (!dialogContext.mounted) return;
                 setLocalState(() {
+                  awaitingGoalRefinement = wasAwaitingGoalRefinement;
                   pendingForceRequest = null;
+                  if (wasAwaitingGoalRefinement) {
+                    draftSpecs = [];
+                  }
                   messages.add({
                     'role': 'assistant',
-                    'text': 'The AI planner is unavailable right now, so I refined the plan locally. You can still finalize this draft.',
-                    'tasks': _draftPreviewLabels(draftSpecs),
+                    'text': wasAwaitingGoalRefinement
+                        ? "I can't verify this revised goal right now, so I won't generate todos for it. Please try again, or rewrite it as a clear, constructive, achievable goal."
+                        : 'The AI planner is unavailable right now, so I cannot safely apply that change. The existing draft is unchanged.',
+                    if (!wasAwaitingGoalRefinement)
+                      'tasks': _draftPreviewLabels(draftSpecs),
                   });
                   isAiThinking = false;
                 });
@@ -1730,8 +1841,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                               ),
                               child: IconButton(
                                 tooltip: 'Close',
-                                onPressed: () => Navigator.pop(dialogContext),
-                                icon: Icon(Icons.close_rounded,
+                                onPressed: () => closeGoalDialog(dialogContext),
+                                icon: const Icon(Icons.close_rounded,
                                     color: gdMuted),
                               ),
                             ),
@@ -1786,7 +1897,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                 decoration: InputDecoration(
                                   hintText: isAiThinking
                                       ? 'AI is thinking…'
-                                      : 'Adjust the AI plan...',
+                                      : awaitingGoalRefinement
+                                          ? 'Rewrite the goal...'
+                                          : 'Adjust the AI plan...',
                                   filled: true,
                                   fillColor: gdCardLight,
                                   contentPadding: const EdgeInsets.symmetric(
@@ -1821,26 +1934,32 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 18),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: gdSuccess,
-                              foregroundColor: gdOnDark,
-                              minimumSize: const Size.fromHeight(64),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(24)),
+                        if (!awaitingGoalRefinement) ...[
+                          const SizedBox(height: 18),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF10B981),
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size.fromHeight(64),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(24)),
+                              ),
+                              onPressed: isAiThinking || draftSpecs.isEmpty
+                                  ? null
+                                  : () => closeGoalDialog(
+                                        dialogContext,
+                                        _GoalPlanApprovalResult(
+                                          title: currentTitle,
+                                          tasks: List<_DraftTaskSpec>.from(
+                                              draftSpecs),
+                                        ),
+                                      ),
+                              child: const Text('Looks good, finalize!'),
                             ),
-                            onPressed: isAiThinking
-                                ? null
-                                : () => Navigator.pop(
-                                      dialogContext,
-                                      List<_DraftTaskSpec>.from(draftSpecs),
-                                    ),
-                            child: const Text('Looks good, finalize!'),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
@@ -1855,7 +1974,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     if (result != null && mounted) {
       await Future<void>.delayed(const Duration(milliseconds: 120));
       if (!mounted) return;
-      await _finishCreateGoal(title, approvedTaskSpecs: result);
+      await _finishCreateGoal(result.title, approvedTaskSpecs: result.tasks);
     }
   }
 
@@ -1931,75 +2050,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       'Do the smallest first action',
       'Review progress and adjust tomorrow'
     ];
-  }
-
-  List<String> _refineTaskTitlesFromPrompt(
-      List<String> currentTitles, String request, String goalTitle) {
-    final lower = request.toLowerCase();
-    List<String> updated = List<String>.from(currentTitles);
-
-    final wantsSimpler = lower.contains('easy') ||
-        lower.contains('easier') ||
-        lower.contains('simple') ||
-        lower.contains('smaller') ||
-        lower.contains('busy');
-    final wantsMoreDetail = lower.contains('detail') ||
-        lower.contains('specific') ||
-        lower.contains('clearer') ||
-        lower.contains('more info');
-    final wantsReorder = lower.contains('order') ||
-        lower.contains('reorder') ||
-        lower.contains('sequence');
-
-    if (goalTitle.toLowerCase().contains('youtube')) {
-      if (wantsSimpler) {
-        return [
-          'Pick one video idea for your first upload',
-          'Write a short outline or talking points',
-          'Record a simple first draft',
-          'Upload it and note what to improve next',
-        ];
-      }
-      if (wantsMoreDetail) {
-        return [
-          'Choose your niche and the topic for your first video',
-          'Write your first script or recording outline',
-          'Film the video and edit the best parts',
-          'Publish it and review the response for your next upload',
-        ];
-      }
-    }
-
-    if (wantsSimpler) {
-      updated = [
-        'Define one small win for $goalTitle',
-        'Work on the smallest part for 10 minutes',
-        'Finish one visible improvement',
-        'Review progress and set the next tiny step',
-      ];
-    } else if (wantsMoreDetail) {
-      updated = [
-        'Clarify the outcome and success metric',
-        'Prepare the tools, files, or materials you need',
-        'Complete the main work session',
-        'Review results and plan the next follow-up action',
-      ];
-    } else if (wantsReorder && updated.length > 1) {
-      final first = updated.removeAt(0);
-      updated.insert(1, first);
-    } else if (lower.contains('add')) {
-      updated = List<String>.from(updated.take(3))
-        ..add('Review progress and lock in the next step');
-    } else {
-      updated = [
-        'Clarify the first concrete milestone',
-        'Do the smallest useful action',
-        'Improve one meaningful part',
-        'Review the result and plan the next session',
-      ];
-    }
-
-    return updated;
   }
 
   List<String> _draftPreviewLabels(List<_DraftTaskSpec> specs) {

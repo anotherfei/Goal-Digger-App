@@ -20,6 +20,7 @@
 //     result from a fully fallen-back one.
 
 import * as admin from "firebase-admin";
+import { evaluateGoal, goalGuardMessage, type GoalGuardResult } from "./goal_guard";
 import { plannerAgent } from "./planner";
 import { reflectionAgent } from "./reflection";
 import { toolRegistry } from "./tools/registry";
@@ -62,6 +63,10 @@ interface AgentRunResult {
   plan: Record<string, unknown>;
   executionResults: ExecutionRecord[];
   reflections: unknown[];
+  goalRejected: boolean;
+  goalRejectionType: string | null;
+  goalRejectionReason: string | null;
+  goalRefinementPrompt: string | null;
   // Structured, ready-to-consume outputs (the client reads these directly):
   milestones: string[];
   milestoneNote: string | null;
@@ -112,12 +117,63 @@ function parseStartHour(hours?: string[]): number | undefined {
   return match ? Number(match[1]) : undefined;
 }
 
+function rejectedGoalResult(
+  goal: string,
+  context: Record<string, unknown>,
+  review: GoalGuardResult
+): AgentRunResult {
+  const message = goalGuardMessage(review);
+  return {
+    strategy: "goal-refinement-required",
+    plan: {
+      strategy: "goal-refinement-required",
+      goal,
+      context,
+      rejectionType: review.type,
+      rejectionReason: review.reason,
+      refinementPrompt: review.refinementPrompt,
+    },
+    executionResults: [],
+    reflections: [
+      {
+        type: "goal-refinement-required",
+        insight: review.reason ?? message,
+        recommendation:
+          review.refinementPrompt ??
+          "Please rewrite the goal into a clear, constructive, achievable outcome.",
+        memoryKeysUsed: [],
+      },
+    ],
+    goalRejected: true,
+    goalRejectionType: review.type,
+    goalRejectionReason: review.reason,
+    goalRefinementPrompt: review.refinementPrompt,
+    milestones: [],
+    milestoneNote: message,
+    milestoneNeedsConfirmation: false,
+    habitInsight: null,
+    burnoutRisk: null,
+    schedule: null,
+    memorySnapshot: {},
+    memoryUpdated: false,
+    degraded: false,
+  };
+}
+
 // ── Main runtime ──────────────────────────────────────────────────────────────
 
 export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
   const { userId, goal, context = {} } = input;
 
   console.log(`[agent/runtime] Starting agent for uid=${userId}, goal="${goal}"`);
+
+  const goalReview = await evaluateGoal(goal, context);
+  if (!goalReview.allowed) {
+    console.log(
+      `[agent/runtime] Refusing goal before planning: ${goalReview.type}`
+    );
+    return rejectedGoalResult(goal, context, goalReview);
+  }
 
   // Step 1: Load user memory
   const memory = await loadMemory(userId);
@@ -280,6 +336,10 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
     plan: plan as unknown as Record<string, unknown>,
     executionResults,
     reflections,
+    goalRejected: false,
+    goalRejectionType: null,
+    goalRejectionReason: null,
+    goalRefinementPrompt: null,
     milestones,
     milestoneNote: milestonesResult?.feasibilityNote ?? null,
     milestoneNeedsConfirmation: milestonesResult?.needsConfirmation ?? false,
