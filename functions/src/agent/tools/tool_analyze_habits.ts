@@ -70,8 +70,9 @@ Respond ONLY with valid JSON: { "insight": "..." }`.trim();
         prompt,
         config: {
           temperature: 0.45,
-          maxOutputTokens: 80,
+          maxOutputTokens: 256,
           responseMimeType: "application/json",
+          thinkingConfig: { thinkingBudget: 0 },
         },
       });
 
@@ -79,7 +80,8 @@ Respond ONLY with valid JSON: { "insight": "..." }`.trim();
       if (parsed.insight?.trim()) {
         productivityInsight = parsed.insight.trim();
       }
-    } catch {
+    } catch (e) {
+      console.error("[analyzeHabits] LLM call failed, using static:", e);
       // Deterministic fallback
       if (burnoutRisk === "high") {
         productivityInsight = `Task completion is critically low (${completedToday}/${totalToday}) — reduce today's load and protect your streak.`;

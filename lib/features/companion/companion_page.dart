@@ -42,7 +42,12 @@ class _CompanionPageState extends State<CompanionPage> {
       child: Stack(
         children: [
           ListView(
-            padding: const EdgeInsets.fromLTRB(18, 72, 18, 112),
+            padding: EdgeInsets.fromLTRB(
+              18,
+              72,
+              18,
+              GoalShellInsets.bottomOf(context),
+            ),
             children: [
               // PageHero(
               //   icon: Icons.pets_rounded,
@@ -86,7 +91,8 @@ class _CompanionPageState extends State<CompanionPage> {
                                 child: PetAvatar(pet: widget.pet, size: 142),
                               ),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
                                 decoration: BoxDecoration(
                                   color: gdSurface,
                                   borderRadius: BorderRadius.circular(999),
@@ -101,7 +107,9 @@ class _CompanionPageState extends State<CompanionPage> {
                                 ),
                                 child: Text(
                                   widget.accessory,
-                                  style: const TextStyle(color: gdInk, fontWeight: FontWeight.w900),
+                                  style: const TextStyle(
+                                      color: gdInk,
+                                      fontWeight: FontWeight.w900),
                                 ),
                               ),
                             ],
@@ -121,17 +129,23 @@ class _CompanionPageState extends State<CompanionPage> {
                           children: [
                             Row(
                               children: [
-                                const Icon(Icons.favorite_rounded, color: gdAccent, size: 20),
+                                const Icon(Icons.favorite_rounded,
+                                    color: gdAccent, size: 20),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     'Happiness ${widget.happiness}%',
-                                    style: const TextStyle(color: gdInk, fontWeight: FontWeight.w900),
+                                    style: const TextStyle(
+                                        color: gdInk,
+                                        fontWeight: FontWeight.w900),
                                   ),
                                 ),
                                 const Text(
                                   'Tap to cheer up',
-                                  style: TextStyle(color: gdMuted, fontSize: 12, fontWeight: FontWeight.w800),
+                                  style: TextStyle(
+                                      color: gdMuted,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800),
                                 ),
                               ],
                             ),
@@ -149,11 +163,26 @@ class _CompanionPageState extends State<CompanionPage> {
                       const SizedBox(height: 18),
                       Row(
                         children: [
-                          Expanded(child: _SkinPill(label: 'Mint', selected: _selectedSkin == 'Mint', onTap: () => setState(() => _selectedSkin = 'Mint'))),
+                          Expanded(
+                              child: _SkinPill(
+                                  label: 'Mint',
+                                  selected: _selectedSkin == 'Mint',
+                                  onTap: () =>
+                                      setState(() => _selectedSkin = 'Mint'))),
                           const SizedBox(width: 10),
-                          Expanded(child: _SkinPill(label: 'Peach', selected: _selectedSkin == 'Peach', onTap: () => setState(() => _selectedSkin = 'Peach'))),
+                          Expanded(
+                              child: _SkinPill(
+                                  label: 'Peach',
+                                  selected: _selectedSkin == 'Peach',
+                                  onTap: () =>
+                                      setState(() => _selectedSkin = 'Peach'))),
                           const SizedBox(width: 10),
-                          Expanded(child: _SkinPill(label: 'Lunar', selected: _selectedSkin == 'Lunar', onTap: () => setState(() => _selectedSkin = 'Lunar'))),
+                          Expanded(
+                              child: _SkinPill(
+                                  label: 'Lunar',
+                                  selected: _selectedSkin == 'Lunar',
+                                  onTap: () =>
+                                      setState(() => _selectedSkin = 'Lunar'))),
                         ],
                       ),
                     ],
@@ -162,18 +191,43 @@ class _CompanionPageState extends State<CompanionPage> {
               ),
               const SizedBox(height: 20),
               SectionTitle(title: 'Mystery chest', trailing: '50 coins'),
-          const SizedBox(height: 10),
+              const SizedBox(height: 10),
               AppCard(
                 color: gdSurface,
                 child: Padding(
                   padding: const EdgeInsets.all(18),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: const [CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.inventory_2_rounded, color: gdPrimary)), SizedBox(width: 12), Expanded(child: Text('Open a chest for random pet skins or accessories.', style: TextStyle(color: gdInk, fontWeight: FontWeight.w900, fontSize: 16)))]),
-                    const SizedBox(height: 14),
-                    SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: widget.onOpenChest, icon: const Icon(Icons.auto_awesome_rounded), label: const Text('Open chest -50 coins'))),
-                    const SizedBox(height: 10),
-                    SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: widget.onFeed, icon: const Icon(Icons.restaurant_rounded), label: const Text('Feed companion -10 coins'))),
-                  ]),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: const [
+                          CircleAvatar(
+                              backgroundColor: gdPrimarySoft,
+                              child: Icon(Icons.inventory_2_rounded,
+                                  color: gdPrimary)),
+                          SizedBox(width: 12),
+                          Expanded(
+                              child: Text(
+                                  'Open a chest for random pet skins or accessories.',
+                                  style: TextStyle(
+                                      color: gdInk,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 16)))
+                        ]),
+                        const SizedBox(height: 14),
+                        SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                                onPressed: widget.onOpenChest,
+                                icon: const Icon(Icons.auto_awesome_rounded),
+                                label: const Text('Open chest -50 coins'))),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                                onPressed: widget.onFeed,
+                                icon: const Icon(Icons.restaurant_rounded),
+                                label: const Text('Feed companion -10 coins'))),
+                      ]),
                 ),
               ),
             ],
@@ -216,11 +270,15 @@ class _FloatingWallet extends StatelessWidget {
           Container(
             width: 30,
             height: 30,
-            decoration: const BoxDecoration(color: gdStarGold, shape: BoxShape.circle),
+            decoration:
+                const BoxDecoration(color: gdStarGold, shape: BoxShape.circle),
             alignment: Alignment.center,
             child: const Text(
               'C',
-              style: TextStyle(color: Color(0xFF5B3200), fontWeight: FontWeight.w900, fontSize: 14),
+              style: TextStyle(
+                  color: Color(0xFF5B3200),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14),
             ),
           ),
           const SizedBox(width: 8),
@@ -230,11 +288,16 @@ class _FloatingWallet extends StatelessWidget {
             children: [
               const Text(
                 'Wallet',
-                style: TextStyle(color: gdMuted, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.6),
+                style: TextStyle(
+                    color: gdMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.6),
               ),
               Text(
                 '$coins coins',
-                style: const TextStyle(color: gdInk, fontSize: 13, fontWeight: FontWeight.w900),
+                style: const TextStyle(
+                    color: gdInk, fontSize: 13, fontWeight: FontWeight.w900),
               ),
             ],
           ),
@@ -245,7 +308,8 @@ class _FloatingWallet extends StatelessWidget {
 }
 
 class _SkinPill extends StatelessWidget {
-  const _SkinPill({required this.label, required this.selected, required this.onTap});
+  const _SkinPill(
+      {required this.label, required this.selected, required this.onTap});
   final String label;
   final bool selected;
   final VoidCallback onTap;
@@ -258,8 +322,20 @@ class _SkinPill extends StatelessWidget {
       child: Container(
         height: 62,
         alignment: Alignment.center,
-        decoration: BoxDecoration(color: selected ? const Color(0xFF071022) : Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: selected ? null : [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12)]),
-        child: Text(label, style: TextStyle(color: selected ? Colors.white : gdMuted, fontSize: 18, fontWeight: FontWeight.w800)),
+        decoration: BoxDecoration(
+            color: selected ? const Color(0xFF071022) : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: selected
+                ? null
+                : [
+                    BoxShadow(
+                        color: Colors.black.withOpacity(0.04), blurRadius: 12)
+                  ]),
+        child: Text(label,
+            style: TextStyle(
+                color: selected ? Colors.white : gdMuted,
+                fontSize: 18,
+                fontWeight: FontWeight.w800)),
       ),
     );
   }

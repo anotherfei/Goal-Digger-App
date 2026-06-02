@@ -7,6 +7,28 @@ import '../../core/theme/gd_colors.dart';
 import '../../core/utils/date_helpers.dart';
 import '../../models/models.dart';
 
+class GoalShellInsets extends InheritedWidget {
+  const GoalShellInsets({
+    super.key,
+    required this.bottom,
+    required super.child,
+  });
+
+  final double bottom;
+
+  static double bottomOf(BuildContext context, {double fallback = 112}) {
+    final inherited =
+        context.dependOnInheritedWidgetOfExactType<GoalShellInsets>();
+    final bottom = inherited?.bottom ?? fallback;
+    return bottom > fallback ? bottom : fallback;
+  }
+
+  @override
+  bool updateShouldNotify(covariant GoalShellInsets oldWidget) {
+    return bottom != oldWidget.bottom;
+  }
+}
+
 class PageScaffold extends StatelessWidget {
   const PageScaffold({super.key, required this.child});
 
@@ -37,8 +59,8 @@ class AmbientBackground extends StatelessWidget {
               end: Alignment.bottomRight,
               colors: [
                 gdBackground,
-                const Color(0xFFE0F2FE).withOpacity(0.7),
-                const Color(0xFFFCE7F3).withOpacity(0.45),
+                const Color(0xFFE0F2FE).withValues(alpha: 0.7),
+                const Color(0xFFFCE7F3).withValues(alpha: 0.45),
               ],
             ),
           ),
@@ -64,7 +86,7 @@ class AppCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 24,
             offset: const Offset(0, 12),
           ),
@@ -107,11 +129,13 @@ class PageHero extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: Theme.of(context).textTheme.headlineMedium),
+                  Text(title,
+                      style: Theme.of(context).textTheme.headlineMedium),
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
-                    style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                        color: gdMuted, fontWeight: FontWeight.w600),
                   ),
                 ],
               ),
@@ -119,22 +143,6 @@ class PageHero extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _BenefitChip extends StatelessWidget {
-  const _BenefitChip({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Chip(
-      avatar: Icon(icon, color: gdPrimary, size: 18),
-      label: Text(text),
-      backgroundColor: gdPrimarySoft,
     );
   }
 }
@@ -152,18 +160,24 @@ class MoodCheckPanel extends StatelessWidget {
   static const _moods = [
     _MoodOption(
       label: 'Tired',
-      emoji: '😔',
-      subtitle: 'Light wins only',
+      icon: Icons.spa_rounded,
+      color: gdGradientWellnessTo,
+      softColor: gdAccentSoft,
+      subtitle: 'Light pace',
     ),
     _MoodOption(
       label: 'Okay',
-      emoji: '🙄',
-      subtitle: 'Balanced day',
+      icon: Icons.tune_rounded,
+      color: gdPrimary,
+      softColor: gdPrimarySoft,
+      subtitle: 'Balanced',
     ),
     _MoodOption(
       label: 'Great',
-      emoji: '😊',
-      subtitle: 'Stretch tasks unlocked',
+      icon: Icons.bolt_rounded,
+      color: gdGradientStudyFrom,
+      softColor: Color(0xFFFFF7ED),
+      subtitle: 'Stretch',
     ),
   ];
 
@@ -171,54 +185,74 @@ class MoodCheckPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     const spacing = 12.0;
 
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [gdPrimaryDark, gdPrimary, gdGradientCreativeTo],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: gdPrimaryDark.withOpacity(0.18),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'MOOD CHECK · REAL-TIME',
-            style: TextStyle(
-              color: gdOnDarkMuted,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 4,
-            ),
-          ),
-          const SizedBox(height: spacing),
-          Row(
-            children: [
-              for (final mood in _moods)
-                Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      right: mood == _moods.last ? 0 : spacing,
-                    ),
-                    child: _MoodButton(
-                      option: mood,
-                      selected: selectedMood == mood.label,
-                      onTap: () => onMoodChanged(mood.label),
-                    ),
+    return AppCard(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: gdPrimarySoft,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.favorite_rounded,
+                    color: gdPrimary,
+                    size: 21,
                   ),
                 ),
-            ],
-          ),
-        ],
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Mood check',
+                        style: TextStyle(
+                          color: gdInk,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        "Match today's plan to your energy.",
+                        style: TextStyle(
+                          color: gdMuted,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: spacing),
+            Row(
+              children: [
+                for (final mood in _moods)
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        right: mood == _moods.last ? 0 : spacing,
+                      ),
+                      child: _MoodButton(
+                        option: mood,
+                        selected: selectedMood == mood.label,
+                        onTap: () => onMoodChanged(mood.label),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -227,12 +261,16 @@ class MoodCheckPanel extends StatelessWidget {
 class _MoodOption {
   const _MoodOption({
     required this.label,
-    required this.emoji,
+    required this.icon,
+    required this.color,
+    required this.softColor,
     required this.subtitle,
   });
 
   final String label;
-  final String emoji;
+  final IconData icon;
+  final Color color;
+  final Color softColor;
   final String subtitle;
 }
 
@@ -249,46 +287,89 @@ class _MoodButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(22),
-      onTap: onTap,
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '${option.label} mood',
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
+        height: 118,
         decoration: BoxDecoration(
-          color: selected ? gdSurface : gdOnDark.withOpacity(0.18),
+          color: selected ? option.softColor : gdCardLight,
           borderRadius: BorderRadius.circular(22),
           border: Border.all(
-            color: selected ? gdOnDark : gdOnDark.withOpacity(0.18),
+            color: selected ? option.color : gdBorder,
+            width: selected ? 1.6 : 1,
           ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: option.color.withValues(alpha: 0.14),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : null,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(option.emoji, style: const TextStyle(fontSize: 30)),
-            const SizedBox(height: 8),
-            Text(
-              option.label,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: selected ? gdInk : gdOnDark,
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(22),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? option.color.withValues(alpha: 0.14)
+                          : gdSurface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: selected
+                            ? option.color.withValues(alpha: 0.24)
+                            : gdBorder,
+                      ),
+                    ),
+                    child: Icon(
+                      option.icon,
+                      color: selected ? option.color : gdMuted,
+                      size: 23,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    option.label,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: selected ? gdInk : gdMuted,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    option.subtitle,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: gdMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              option.subtitle,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: selected ? gdMuted : gdOnDarkMuted,
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -332,7 +413,8 @@ class ProcessingProgressCard extends StatelessWidget {
                       const Icon(Icons.hourglass_top_rounded),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(label, style: Theme.of(context).textTheme.titleMedium),
+                        child: Text(label,
+                            style: Theme.of(context).textTheme.titleMedium),
                       ),
                     ],
                   ),
@@ -341,7 +423,8 @@ class ProcessingProgressCard extends StatelessWidget {
                     secondsRemaining == 0
                         ? 'Almost ready...'
                         : 'About $secondsRemaining seconds remaining',
-                    style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                        color: gdMuted, fontWeight: FontWeight.w700),
                   ),
                 ],
               ),
@@ -404,7 +487,8 @@ class TodayProgressCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     'About $remainingMinutes minutes left',
-                    style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
+                    style: const TextStyle(
+                        color: gdMuted, fontWeight: FontWeight.w800),
                   ),
                 ],
               ),
@@ -485,7 +569,7 @@ class HelpfulErrorBox extends StatelessWidget {
       decoration: BoxDecoration(
         color: gdErrorSoft,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: gdError.withOpacity(0.35)),
+        border: Border.all(color: gdError.withValues(alpha: 0.35)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -498,10 +582,12 @@ class HelpfulErrorBox extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(color: gdError, fontWeight: FontWeight.w900),
+                  style: const TextStyle(
+                      color: gdError, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 4),
-                Text(message, style: const TextStyle(color: gdInk, height: 1.4)),
+                Text(message,
+                    style: const TextStyle(color: gdInk, height: 1.4)),
                 if (showAction) ...[
                   const SizedBox(height: 8),
                   TextButton(onPressed: onAction, child: Text(actionLabel)),
@@ -549,7 +635,8 @@ class EmptyStateCard extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w600),
+              style:
+                  const TextStyle(color: gdMuted, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 18),
             FilledButton.icon(
@@ -574,7 +661,9 @@ class SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(child: Text(title, style: Theme.of(context).textTheme.headlineMedium)),
+        Expanded(
+            child:
+                Text(title, style: Theme.of(context).textTheme.headlineMedium)),
         if (trailing != null)
           Text(
             trailing!,
@@ -590,25 +679,33 @@ class SectionTitle extends StatelessWidget {
 }
 
 class CategorySelector extends StatelessWidget {
-  const CategorySelector({super.key, required this.selected, required this.onChanged});
+  const CategorySelector(
+      {super.key, required this.selected, required this.onChanged});
   final String selected;
   final ValueChanged<String> onChanged;
 
   IconData _iconFor(String category) {
     switch (category) {
-      case 'Career': return Icons.work_rounded;
-      case 'Wellness': return Icons.favorite_rounded;
-      case 'Finance': return Icons.savings_rounded;
-      case 'Creative': return Icons.palette_rounded;
-      case 'Study': return Icons.school_rounded;
-      default: return Icons.more_horiz_rounded;
+      case 'Career':
+        return Icons.work_rounded;
+      case 'Wellness':
+        return Icons.favorite_rounded;
+      case 'Finance':
+        return Icons.savings_rounded;
+      case 'Creative':
+        return Icons.palette_rounded;
+      case 'Study':
+        return Icons.school_rounded;
+      default:
+        return Icons.more_horiz_rounded;
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('Category', style: TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
+      const Text('Category',
+          style: TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
       const SizedBox(height: 8),
       Wrap(spacing: 8, runSpacing: 8, children: [
         for (final item in categories)
@@ -619,8 +716,12 @@ class CategorySelector extends StatelessWidget {
               selectedColor: gdPrimary,
               backgroundColor: gdSurface,
               side: BorderSide(color: isSelected ? gdPrimary : gdBorderStrong),
-              avatar: Icon(_iconFor(item), size: 18, color: isSelected ? Colors.white : gdPrimary),
-              label: Text(item, style: TextStyle(color: isSelected ? Colors.white : gdInk, fontWeight: FontWeight.w900)),
+              avatar: Icon(_iconFor(item),
+                  size: 18, color: isSelected ? Colors.white : gdPrimary),
+              label: Text(item,
+                  style: TextStyle(
+                      color: isSelected ? Colors.white : gdInk,
+                      fontWeight: FontWeight.w900)),
               onSelected: (_) => onChanged(item),
             );
           }),
@@ -630,7 +731,11 @@ class CategorySelector extends StatelessWidget {
 }
 
 class StatMiniCard extends StatelessWidget {
-  const StatMiniCard({super.key, required this.icon, required this.label, required this.value});
+  const StatMiniCard(
+      {super.key,
+      required this.icon,
+      required this.label,
+      required this.value});
   final IconData icon;
   final String label;
   final String value;
@@ -645,7 +750,9 @@ class StatMiniCard extends StatelessWidget {
           Icon(icon, color: gdPrimary),
           const SizedBox(height: 8),
           Text(value, style: Theme.of(context).textTheme.titleLarge),
-          Text(label, style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+          Text(label,
+              style:
+                  const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
         ]),
       ),
     );
@@ -653,7 +760,8 @@ class StatMiniCard extends StatelessWidget {
 }
 
 class PrioritySelector extends StatelessWidget {
-  const PrioritySelector({super.key, required this.value, required this.onChanged});
+  const PrioritySelector(
+      {super.key, required this.value, required this.onChanged});
 
   final int value;
   final ValueChanged<int> onChanged;
@@ -676,8 +784,12 @@ class PrioritySelector extends StatelessWidget {
                   tooltip: 'Priority $star',
                   onPressed: () => onChanged(star),
                   icon: Icon(
-                    star <= value ? Icons.star_rounded : Icons.star_border_rounded,
-                    color: star <= value ? gdStarGold : gdMuted.withOpacity(0.55),
+                    star <= value
+                        ? Icons.star_rounded
+                        : Icons.star_border_rounded,
+                    color: star <= value
+                        ? gdStarGold
+                        : gdMuted.withValues(alpha: 0.55),
                   ),
                 ),
               );
@@ -710,7 +822,8 @@ class GoalCard extends StatelessWidget {
       context: context,
       showDragHandle: true,
       backgroundColor: gdSurface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (context) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -718,13 +831,29 @@ class GoalCard extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(task.title, style: Theme.of(context).textTheme.headlineMedium),
+              Text(task.title,
+                  style: Theme.of(context).textTheme.headlineMedium),
               const SizedBox(height: 10),
-              Text(goal.title, style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800)),
+              Text(goal.title,
+                  style: const TextStyle(
+                      color: gdMuted, fontWeight: FontWeight.w800)),
               const SizedBox(height: 16),
-              AppCard(color: gdCardLight, child: ListTile(leading: Icon(task.load.icon), title: Text('${task.durationMinutes} minutes · ${task.load.label}', style: const TextStyle(fontWeight: FontWeight.w900)), subtitle: Text('Scheduled on ${longDate(task.scheduledDate)}', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)))),
+              AppCard(
+                  color: gdCardLight,
+                  child: ListTile(
+                      leading: Icon(task.load.icon),
+                      title: Text(
+                          '${task.durationMinutes} minutes · ${task.load.label}',
+                          style: const TextStyle(fontWeight: FontWeight.w900)),
+                      subtitle: Text(
+                          'Scheduled on ${longDate(task.scheduledDate)}',
+                          style: const TextStyle(
+                              color: gdMuted, fontWeight: FontWeight.w700)))),
               const SizedBox(height: 12),
-              Text(task.done ? 'Status: completed' : 'Status: not completed yet', style: const TextStyle(color: gdInk, fontWeight: FontWeight.w800)),
+              Text(
+                  task.done ? 'Status: completed' : 'Status: not completed yet',
+                  style: const TextStyle(
+                      color: gdInk, fontWeight: FontWeight.w800)),
             ],
           ),
         ),
@@ -739,30 +868,70 @@ class GoalCard extends StatelessWidget {
     return AppCard(
       margin: const EdgeInsets.only(bottom: 14),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(height: 8, decoration: BoxDecoration(gradient: LinearGradient(colors: [goal.from.withOpacity(0.72), goal.to.withOpacity(0.72)]))),
+        Container(
+            height: 8,
+            decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [
+              goal.from.withValues(alpha: 0.72),
+              goal.to.withValues(alpha: 0.72)
+            ]))),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(child: Text(goal.title, style: Theme.of(context).textTheme.titleLarge)),
-              Chip(backgroundColor: gdPrimarySoft, label: Text(goal.category, style: const TextStyle(color: gdPrimary, fontWeight: FontWeight.w900))),
-              IconButton(tooltip: 'Remove goal', onPressed: onDelete, icon: const Icon(Icons.close_rounded, color: gdError)),
+              Expanded(
+                  child: Text(goal.title,
+                      style: Theme.of(context).textTheme.titleLarge)),
+              Chip(
+                  backgroundColor: gdPrimarySoft,
+                  label: Text(goal.category,
+                      style: const TextStyle(
+                          color: gdPrimary, fontWeight: FontWeight.w900))),
+              IconButton(
+                  tooltip: 'Remove goal',
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.close_rounded, color: gdError)),
             ]),
             const SizedBox(height: 10),
             Row(children: [
-              CircularProgressBadge(progress: goal.progress, label: '${(goal.progress * 100).round()}%', size: 72, strokeWidth: 7),
+              CircularProgressBadge(
+                  progress: goal.progress,
+                  label: '${(goal.progress * 100).round()}%',
+                  size: 72,
+                  strokeWidth: 7),
               const SizedBox(width: 14),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('$completed/${goal.tasks.length} tasks done', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 6),
-                Row(children: [Icon(daysLeft <= 2 ? Icons.warning_amber_rounded : Icons.event_rounded, size: 18, color: daysLeft <= 2 ? gdWarning : gdPrimary), const SizedBox(width: 4), Text(daysLeft < 0 ? 'Overdue' : '$daysLeft days left', style: TextStyle(color: daysLeft <= 2 ? gdWarning : gdMuted, fontWeight: FontWeight.w900))]),
-                const SizedBox(height: 6),
-                Row(children: [
-                  const Icon(Icons.star_rounded, size: 18, color: gdStarGold),
-                  const SizedBox(width: 4),
-                  Text('Priority ${goal.importance}/5', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w900)),
-                ]),
-              ])),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text('$completed/${goal.tasks.length} tasks done',
+                        style: const TextStyle(
+                            color: gdMuted, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      Icon(
+                          daysLeft <= 2
+                              ? Icons.warning_amber_rounded
+                              : Icons.event_rounded,
+                          size: 18,
+                          color: daysLeft <= 2 ? gdWarning : gdPrimary),
+                      const SizedBox(width: 4),
+                      Text(daysLeft < 0 ? 'Overdue' : '$daysLeft days left',
+                          style: TextStyle(
+                              color: daysLeft <= 2 ? gdWarning : gdMuted,
+                              fontWeight: FontWeight.w900))
+                    ]),
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      const Icon(Icons.star_rounded,
+                          size: 18, color: gdStarGold),
+                      const SizedBox(width: 4),
+                      Text('Priority ${goal.importance}/5',
+                          style: const TextStyle(
+                              color: gdMuted, fontWeight: FontWeight.w900)),
+                    ]),
+                  ])),
             ]),
             const SizedBox(height: 12),
             Wrap(spacing: 8, runSpacing: 8, children: [
@@ -778,14 +947,20 @@ class GoalCard extends StatelessWidget {
               ),
             ]),
             const Divider(height: 26),
-            const Text('Subtasks', style: TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
+            const Text('Subtasks',
+                style: TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
             const SizedBox(height: 8),
             Wrap(spacing: 8, runSpacing: 8, children: [
               for (var i = 0; i < goal.tasks.length; i++)
                 ActionChip(
-                  avatar: Icon(goal.tasks[i].load.icon, size: 18, color: gdPrimary),
-                  label: Text('Step ${i + 1}', style: const TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
-                  backgroundColor: goal.tasks[i].done ? gdPrimarySoft : const Color(0xFFF1F5F9),
+                  avatar:
+                      Icon(goal.tasks[i].load.icon, size: 18, color: gdPrimary),
+                  label: Text('Step ${i + 1}',
+                      style: const TextStyle(
+                          color: gdInk, fontWeight: FontWeight.w900)),
+                  backgroundColor: goal.tasks[i].done
+                      ? gdPrimarySoft
+                      : const Color(0xFFF1F5F9),
                   side: const BorderSide(color: gdBorder),
                   onPressed: () => _showTaskDetail(context, goal.tasks[i]),
                 ),
@@ -839,11 +1014,16 @@ class MoodAdjustmentNotice extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: gdInk)),
+                  Text(title,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w900, color: gdInk)),
                   const SizedBox(height: 3),
                   Text(
                     message,
-                    style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700, height: 1.35),
+                    style: const TextStyle(
+                        color: gdMuted,
+                        fontWeight: FontWeight.w700,
+                        height: 1.35),
                   ),
                 ],
               ),
@@ -882,8 +1062,12 @@ class TaskCard extends StatelessWidget {
   }
 
   int get _adjustedMinutes {
-    if (mood == 'Tired') return min(task.durationMinutes, task.load == TaskLoad.stretch ? 12 : 15);
-    if (mood == 'Great' && task.load == TaskLoad.stretch) return task.durationMinutes + 10;
+    if (mood == 'Tired') {
+      return min(task.durationMinutes, task.load == TaskLoad.stretch ? 12 : 15);
+    }
+    if (mood == 'Great' && task.load == TaskLoad.stretch) {
+      return task.durationMinutes + 10;
+    }
     return task.durationMinutes;
   }
 
@@ -938,19 +1122,23 @@ class TaskCard extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w900,
-                            decoration: task.done ? TextDecoration.lineThrough : null,
+                            decoration:
+                                task.done ? TextDecoration.lineThrough : null,
                           ),
                         ),
                         if (mood != 'Okay')
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 9, vertical: 5),
                             decoration: BoxDecoration(
                               color: _moodChipColor,
                               borderRadius: BorderRadius.circular(999),
                               border: Border.all(color: gdBorder),
                             ),
                             child: Text(
-                              mood == 'Tired' ? 'Adjusted lighter' : 'Stretch option',
+                              mood == 'Tired'
+                                  ? 'Adjusted lighter'
+                                  : 'Stretch option',
                               style: const TextStyle(
                                 color: gdInk,
                                 fontSize: 11,
@@ -963,7 +1151,8 @@ class TaskCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       '${goal.title} · ${shortDate(task.scheduledDate)} · $_adjustedMinutes min · ${task.load.label}',
-                      style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
+                      style: const TextStyle(
+                          color: gdMuted, fontWeight: FontWeight.w800),
                     ),
                     const SizedBox(height: 8),
                     Row(
@@ -973,7 +1162,8 @@ class TaskCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             _moodTip,
-                            style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w600),
+                            style: const TextStyle(
+                                color: gdMuted, fontWeight: FontWeight.w600),
                           ),
                         ),
                       ],
@@ -1011,7 +1201,7 @@ class PetAvatar extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: pet.to.withOpacity(0.34),
+            color: pet.to.withValues(alpha: 0.34),
             blurRadius: size * 0.22,
             offset: Offset(0, size * 0.08),
           ),
@@ -1026,7 +1216,7 @@ class PetAvatar extends StatelessWidget {
               width: size * 0.45,
               height: size * 0.17,
               decoration: BoxDecoration(
-                color: pet.accent.withOpacity(0.85),
+                color: pet.accent.withValues(alpha: 0.85),
                 borderRadius: BorderRadius.circular(999),
               ),
             ),
@@ -1047,7 +1237,7 @@ class PetAvatar extends StatelessWidget {
               width: size * 0.22,
               height: size * 0.08,
               decoration: BoxDecoration(
-                color: gdSurface.withOpacity(0.94),
+                color: gdSurface.withValues(alpha: 0.94),
                 borderRadius: BorderRadius.circular(999),
               ),
             ),

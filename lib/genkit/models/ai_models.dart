@@ -74,7 +74,8 @@ class GoalCoachRequest {
         'userMessage': userMessage,
         'goalTitle': goalTitle,
         'progressPercent': progressPercent,
-        'history': conversationHistory.map((m) => m.toJson()).toList(),
+        // Key must match the backend Zod schema field name exactly.
+        'conversationHistory': conversationHistory.map((m) => m.toJson()).toList(),
       };
 }
 
@@ -188,17 +189,20 @@ class MoodAdvisorResponse {
     required this.message,
     required this.emoji,
     required this.suggestion,
+    this.intensity = 'medium',
   });
 
   final String message;
   final String emoji;
   final String suggestion;
+  final String intensity; // 'low' | 'medium' | 'high'
 
   factory MoodAdvisorResponse.fromJson(Map<String, dynamic> json) =>
       MoodAdvisorResponse(
-        message: json['message'] as String? ?? '',
-        emoji: json['emoji'] as String? ?? '✨',
+        message:   json['message']    as String? ?? '',
+        emoji:     json['emoji']      as String? ?? '✨',
         suggestion: json['suggestion'] as String? ?? '',
+        intensity:  json['intensity']  as String? ?? 'medium',
       );
 }
 
@@ -230,17 +234,20 @@ class FocusInsightResponse {
     required this.insight,
     required this.nextStepHint,
     required this.coinsEarned,
+    this.badge = '',
   });
 
   final String insight;
   final String nextStepHint;
   final int coinsEarned;
+  final String badge; // e.g. "🏅 Deep Work" — now returned by backend
 
   factory FocusInsightResponse.fromJson(Map<String, dynamic> json) =>
       FocusInsightResponse(
-        insight: json['insight'] as String? ?? '',
+        insight:      json['insight']      as String? ?? '',
         nextStepHint: json['nextStepHint'] as String? ?? '',
-        coinsEarned: (json['coinsEarned'] as num?)?.toInt() ?? 15,
+        coinsEarned:  (json['coinsEarned'] as num?)?.toInt() ?? 15,
+        badge:        json['badge']        as String? ?? '',
       );
 }
 
@@ -279,21 +286,81 @@ class AgentPlannerResponse {
     required this.plan,
     required this.reflections,
     required this.memoryUpdated,
+    this.strategy,
+    this.milestones = const [],
+    this.milestoneNote,
+    this.milestoneNeedsConfirmation = false,
+    this.habitInsight,
+    this.burnoutRisk,
+    this.schedule = const {},
+    this.degraded = false,
   });
 
   final Map<String, dynamic> plan;
   final List<Map<String, dynamic>> reflections;
   final bool memoryUpdated;
 
+  /// One-line description of the planning approach the agent chose.
+  final String? strategy;
+
+  /// Ready-to-use milestone titles produced by the createMilestones tool.
+  final List<String> milestones;
+
+  /// Feasibility note when the requested milestone count was scaled back or
+  /// flagged as demanding (null when the request was honored as-is).
+  final String? milestoneNote;
+
+  /// True when [milestoneNote] is a yes/no question — the agent scaled an
+  /// unrealistic request back and is asking the user to confirm the full amount.
+  final bool milestoneNeedsConfirmation;
+
+  /// AI productivity insight from the analyzeHabits tool, if it ran.
+  final String? habitInsight;
+
+  /// Burnout risk ("low" | "medium" | "high") detected by analyzeHabits.
+  final String? burnoutRisk;
+
+  /// Raw schedule payload from scheduleTasks (sessions, scheduleNote, …).
+  final Map<String, dynamic> schedule;
+
+  /// True when the agent fell back (planner/tool/reflection failures).
+  final bool degraded;
+
+  /// The first reflection condensed into a single user-facing line, or null.
+  String? get primaryInsight {
+    if (reflections.isEmpty) return null;
+    final r = reflections.first;
+    final insight = (r['insight'] ?? '').toString().trim();
+    final recommendation = (r['recommendation'] ?? '').toString().trim();
+    final parts = [insight, recommendation].where((s) => s.isNotEmpty);
+    return parts.isEmpty ? null : parts.join(' ');
+  }
+
+  static Map<String, dynamic> _asStrMap(dynamic value) =>
+      (value as Map<dynamic, dynamic>? ?? {})
+          .map((key, v) => MapEntry(key.toString(), v));
+
   factory AgentPlannerResponse.fromJson(Map<String, dynamic> json) {
+    final plan = _asStrMap(json['plan']);
     return AgentPlannerResponse(
-      plan: (json['plan'] as Map<dynamic, dynamic>? ?? {})
-          .map((key, value) => MapEntry(key.toString(), value)),
+      plan: plan,
       reflections: (json['reflections'] as List<dynamic>? ?? [])
           .whereType<Map<dynamic, dynamic>>()
-          .map((entry) => entry.map((key, value) => MapEntry(key.toString(), value)))
+          .map((entry) => _asStrMap(entry))
           .toList(),
       memoryUpdated: json['memoryUpdated'] as bool? ?? false,
+      strategy: (json['strategy'] ?? plan['strategy'])?.toString(),
+      milestones: (json['milestones'] as List<dynamic>? ?? [])
+          .map((e) => e.toString())
+          .where((s) => s.trim().isNotEmpty)
+          .toList(),
+      milestoneNote: json['milestoneNote']?.toString(),
+      milestoneNeedsConfirmation:
+          json['milestoneNeedsConfirmation'] as bool? ?? false,
+      habitInsight: json['habitInsight']?.toString(),
+      burnoutRisk: json['burnoutRisk']?.toString(),
+      schedule: _asStrMap(json['schedule']),
+      degraded: json['degraded'] as bool? ?? false,
     );
   }
 }

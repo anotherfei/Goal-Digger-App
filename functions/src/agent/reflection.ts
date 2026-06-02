@@ -70,8 +70,9 @@ Respond ONLY with valid JSON:
       prompt,
       config: {
         temperature: 0.55,
-        maxOutputTokens: 300,
+        maxOutputTokens: 512,
         responseMimeType: "application/json",
+        thinkingConfig: { thinkingBudget: 0 },
       },
     });
 
@@ -90,8 +91,9 @@ Respond ONLY with valid JSON:
 
     if (reflections.length > 0) return reflections;
     // If the model returned an empty array, fall through to static fallback
+    console.warn("[agent/reflection] model returned no reflections, using static");
   } catch (e) {
-    // AI unavailable — use deterministic fallback below
+    console.error("[agent/reflection] LLM call failed, using static:", e);
   }
 
   return staticFallback(input, memoryKeys);

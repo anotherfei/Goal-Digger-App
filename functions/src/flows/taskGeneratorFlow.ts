@@ -22,7 +22,8 @@ const GeneratedTaskSchema = z.object({
 });
 
 const TaskGeneratorOutputSchema = z.object({
-  tasks: z.array(GeneratedTaskSchema),
+  tasks:       z.array(GeneratedTaskSchema),
+  explanation: z.string().default(""),  // added to match Flutter TaskGeneratorResponse
 });
 
 export type TaskGeneratorInput  = z.infer<typeof TaskGeneratorInputSchema>;
@@ -70,8 +71,9 @@ Respond ONLY with valid JSON:
           prompt,
           config: {
             temperature: 0.5,
-            maxOutputTokens: 512,
+            maxOutputTokens: 2048,
             responseMimeType: "application/json",
+            thinkingConfig: { thinkingBudget: 0 },
           },
         });
 
@@ -96,7 +98,10 @@ Respond ONLY with valid JSON:
           }))
           .slice(0, 6);
 
-        if (tasks.length >= 2) return { tasks };
+        if (tasks.length >= 2) return {
+          tasks,
+          explanation: `Generated ${tasks.length} micro-tasks for "${input.goalTitle}" using AI.`,
+        };
       } catch (e) {
         console.error("[taskGeneratorFlow] AI generation failed:", e);
       }
@@ -109,6 +114,7 @@ Respond ONLY with valid JSON:
           { title: "Complete the main first deliverable",             durationMinutes: 40, load: "focus"   as const, dayOffset: 1 },
           { title: "Review progress and fix the weakest part",        durationMinutes: 25, load: "stretch" as const, dayOffset: 2 },
         ],
+        explanation: "AI was unavailable — using a structured fallback plan.",
       };
     }
   );

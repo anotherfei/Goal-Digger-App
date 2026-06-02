@@ -45,7 +45,7 @@ export async function plannerAgent(input: PlannerInput): Promise<AgentPlan> {
   const toolDescriptions = `
 Available tools (use only the names listed):
 - analyzeHabits: Analyze user productivity patterns and burnout risk from memory + context. Args: { goal, memory, context }
-- createMilestones: Generate a 3-step milestone roadmap for the goal using AI. Args: { goal }
+- createMilestones: Generate an adaptive milestone roadmap for the goal using AI. The number and granularity of milestones scale with the goal's duration/deadline and any user special request. Args: { goal, context } where context may carry { deadline, startDate, durationDays, specialRequest }.
 - scheduleTasks: Calculate an optimal session schedule based on deadline. Args: { context }
 `.trim();
 
@@ -63,6 +63,7 @@ Instructions:
 2. Select the tools that are most useful. Not every tool needs to be called for every goal.
 3. For short/simple goals (≤3 days), skip scheduleTasks or make it minimal.
 4. For complex goals, use all three tools in order: analyzeHabits → createMilestones → scheduleTasks.
+5. When calling createMilestones, pass the session context through as args.context (deadline/durationDays/specialRequest) so the roadmap adapts to the available time and any user request.
 
 Respond ONLY with valid JSON — no commentary:
 {
@@ -83,8 +84,11 @@ Respond ONLY with valid JSON — no commentary:
       prompt,
       config: {
         temperature: 0.3,
-        maxOutputTokens: 512,
+        maxOutputTokens: 1024,
         responseMimeType: "application/json",
+        // gemini-2.5-flash is a thinking model; thinking tokens would eat the
+        // output budget and truncate the JSON. Disable it for structured output.
+        thinkingConfig: { thinkingBudget: 0 },
       },
     });
 
@@ -103,6 +107,7 @@ Respond ONLY with valid JSON — no commentary:
     };
   } catch (e) {
     // AI unavailable — fall back to deterministic plan
+    console.error("[agent/planner] LLM call failed, using static plan:", e);
     return staticFallbackPlan(input);
   }
 }
@@ -123,8 +128,8 @@ function staticFallbackPlan(input: PlannerInput): AgentPlan {
     steps.push({
       title: "Generate milestone roadmap",
       tool: "createMilestones",
-      args: { goal: input.goal },
-      reasoning: "Break the goal into trackable, sequenced milestones",
+      args: { goal: input.goal, context: input.context ?? {} },
+      reasoning: "Break the goal into trackable, sequenced milestones sized to the deadline",
     });
   }
   if (available.has("scheduleTasks")) {

@@ -8,21 +8,65 @@ typedef EmailAuthCallback = Future<void> Function(
   String? displayName,
   bool isSignUp,
 );
+typedef PasswordResetCallback = Future<bool> Function(String email);
 
-const Color _authBackground = Color(0xFF0B1120);
-const Color _authPanel = Color(0xFF111827);
-const Color _authPanelSoft = Color(0xFF172033);
-const Color _authBorder = Color(0xFF344256);
-const Color _authText = Color(0xFFF8FAFC);
-const Color _authMuted = Color(0xFFB8C4D6);
-const Color _authAction = Color(0xFF5CE0A4);
-const Color _authBlue = Color(0xFF6EA8FE);
-const Color _authCoral = Color(0xFFFF7A7A);
+const Color _authBackground = gdBackground;
+const Color _authPanel = gdSurface;
+const Color _authPanelSoft = gdCardLight;
+const Color _authBorder = gdBorder;
+const Color _authText = gdInk;
+const Color _authMuted = gdMuted;
+const Color _authAction = gdPrimary;
+const Color _authBlue = gdPetMintTo;
+const Color _authCoral = gdAccent;
+const Color _googleBlue = Color(0xFF4285F4);
+const Color _googleRed = Color(0xFFEA4335);
+const Color _googleYellow = Color(0xFFFBBC05);
+const Color _googleGreen = Color(0xFF34A853);
+
+class _ProviderPalette {
+  const _ProviderPalette({
+    required this.primary,
+    required this.secondary,
+    required this.tertiary,
+    required this.surface,
+    required this.border,
+  });
+
+  final Color primary;
+  final Color secondary;
+  final Color tertiary;
+  final Color surface;
+  final Color border;
+}
+
+const _emailPalette = _ProviderPalette(
+  primary: _authAction,
+  secondary: _authBlue,
+  tertiary: gdPetMintFrom,
+  surface: gdPrimarySoft,
+  border: Color(0xFFD3E1F7),
+);
+const _googlePalette = _ProviderPalette(
+  primary: _googleBlue,
+  secondary: _googleRed,
+  tertiary: _googleYellow,
+  surface: Color(0xFFEAF2FF),
+  border: Color(0xFFD1E3FF),
+);
+const _guestPalette = _ProviderPalette(
+  primary: _authCoral,
+  secondary: gdGradientStudyFrom,
+  tertiary: gdGradientCreativeFrom,
+  surface: gdAccentSoft,
+  border: Color(0xFFFBD0D5),
+);
 
 class OnboardingScreen extends StatelessWidget {
   const OnboardingScreen({
     super.key,
     required this.onEmailAuth,
+    required this.onPasswordReset,
     required this.onGoogle,
     required this.onGuest,
     required this.onClearError,
@@ -31,6 +75,7 @@ class OnboardingScreen extends StatelessWidget {
   });
 
   final EmailAuthCallback onEmailAuth;
+  final PasswordResetCallback onPasswordReset;
   final VoidCallback onGoogle;
   final VoidCallback onGuest;
   final VoidCallback onClearError;
@@ -41,67 +86,227 @@ class OnboardingScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _authBackground,
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final wide = constraints.maxWidth >= 880;
+      body: Stack(
+        children: [
+          const Positioned.fill(child: _AnimatedAuthBackdrop()),
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final wide = constraints.maxWidth >= 880;
 
-            return SingleChildScrollView(
-              padding: EdgeInsets.symmetric(
-                horizontal: wide ? 28 : 18,
-                vertical: wide ? 28 : 20,
-              ),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: constraints.maxHeight - (wide ? 56 : 40),
-                ),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1120),
-                    child: wide
-                        ? Row(
-                            children: [
-                              const Expanded(
-                                flex: 5,
-                                child: _BrandPanel(compact: false),
-                              ),
-                              const SizedBox(width: 28),
-                              Expanded(
-                                flex: 4,
-                                child: _AuthFormPanel(
-                                  onEmailAuth: onEmailAuth,
-                                  onGoogle: onGoogle,
-                                  onGuest: onGuest,
-                                  onClearError: onClearError,
-                                  isLoading: isLoading,
-                                  errorMessage: errorMessage,
-                                ),
-                              ),
-                            ],
-                          )
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const _BrandPanel(compact: true),
-                              const SizedBox(height: 18),
-                              _AuthFormPanel(
-                                onEmailAuth: onEmailAuth,
-                                onGoogle: onGoogle,
-                                onGuest: onGuest,
-                                onClearError: onClearError,
-                                isLoading: isLoading,
-                                errorMessage: errorMessage,
-                              ),
-                            ],
-                          ),
+                return SingleChildScrollView(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: wide ? 28 : 18,
+                    vertical: wide ? 28 : 20,
                   ),
-                ),
-              ),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight - (wide ? 56 : 40),
+                    ),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1120),
+                        child: wide
+                            ? Row(
+                                children: [
+                                  const Expanded(
+                                    flex: 5,
+                                    child: _BrandPanel(compact: false),
+                                  ),
+                                  const SizedBox(width: 28),
+                                  Expanded(
+                                    flex: 4,
+                                    child: _AuthFormPanel(
+                                      onEmailAuth: onEmailAuth,
+                                      onPasswordReset: onPasswordReset,
+                                      onGoogle: onGoogle,
+                                      onGuest: onGuest,
+                                      onClearError: onClearError,
+                                      isLoading: isLoading,
+                                      errorMessage: errorMessage,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const _BrandPanel(compact: true),
+                                  const SizedBox(height: 18),
+                                  _AuthFormPanel(
+                                    onEmailAuth: onEmailAuth,
+                                    onPasswordReset: onPasswordReset,
+                                    onGoogle: onGoogle,
+                                    onGuest: onGuest,
+                                    onClearError: onClearError,
+                                    isLoading: isLoading,
+                                    errorMessage: errorMessage,
+                                  ),
+                                ],
+                              ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnimatedAuthBackdrop extends StatefulWidget {
+  const _AnimatedAuthBackdrop();
+
+  @override
+  State<_AnimatedAuthBackdrop> createState() => _AnimatedAuthBackdropState();
+}
+
+class _AnimatedAuthBackdropState extends State<_AnimatedAuthBackdrop>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 38),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            return CustomPaint(
+              painter: _AuthBackdropPainter(progress: _controller.value),
             );
           },
         ),
       ),
     );
+  }
+}
+
+class _AuthBackdropPainter extends CustomPainter {
+  const _AuthBackdropPainter({required this.progress});
+
+  final double progress;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final basePaint = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          _authBackground,
+          gdPrimarySoft,
+          gdAccentSoft,
+        ],
+      ).createShader(Offset.zero & size);
+    canvas.drawRect(Offset.zero & size, basePaint);
+
+    final emailPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 16
+      ..strokeCap = StrokeCap.round
+      ..color = _emailPalette.primary.withValues(alpha: 0.08);
+    final googlePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 11
+      ..strokeCap = StrokeCap.round
+      ..color = _googlePalette.primary.withValues(alpha: 0.07);
+    final guestPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 9
+      ..color = _guestPalette.primary.withValues(alpha: 0.08);
+    final bluePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 12
+      ..strokeCap = StrokeCap.round
+      ..color = _emailPalette.secondary.withValues(alpha: 0.07);
+
+    final compact = size.width < 520;
+    final tileWidth = compact ? 260.0 : 360.0;
+    final tileHeight = compact ? 240.0 : 320.0;
+    final baseScale = compact ? 0.48 : 0.62;
+    final drift = Offset(-progress * tileWidth, -progress * tileHeight);
+    final rows = (size.height / tileHeight).ceil() + 4;
+    final columns = (size.width / tileWidth).ceil() + 4;
+
+    for (var row = -2; row < rows; row++) {
+      final stagger = row.isEven ? 0.0 : tileWidth * 0.5;
+      for (var column = -2; column < columns; column++) {
+        final anchor = Offset(
+              column * tileWidth + stagger,
+              row * tileHeight,
+            ) +
+            drift;
+        final variant = (row + column).abs() % 4;
+        final mirrored = variant.isOdd;
+        final scale = baseScale + (variant == 0 ? 0.05 : 0);
+
+        _drawBackdropCluster(
+          canvas,
+          size,
+          anchor,
+          variant == 0
+              ? emailPaint
+              : variant == 1
+                  ? googlePaint
+                  : bluePaint,
+          variant >= 2 ? emailPaint : guestPaint,
+          scale: scale,
+          mirrored: mirrored,
+        );
+      }
+    }
+  }
+
+  void _drawBackdropCluster(
+    Canvas canvas,
+    Size size,
+    Offset anchor,
+    Paint arcPaint,
+    Paint ringPaint, {
+    required double scale,
+    bool mirrored = false,
+  }) {
+    final arcRect = Rect.fromCenter(
+      center: anchor,
+      width: 230 * scale,
+      height: 230 * scale,
+    );
+    canvas.drawArc(
+      arcRect,
+      mirrored ? 2.55 : 0.2,
+      mirrored ? -4.2 : 4.5,
+      false,
+      arcPaint,
+    );
+    canvas.drawCircle(
+      anchor + Offset((mirrored ? -118 : 118) * scale, 126 * scale),
+      72 * scale,
+      ringPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _AuthBackdropPainter oldDelegate) {
+    return oldDelegate.progress != progress;
   }
 }
 
@@ -123,12 +328,20 @@ class _BrandPanel extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Color(0xFF111827),
-            Color(0xFF102033),
-            Color(0xFF18213A),
+            gdSurface,
+            gdPrimarySoft,
+            Color(0xFFFFF7F8),
           ],
         ),
+        boxShadow: [
+          BoxShadow(
+            color: gdPrimary.withValues(alpha: 0.08),
+            blurRadius: 30,
+            offset: const Offset(0, 18),
+          ),
+        ],
       ),
+      clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
           const Positioned.fill(child: _BrandGrid()),
@@ -176,6 +389,7 @@ class _BrandPanel extends StatelessWidget {
 class _AuthFormPanel extends StatefulWidget {
   const _AuthFormPanel({
     required this.onEmailAuth,
+    required this.onPasswordReset,
     required this.onGoogle,
     required this.onGuest,
     required this.onClearError,
@@ -184,6 +398,7 @@ class _AuthFormPanel extends StatefulWidget {
   });
 
   final EmailAuthCallback onEmailAuth;
+  final PasswordResetCallback onPasswordReset;
   final VoidCallback onGoogle;
   final VoidCallback onGuest;
   final VoidCallback onClearError;
@@ -225,6 +440,31 @@ class _AuthFormPanelState extends State<_AuthFormPanel> {
     );
   }
 
+  Future<void> _requestPasswordReset() async {
+    if (widget.isLoading) return;
+
+    final email = _emailController.text.trim();
+    final emailError = _validateEmail(email);
+    if (emailError != null) {
+      _showResetSnack(emailError);
+      return;
+    }
+
+    widget.onClearError();
+    final sent = await widget.onPasswordReset(email);
+    if (!mounted || !sent) return;
+
+    _showResetSnack(
+      'If this email uses password login, reset instructions were sent.',
+    );
+  }
+
+  void _showResetSnack(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
   void _toggleMode() {
     setState(() => _isSignUp = !_isSignUp);
     widget.onClearError();
@@ -248,9 +488,9 @@ class _AuthFormPanelState extends State<_AuthFormPanel> {
         border: Border.all(color: _authBorder),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.28),
-            blurRadius: 34,
-            offset: const Offset(0, 24),
+            color: gdPrimary.withValues(alpha: 0.08),
+            blurRadius: 28,
+            offset: const Offset(0, 16),
           ),
         ],
       ),
@@ -279,6 +519,7 @@ class _AuthFormPanelState extends State<_AuthFormPanel> {
                 label: 'Display name',
                 hint: 'What should we call you?',
                 icon: Icons.badge_outlined,
+                palette: _emailPalette,
                 textInputAction: TextInputAction.next,
                 enabled: !widget.isLoading,
                 onChanged: (_) => widget.onClearError(),
@@ -290,6 +531,7 @@ class _AuthFormPanelState extends State<_AuthFormPanel> {
               label: 'Email address',
               hint: 'name@domain.com',
               icon: Icons.alternate_email_rounded,
+              palette: _emailPalette,
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
               enabled: !widget.isLoading,
@@ -302,6 +544,7 @@ class _AuthFormPanelState extends State<_AuthFormPanel> {
               label: 'Password',
               hint: _isSignUp ? 'At least 6 characters' : 'Your password',
               icon: Icons.lock_outline_rounded,
+              palette: _emailPalette,
               obscureText: _obscurePassword,
               textInputAction: TextInputAction.done,
               enabled: !widget.isLoading,
@@ -323,6 +566,33 @@ class _AuthFormPanelState extends State<_AuthFormPanel> {
                 ),
               ),
             ),
+            if (!_isSignUp) ...[
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: widget.isLoading ? null : _requestPasswordReset,
+                  child: const Text(
+                    'Forgot password?',
+                    style: TextStyle(
+                      color: _authMuted,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Used Google before? Continue with Google instead.',
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                  color: _googlePalette.primary.withValues(alpha: 0.88),
+                  fontSize: 12,
+                  height: 1.3,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
             if (widget.errorMessage != null) ...[
               const SizedBox(height: 14),
               _InlineAuthError(message: widget.errorMessage!),
@@ -332,9 +602,10 @@ class _AuthFormPanelState extends State<_AuthFormPanel> {
               onPressed: widget.isLoading ? null : _submit,
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(56),
-                backgroundColor: _authAction,
-                disabledBackgroundColor: _authAction.withValues(alpha: 0.52),
-                foregroundColor: const Color(0xFF05130D),
+                backgroundColor: _emailPalette.primary,
+                disabledBackgroundColor:
+                    _emailPalette.primary.withValues(alpha: 0.52),
+                foregroundColor: gdOnDark,
                 textStyle: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w900,
@@ -349,7 +620,7 @@ class _AuthFormPanelState extends State<_AuthFormPanel> {
                       height: 22,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.6,
-                        color: Color(0xFF05130D),
+                        color: gdOnDark,
                       ),
                     )
                   : Text(primaryLabel),
@@ -359,14 +630,15 @@ class _AuthFormPanelState extends State<_AuthFormPanel> {
             const SizedBox(height: 18),
             _SocialAuthButton(
               icon: Icons.g_mobiledata_rounded,
-              iconColor: _authBlue,
+              palette: _googlePalette,
+              multiColorAccent: true,
               label: socialLabel,
               onPressed: widget.isLoading ? null : widget.onGoogle,
             ),
             const SizedBox(height: 12),
             _SocialAuthButton(
               icon: Icons.person_outline_rounded,
-              iconColor: _authCoral,
+              palette: _guestPalette,
               label: 'Preview as guest',
               onPressed: widget.isLoading ? null : widget.onGuest,
             ),
@@ -421,6 +693,7 @@ class _AuthTextField extends StatelessWidget {
     required this.label,
     required this.hint,
     required this.icon,
+    required this.palette,
     required this.enabled,
     required this.onChanged,
     this.validator,
@@ -435,6 +708,7 @@ class _AuthTextField extends StatelessWidget {
   final String label;
   final String hint;
   final IconData icon;
+  final _ProviderPalette palette;
   final bool enabled;
   final ValueChanged<String> onChanged;
   final FormFieldValidator<String>? validator;
@@ -463,20 +737,20 @@ class _AuthTextField extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        prefixIcon: Icon(icon, color: _authMuted),
+        prefixIcon: Icon(icon, color: palette.primary),
         suffixIcon: suffixIcon,
         filled: true,
-        fillColor: const Color(0xFF0F172A),
+        fillColor: palette.surface.withValues(alpha: 0.58),
         labelStyle: const TextStyle(
           color: _authText,
           fontWeight: FontWeight.w900,
         ),
         hintStyle: const TextStyle(
-          color: Color(0xFF7C8CA3),
+          color: gdHint,
           fontWeight: FontWeight.w600,
         ),
         errorStyle: const TextStyle(
-          color: Color(0xFFFFA7A7),
+          color: gdError,
           fontWeight: FontWeight.w800,
         ),
         contentPadding: const EdgeInsets.symmetric(
@@ -485,19 +759,19 @@ class _AuthTextField extends StatelessWidget {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: _authBorder),
+          borderSide: BorderSide(color: palette.border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: _authAction, width: 2),
+          borderSide: BorderSide(color: palette.primary, width: 2),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: _authCoral),
+          borderSide: const BorderSide(color: gdError),
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: _authCoral, width: 2),
+          borderSide: const BorderSide(color: gdError, width: 2),
         ),
       ),
     );
@@ -507,33 +781,116 @@ class _AuthTextField extends StatelessWidget {
 class _SocialAuthButton extends StatelessWidget {
   const _SocialAuthButton({
     required this.icon,
-    required this.iconColor,
+    required this.palette,
     required this.label,
     required this.onPressed,
+    this.multiColorAccent = false,
   });
 
   final IconData icon;
-  final Color iconColor;
+  final _ProviderPalette palette;
   final String label;
   final VoidCallback? onPressed;
+  final bool multiColorAccent;
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, color: iconColor, size: 28),
-      label: Text(label, overflow: TextOverflow.ellipsis),
-      style: OutlinedButton.styleFrom(
-        minimumSize: const Size.fromHeight(54),
-        foregroundColor: _authText,
-        disabledForegroundColor: _authMuted,
-        side: const BorderSide(color: Color(0xFF59667A), width: 1.4),
-        textStyle: const TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w900,
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+    final enabled = onPressed != null;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: enabled
+            ? palette.surface.withValues(alpha: 0.68)
+            : _authPanelSoft.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: enabled
+            ? [
+                BoxShadow(
+                  color: palette.primary.withValues(alpha: 0.08),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                ),
+              ]
+            : null,
       ),
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Icon(icon, color: palette.primary, size: 28),
+            if (multiColorAccent)
+              const Positioned(
+                right: -2,
+                bottom: 1,
+                child: _GoogleAccentDots(),
+              ),
+          ],
+        ),
+        label: Text(label, overflow: TextOverflow.ellipsis),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(54),
+          foregroundColor: _authText,
+          disabledForegroundColor: _authMuted,
+          side: BorderSide(
+            color: enabled ? palette.border : gdBorderStrong,
+            width: 1.4,
+          ),
+          textStyle: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GoogleAccentDots extends StatelessWidget {
+  const _GoogleAccentDots();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 14,
+      height: 14,
+      child: Stack(
+        children: const [
+          Positioned(
+            left: 0,
+            top: 1,
+            child: _AccentDot(color: _googleRed),
+          ),
+          Positioned(
+            right: 0,
+            top: 0,
+            child: _AccentDot(color: _googleYellow),
+          ),
+          Positioned(
+            left: 3,
+            bottom: 0,
+            child: _AccentDot(color: _googleGreen),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AccentDot extends StatelessWidget {
+  const _AccentDot({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      child: const SizedBox(width: 5, height: 5),
     );
   }
 }
@@ -572,14 +929,14 @@ class _InlineAuthError extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: gdError.withValues(alpha: 0.16),
+        color: gdErrorSoft,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: gdError.withValues(alpha: 0.45)),
+        border: Border.all(color: gdError.withValues(alpha: 0.32)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.error_outline_rounded, color: Color(0xFFFFB4B4)),
+          const Icon(Icons.error_outline_rounded, color: gdError),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -608,13 +965,13 @@ class _GoalDiggerMark extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: _authText,
+        color: gdSurface,
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: _authAction.withValues(alpha: 0.24),
-            blurRadius: size * 0.5,
-            offset: Offset(0, size * 0.18),
+            color: _emailPalette.primary.withValues(alpha: 0.16),
+            blurRadius: size * 0.38,
+            offset: Offset(0, size * 0.14),
           ),
         ],
       ),
@@ -628,7 +985,7 @@ class _GoalDiggerMark extends StatelessWidget {
             bottom: size * 0.2,
             child: Icon(
               Icons.terrain_rounded,
-              color: _authCoral,
+              color: _guestPalette.primary,
               size: size * 0.28,
             ),
           ),
@@ -638,54 +995,74 @@ class _GoalDiggerMark extends StatelessWidget {
   }
 }
 
-class _BrandGrid extends StatelessWidget {
+class _BrandGrid extends StatefulWidget {
   const _BrandGrid();
 
   @override
+  State<_BrandGrid> createState() => _BrandGridState();
+}
+
+class _BrandGridState extends State<_BrandGrid>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 28),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return CustomPaint(painter: _BrandGridPainter());
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        return CustomPaint(
+          painter: _BrandGridPainter(progress: _controller.value),
+        );
+      },
+    );
   }
 }
 
 class _BrandGridPainter extends CustomPainter {
+  const _BrandGridPainter({required this.progress});
+
+  final double progress;
+
   @override
   void paint(Canvas canvas, Size size) {
+    const cellSize = 36.0;
+    final gridDrift = -progress * cellSize;
+
     final linePaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.045)
+      ..color = gdPrimary.withValues(alpha: 0.075)
       ..strokeWidth = 1;
-    for (var x = 0.0; x < size.width; x += 36) {
+    for (var x = -cellSize + gridDrift;
+        x < size.width + cellSize;
+        x += cellSize) {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), linePaint);
     }
-    for (var y = 0.0; y < size.height; y += 36) {
+    for (var y = -cellSize + gridDrift;
+        y < size.height + cellSize;
+        y += cellSize) {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), linePaint);
     }
-
-    final accentPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 14
-      ..strokeCap = StrokeCap.round
-      ..color = _authAction.withValues(alpha: 0.16);
-    canvas.drawArc(
-      Rect.fromLTWH(size.width * 0.55, size.height * 0.08, 180, 180),
-      0.2,
-      4.5,
-      false,
-      accentPaint,
-    );
-
-    final coralPaint = Paint()
-      ..color = _authCoral.withValues(alpha: 0.18)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 8;
-    canvas.drawCircle(
-      Offset(size.width * 0.86, size.height * 0.78),
-      58,
-      coralPaint,
-    );
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _BrandGridPainter oldDelegate) {
+    return oldDelegate.progress != progress;
+  }
 }
 
 class _PreviewStrip extends StatelessWidget {
@@ -696,21 +1073,21 @@ class _PreviewStrip extends StatelessWidget {
     return Wrap(
       spacing: 12,
       runSpacing: 12,
-      children: const [
+      children: [
         _PreviewPill(
           icon: Icons.flag_rounded,
           label: '4 goals active',
-          color: _authAction,
+          color: _emailPalette.primary,
         ),
         _PreviewPill(
           icon: Icons.local_fire_department_rounded,
           label: '7 day streak',
-          color: _authCoral,
+          color: _guestPalette.primary,
         ),
         _PreviewPill(
           icon: Icons.timer_rounded,
           label: 'Focus ready',
-          color: _authBlue,
+          color: _googlePalette.primary,
         ),
       ],
     );
@@ -733,9 +1110,16 @@ class _PreviewPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: _authPanelSoft.withValues(alpha: 0.82),
+        color: gdSurface.withValues(alpha: 0.88),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: _authBorder),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

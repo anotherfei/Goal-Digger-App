@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -17,6 +18,7 @@ import '../features/notifications/notification_inbox_page.dart';
 import '../features/notifications/services/android_notification_service.dart';
 import '../features/onboarding/onboarding_screen.dart';
 import '../features/planner/planner_page.dart';
+import '../features/profile/profile_screen.dart';
 import '../features/responsive/responsive_goal_shell.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/tasks/tasks_page.dart';
@@ -76,6 +78,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   final TextEditingController _communityController = TextEditingController();
 
   bool _onboarded = false;
+  String? _profileDisplayName;
   String _signedInWith = 'Guest';
   int _selectedIndex = 2;
   late List<GoalProject> _goals;
@@ -113,6 +116,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   bool _isProcessing = false;
   double _processingProgress = 0;
   Timer? _processingTimer;
+  Timer? _moodAdviceTimer;
+  bool _moodAdvisorAvailable = true;
+  int _moodAdviceRequestSerial = 0;
 
   String _selectedMood = 'Okay';
   int _petHappiness = 62;
@@ -179,6 +185,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
     if (_activeUid == uid) return;
     _activeUid = uid;
+    _moodAdvisorAvailable = true;
     _activateSync(uid);
     unawaited(_ensureUserProfile(authState));
   }
@@ -227,6 +234,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   void dispose() {
     _watchedAuthState?.removeListener(_onAuthStateChanged);
     _processingTimer?.cancel();
+    _moodAdviceTimer?.cancel();
     _focusTimer?.cancel();
     _notificationScheduleDebounce?.cancel();
     _disposeSync();
@@ -254,9 +262,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   void _resetForSignedOutState() {
     _activeUid = null;
+    _moodAdviceTimer?.cancel();
+    _moodAdviceRequestSerial++;
+    _moodAdvisorAvailable = true;
     _disposeSync();
     setState(() {
       _onboarded = false;
+      _profileDisplayName = null;
       _signedInWith = 'Guest';
       _selectedIndex = 2;
       _goals = seedGoals(today);
@@ -307,6 +319,11 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _profileSub = sync.profileStream.listen(
       (profile) {
         if (!mounted || profile == null) return;
+        final user = context.read<AuthService>().currentUser;
+        final authDisplayName = user?.displayName?.trim();
+        final syncedDisplayName = authDisplayName?.isNotEmpty == true
+            ? authDisplayName!
+            : profile.displayName.trim();
         setState(() {
           _coins = profile.coins;
           _streak = profile.streak;
@@ -314,6 +331,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           _activePetSkin = profile.activePetSkin;
           _activeAccessory = profile.activeAccessory;
           _selectedMood = profile.selectedMood;
+          _profileDisplayName = syncedDisplayName.isNotEmpty
+              ? syncedDisplayName
+              : _profileDisplayName;
           _goalReminders = profile.goalReminders;
           _notificationSettings = profile.notificationSettings;
           _friendProgressSharing = profile.friendProgressSharing;
@@ -321,7 +341,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               ? ['Maya Chen', 'Leo Tan', 'Ari Putra']
               : List<String>.from(profile.friends);
           _onboarded = profile.onboarded;
-          final user = context.read<AuthService>().currentUser;
           final providerId = user?.providerData.isNotEmpty == true
               ? user!.providerData.first.providerId
               : null;
@@ -408,6 +427,16 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           _petHappiness, _activePetSkin, _activeAccessory);
     } catch (e) {
       debugPrint('Profile write failed: $e');
+    }
+  }
+
+  Future<void> _persistMood(String mood) async {
+    final sync = _sync;
+    if (sync == null) return;
+    try {
+      await sync.updateMood(mood);
+    } catch (e) {
+      debugPrint('Mood write failed: $e');
     }
   }
 
@@ -508,13 +537,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       throw StateError('Firebase did not return a signed-in user.');
     }
 
+    final displayName = user.displayName?.trim().isNotEmpty == true
+        ? user.displayName!.trim()
+        : provider == 'Guest'
+            ? 'Guest User'
+            : 'Goal Digger User';
+
     await _userRepository.createOrUpdateProfile(
       uid: user.uid,
-      displayName: user.displayName?.trim().isNotEmpty == true
-          ? user.displayName!.trim()
-          : provider == 'Guest'
-              ? 'Guest User'
-              : 'Goal Digger User',
+      displayName: displayName,
       email: user.email,
       photoUrl: user.photoURL,
     );
@@ -525,6 +556,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     if (!mounted) return;
     authState.clearError();
     setState(() {
+      _profileDisplayName = displayName;
       _signedInWith = provider;
       _onboarded = true;
     });
@@ -1128,6 +1160,61 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     }
   }
 
+  // Loose yes/no detection for the "are you sure?" feasibility confirmation.
+  bool _isAffirmativeReply(String text) {
+    final s = text.trim().toLowerCase();
+    return RegExp(
+      r"^(y|ya|yes|yeah|yep|yup|sure|ok|okay|confirm|confirmed|do it|go ahead|proceed|absolutely|definitely|i'?m sure|still want|keep all)\b",
+    ).hasMatch(s);
+  }
+
+  bool _isNegativeReply(String text) {
+    final s = text.trim().toLowerCase();
+    return RegExp(
+      r"^(n|no|nope|nah|cancel|stop|never mind|nevermind|don'?t|do not|keep it|leave it|that'?s fine|fewer|less)\b",
+    ).hasMatch(s);
+  }
+
+  // Centered, non-dismissible loading card shown while the AI generates a plan.
+  Widget _buildGeneratingLoader(String label) {
+    return PopScope(
+      canPop: false,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 26),
+          decoration: BoxDecoration(
+            color: gdSurface,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 38,
+                height: 38,
+                child: CircularProgressIndicator(strokeWidth: 3, color: gdPrimary),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: gdInk,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'This may take a few seconds…',
+                style: TextStyle(color: gdMuted, fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _runGoalBreakdownDialog(
       String title, TextEditingController chatController) async {
     final ai = context.read<GenkitService>();
@@ -1136,8 +1223,30 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         max(1, dateOnly(_newGoalDeadline).difference(today).inDays);
     var draftSpecs = List<_DraftTaskSpec>.from(fallbackSpecs);
     var aiAvailable = false;
+    var fromAgent = false;
     String? agentStrategy;
+    String? agentHabitInsight;
+    String? agentRecommendation;
+    String? agentScheduleNote;
+    String? agentBurnoutRisk;
+    var agentDegraded = false;
+    List<_DraftTaskSpec> agentSpecs = const [];
 
+    // Block the UI with a non-dismissible loader while the agent generates the
+    // first plan, so the user can't tap other things mid-generation.
+    var loaderOpen = false;
+    if (mounted) {
+      loaderOpen = true;
+      // ignore: unawaited_futures
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _buildGeneratingLoader('Generating your plan…'),
+      );
+    }
+
+    // Step 1: Run the planning agent. It plans, executes tools (habit analysis,
+    // milestones, burnout-aware scheduling) and reflects — we consume ALL of it.
     try {
       final agentPlan = await ai.agentPlanner.plan(
         AgentPlannerRequest(
@@ -1153,63 +1262,122 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           },
         ),
       );
-      agentStrategy = agentPlan.plan['strategy']?.toString();
+      agentStrategy = agentPlan.strategy;
+      agentDegraded = agentPlan.degraded;
+      agentHabitInsight = agentPlan.habitInsight;
+      agentRecommendation = agentPlan.primaryInsight;
+      agentBurnoutRisk = agentPlan.burnoutRisk;
+      agentScheduleNote = agentPlan.schedule['scheduleNote']?.toString();
+      if (agentPlan.milestones.isNotEmpty) {
+        agentSpecs = _draftSpecsFromTitles(agentPlan.milestones).toList();
+      }
     } catch (e) {
       debugPrint('Agent planner unavailable: $e');
     }
 
-    try {
-      final generated = await ai.taskGenerator.generate(
-        TaskGeneratorRequest(
-          goalTitle: title,
-          category: _newGoalCategory,
-          priority: _newGoalPriority,
-          deadlineDays: deadlineDays,
-        ),
-      );
-      final aiSpecs =
-          _draftSpecsFromGeneratedTasks(generated.tasks).take(6).toList();
-      if (aiSpecs.isNotEmpty) {
-        draftSpecs = aiSpecs;
-        aiAvailable = true;
+    if (agentSpecs.isNotEmpty) {
+      draftSpecs = agentSpecs;
+      aiAvailable = true;
+      fromAgent = true;
+    } else {
+      // Step 2 (fallback): the agent produced no milestones — try the task
+      // generator, then fall back to the local heuristic plan.
+      try {
+        final generated = await ai.taskGenerator.generate(
+          TaskGeneratorRequest(
+            goalTitle: title,
+            category: _newGoalCategory,
+            priority: _newGoalPriority,
+            deadlineDays: deadlineDays,
+          ),
+        );
+        final aiSpecs = _draftSpecsFromGeneratedTasks(generated.tasks).toList();
+        if (aiSpecs.isNotEmpty) {
+          draftSpecs = aiSpecs;
+          aiAvailable = true;
+        }
+      } catch (e) {
+        debugPrint('AI task generation fallback used: $e');
       }
-    } catch (e) {
-      debugPrint('AI task generation fallback used: $e');
     }
 
-    final agentSuffix =
-        agentStrategy == null ? '' : ' and agent planner ($agentStrategy)';
+    // Compose the opening message from the agent's REAL output, not a cosmetic
+    // suffix. Surface the habit insight, schedule note, and top recommendation.
+    final intro = StringBuffer();
+    if (fromAgent && !agentDegraded) {
+      final strategy = agentStrategy?.trim();
+      intro.write('I ran the planning agent');
+      if (strategy != null && strategy.isNotEmpty) intro.write(' ($strategy)');
+      intro.write(' and broke "$title" into ${draftSpecs.length} milestones.');
+    } else if (aiAvailable) {
+      intro.write(
+          'I used the AI task generator to break "$title" into ${draftSpecs.length} tasks.');
+    } else {
+      intro.write(
+          'I could not reach the AI planner, so I prepared a local fallback plan for "$title".');
+    }
+    final habit = agentHabitInsight?.trim();
+    if (habit != null && habit.isNotEmpty) {
+      final risk = agentBurnoutRisk?.trim();
+      final riskTag = (risk != null && risk.isNotEmpty) ? ' (burnout risk: $risk)' : '';
+      intro.write('\n\n🧠 $habit$riskTag');
+    }
+    final note = agentScheduleNote?.trim();
+    if (note != null && note.isNotEmpty) intro.write('\n📅 $note');
+    final rec = agentRecommendation?.trim();
+    if (rec != null && rec.isNotEmpty) intro.write('\n👉 $rec');
+    intro.write(
+        '\n\nYou can ask me to make the plan easier, more detailed, or reorder it before scheduling.');
+
     final messages = <Map<String, dynamic>>[
       {
         'role': 'assistant',
-        'text': aiAvailable
-            ? 'Great! I used the backend AI task generator$agentSuffix to break "$title" into ${draftSpecs.length} micro-tasks. You can ask me to make the plan easier, more detailed, or reorder it before scheduling.'
-            : 'I could not reach the backend AI task generator, so I prepared a local fallback plan for "$title". You can still adjust it before scheduling.',
+        'text': intro.toString(),
         'tasks': _draftPreviewLabels(draftSpecs),
       },
     ];
 
-    if (!mounted) return;
+    // Generation done — close the blocking loader before showing the plan.
+    if (loaderOpen && mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      loaderOpen = false;
+    }
+
     final result = await showDialog<List<_DraftTaskSpec>>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
         var isAiThinking = false;
+        // When the agent scales back an unrealistic request, it asks "are you
+        // sure?". We stash the original request here so a "yes" re-issues it as
+        // a confirmed (forced) request, and a "no" keeps the scaled-back plan.
+        String? pendingForceRequest;
         return StatefulBuilder(
           builder: (dialogContext, setLocalState) {
             Future<void> sendMessage() async {
               final request = chatController.text.trim();
               if (request.isEmpty || isAiThinking) return;
 
-              final history = messages
-                  .where((message) => message['text'] is String)
-                  .map(
-                    (message) => ChatMessage(
-                      role: message['role'] == 'user' ? 'user' : 'model',
-                      content: message['text'] as String,
-                    ),
-                  )
-                  .toList();
+              final pending = pendingForceRequest;
+
+              // User declined the "are you sure?" question — keep current plan.
+              if (pending != null && _isNegativeReply(request)) {
+                setLocalState(() {
+                  messages.add({'role': 'user', 'text': request});
+                  messages.add({
+                    'role': 'assistant',
+                    'text': "Got it — I'll keep the plan as it is.",
+                    'tasks': _draftPreviewLabels(draftSpecs),
+                  });
+                  chatController.clear();
+                  pendingForceRequest = null;
+                });
+                return;
+              }
+
+              // User confirmed — re-issue the original request, forced this time.
+              final useForce = pending != null && _isAffirmativeReply(request);
+              final effectiveRequest = useForce ? pending : request;
 
               setLocalState(() {
                 isAiThinking = true;
@@ -1218,33 +1386,52 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               });
 
               try {
-                final reply = await ai.goalCoach.ask(
-                  GoalCoachRequest(
-                    userMessage:
-                        "$request\nCurrent draft tasks: ${draftSpecs.map((task) => task.previewLabel).join('; ')}",
-                    goalTitle: title,
-                    conversationHistory: history,
-                    progressPercent: 0,
+                // Route refinements through the planning agent so requests like
+                // "10 milestones" or "2 per day" reach the createMilestones tool,
+                // which sizes the roadmap (and flags unrealistic asks) for us.
+                final refinedPlan = await ai.agentPlanner.plan(
+                  AgentPlannerRequest(
+                    goal: title,
+                    context: {
+                      'category': _newGoalCategory,
+                      'priority': _newGoalPriority,
+                      'deadlineDays': deadlineDays,
+                      'completedToday': _todayCompleted,
+                      'totalToday': _todayTasks.length,
+                      'mood': _selectedMood,
+                      'streak': _streak,
+                      'specialRequest': effectiveRequest,
+                      if (useForce) 'force': true,
+                    },
                   ),
                 );
 
-                final suggested = reply.suggestedActions
+                final refinedTitles = refinedPlan.milestones
                     .map((task) => task.trim())
                     .where((task) => task.isNotEmpty)
-                    .take(6)
                     .toList();
-                if (suggested.isNotEmpty) {
-                  draftSpecs =
-                      _draftSpecsFromTitles(suggested).take(6).toList();
+                if (refinedTitles.isNotEmpty) {
+                  draftSpecs = _draftSpecsFromTitles(refinedTitles).toList();
                 }
+
+                // Prefer the agent's feasibility note (e.g. "…Are you sure you
+                // still want all 30? (yes / no)"); otherwise confirm the count.
+                final note = refinedPlan.milestoneNote?.trim();
+                final replyText = (note != null && note.isNotEmpty)
+                    ? note
+                    : (refinedTitles.isNotEmpty
+                        ? 'Updated the plan to ${refinedTitles.length} milestones.'
+                        : 'I refined the plan based on your request.');
 
                 if (!dialogContext.mounted) return;
                 setLocalState(() {
+                  // Remember the request only while a confirmation is pending.
+                  pendingForceRequest = refinedPlan.milestoneNeedsConfirmation
+                      ? effectiveRequest
+                      : null;
                   messages.add({
                     'role': 'assistant',
-                    'text': reply.reply.trim().isEmpty
-                        ? 'I refined the plan based on your request.'
-                        : reply.reply.trim(),
+                    'text': replyText,
                     'tasks': _draftPreviewLabels(draftSpecs),
                   });
                   isAiThinking = false;
@@ -1255,13 +1442,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                   request,
                   title,
                 );
-                draftSpecs = _draftSpecsFromTitles(refined).take(6).toList();
+                draftSpecs = _draftSpecsFromTitles(refined).toList();
                 if (!dialogContext.mounted) return;
                 setLocalState(() {
+                  pendingForceRequest = null;
                   messages.add({
                     'role': 'assistant',
-                    'text':
-                        'The AI coach endpoint is unavailable right now, so I refined the plan locally. You can still finalize this draft.',
+                    'text': 'The AI planner is unavailable right now, so I refined the plan locally. You can still finalize this draft.',
                     'tasks': _draftPreviewLabels(draftSpecs),
                   });
                   isAiThinking = false;
@@ -1484,12 +1671,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                             Expanded(
                               child: TextField(
                                 controller: chatController,
+                                enabled: !isAiThinking,
                                 minLines: 1,
                                 maxLines: 4,
                                 textInputAction: TextInputAction.send,
                                 onSubmitted: (_) => sendMessage(),
                                 decoration: InputDecoration(
-                                  hintText: 'Adjust the AI plan...',
+                                  hintText: isAiThinking
+                                      ? 'AI is thinking…'
+                                      : 'Adjust the AI plan...',
                                   filled: true,
                                   fillColor: const Color(0xFFF7F5EF),
                                   contentPadding: const EdgeInsets.symmetric(
@@ -2051,12 +2241,20 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   void _handleMoodChanged(String value) {
+    if (value == _selectedMood) return;
+
     setState(() => _selectedMood = value);
-    unawaited(_persistProfileStats());
-    unawaited(_requestMoodAdvice(value));
+    unawaited(_persistMood(value));
+
+    if (!_moodAdvisorAvailable) return;
+    _moodAdviceTimer?.cancel();
+    _moodAdviceTimer = Timer(const Duration(milliseconds: 450), () {
+      unawaited(_requestMoodAdvice(value));
+    });
   }
 
   Future<void> _requestMoodAdvice(String mood) async {
+    final requestSerial = ++_moodAdviceRequestSerial;
     try {
       final advice = await context.read<GenkitService>().moodAdvisor.advise(
             MoodAdvisorRequest(
@@ -2066,7 +2264,11 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               streak: _streak,
             ),
           );
-      if (!mounted) return;
+      if (!mounted ||
+          requestSerial != _moodAdviceRequestSerial ||
+          mood != _selectedMood) {
+        return;
+      }
       _addInAppNotification(
         title: 'AI mood plan',
         body: advice.message,
@@ -2076,6 +2278,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       );
       _showMessage('AI mood plan: ${advice.message}');
     } catch (e) {
+      if (e.toString().contains('not-found')) {
+        _moodAdvisorAvailable = false;
+      }
       debugPrint('Mood advisor unavailable: $e');
     }
   }
@@ -2192,125 +2397,170 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   void _openProfile() {
     final authState = context.read<AuthState>();
-    final displayName = authState.displayName;
+    final user = context.read<AuthService>().currentUser ?? authState.user;
+    final displayName = _currentProfileDisplayName(user, authState);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
-        builder: (context) => Scaffold(
-          backgroundColor: gdBackground,
-          appBar: AppBar(
-            centerTitle: true,
-            title: const Text('Profile'),
-            leading: IconButton(
-              tooltip: 'Close profile',
-              icon: const Icon(Icons.close_rounded),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ),
-          body: SafeArea(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-              children: [
-                AppCard(
-                  color: gdSurface,
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const CircleAvatar(
-                              radius: 36,
-                              backgroundColor: gdPrimarySoft,
-                              child: Icon(Icons.account_circle_rounded,
-                                  size: 42, color: gdPrimary),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(displayName,
-                                      style: const TextStyle(
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.w900,
-                                          color: gdInk)),
-                                  const SizedBox(height: 4),
-                                  Text('Signed in with $_signedInWith',
-                                      style: const TextStyle(
-                                          color: gdMuted,
-                                          fontWeight: FontWeight.w700)),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 18),
-                        Row(children: [
-                          Expanded(
-                              child: StatMiniCard(
-                                  icon: Icons.paid_rounded,
-                                  label: 'Coins',
-                                  value: '$_coins')),
-                          const SizedBox(width: 10),
-                          Expanded(
-                              child: StatMiniCard(
-                                  icon: Icons.local_fire_department_rounded,
-                                  label: 'Streak',
-                                  value: '$_streak days')),
-                        ]),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                AppCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text('Account',
-                            style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                color: gdInk)),
-                        SizedBox(height: 10),
-                        ListTile(
-                            leading: Icon(Icons.mail_rounded),
-                            title: Text('Email / login method'),
-                            subtitle: Text(
-                                'Manage account connection from settings.')),
-                        ListTile(
-                            leading: Icon(Icons.shield_rounded),
-                            title: Text('Privacy'),
-                            subtitle: Text(
-                                'Control what friends and communities can see.')),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                AppCard(
-                  color: gdPrimarySoft,
-                  child: const Padding(
-                    padding: EdgeInsets.all(18),
-                    child: Text(
-                      'Friends are now managed from the Community page under the Friends tab.',
-                      style: TextStyle(
-                          color: gdInk,
-                          fontWeight: FontWeight.w800,
-                          height: 1.4),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+        builder: (context) => ProfileScreen(
+          displayName: displayName,
+          email: user?.email ?? '',
+          photoUrl: user?.photoURL,
+          signedInWith: _signedInWith,
+          isGuest: user?.isAnonymous ?? authState.isGuest,
+          emailVerified: authState.emailVerified,
+          providerIds: authState.providerIds,
+          coins: _coins,
+          streak: _streak,
+          petHappiness: _petHappiness,
+          pet: _activePetSkin,
+          accessory: _activeAccessory,
+          selectedMood: _selectedMood,
+          goals: _goals,
+          tasks: _allTasks,
+          communities: _communities,
+          friends: _friends,
+          routines: _routines,
+          goalReminders: _goalReminders,
+          friendProgressSharing: _friendProgressSharing,
+          onDisplayNameChanged: _updateDisplayName,
+          onSendEmailVerification: authState.sendEmailVerification,
+          onRefreshEmailVerification: authState.reloadUser,
+          onSendPasswordReset: authState.sendPasswordResetEmail,
+          onUpgradeGuestWithEmail: _upgradeGuestWithEmail,
+          onUpgradeGuestWithGoogle: _upgradeGuestWithGoogle,
+          onGoalRemindersChanged: _setGoalReminders,
+          onFriendProgressSharingChanged: _setFriendProgressSharing,
+          onSignOut: () => unawaited(_handleSignOut()),
+          onDeleteAccount: _deleteCurrentAccount,
         ),
       ),
     );
+  }
+
+  String _currentProfileDisplayName(
+    firebase_auth.User? user,
+    AuthState authState,
+  ) {
+    if (_profileDisplayName?.trim().isNotEmpty == true) {
+      return _profileDisplayName!.trim();
+    }
+    if (user?.displayName?.trim().isNotEmpty == true) {
+      return user!.displayName!.trim();
+    }
+    return authState.displayName;
+  }
+
+  Future<bool> _updateDisplayName(String displayName) async {
+    final authService = context.read<AuthService>();
+    try {
+      final cleaned = displayName.trim();
+      await authService.updateDisplayName(displayName);
+      final user = authService.currentUser;
+      if (user == null) return false;
+      if (mounted) {
+        setState(() => _profileDisplayName = cleaned);
+      }
+      try {
+        await _userRepository.createOrUpdateProfile(
+          uid: user.uid,
+          displayName: cleaned,
+          email: user.email,
+          photoUrl: user.photoURL,
+        );
+      } catch (e) {
+        debugPrint('Display name profile sync failed: $e');
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Display name update failed: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _upgradeGuestWithEmail({
+    required String displayName,
+    required String email,
+    required String password,
+  }) async {
+    final authState = context.read<AuthState>();
+    final authService = context.read<AuthService>();
+    final upgraded = await authState.upgradeGuestWithEmail(
+      displayName: displayName,
+      email: email,
+      password: password,
+    );
+    final user = authService.currentUser ?? authState.user;
+    if (!upgraded || user == null) return false;
+
+    try {
+      await _userRepository.createOrUpdateProfile(
+        uid: user.uid,
+        displayName: displayName.trim(),
+        email: user.email ?? email.trim(),
+        photoUrl: user.photoURL,
+      );
+      await _userRepository.markOnboarded(user.uid);
+      if (mounted) {
+        setState(() {
+          _profileDisplayName = displayName.trim();
+          _signedInWith = 'Email';
+        });
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Guest upgrade profile sync failed: $e');
+      if (mounted) {
+        setState(() {
+          _profileDisplayName = displayName.trim();
+          _signedInWith = 'Email';
+        });
+      }
+      return true;
+    }
+  }
+
+  Future<GuestGoogleUpgradeResult?> _upgradeGuestWithGoogle() async {
+    final authState = context.read<AuthState>();
+    final authService = context.read<AuthService>();
+    final upgraded = await authState.upgradeGuestWithGoogle();
+    final user = authService.currentUser ?? authState.user;
+    if (!upgraded || user == null) return null;
+
+    final displayName = user.displayName?.trim().isNotEmpty == true
+        ? user.displayName!.trim()
+        : _profileDisplayName?.trim().isNotEmpty == true
+            ? _profileDisplayName!.trim()
+            : 'Goal Digger User';
+    final email = user.email ?? '';
+
+    try {
+      await _userRepository.createOrUpdateProfile(
+        uid: user.uid,
+        displayName: displayName,
+        email: email,
+        photoUrl: user.photoURL,
+      );
+      await _userRepository.markOnboarded(user.uid);
+    } catch (e) {
+      debugPrint('Guest Google upgrade profile sync failed: $e');
+    }
+
+    if (mounted) {
+      setState(() {
+        _profileDisplayName = displayName;
+        _signedInWith = 'Google';
+      });
+    }
+
+    return GuestGoogleUpgradeResult(displayName: displayName, email: email);
+  }
+
+  Future<bool> _deleteCurrentAccount() async {
+    final deleted = await context.read<AuthState>().deleteCurrentUser();
+    if (!deleted || !mounted) return false;
+    _resetForSignedOutState();
+    return true;
   }
 
   void _addRoutine(RoutineItem routine) {
@@ -2426,12 +2676,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   @override
   Widget build(BuildContext context) {
-    // context.watch triggers rebuild when AuthState notifies.
+    // Rebuild the root only when the auth status itself changes. Loading and
+    // error changes are only needed by onboarding, and rebuilding the signed-in
+    // shell during modal cleanup can upset Flutter's inherited-widget tree.
+    final authStatus =
+        context.select<AuthState, AuthStatus>((authState) => authState.status);
+
     // All side effects (sync activation, Firestore writes) are handled
     // in _onAuthStateChanged via the addListener wired in didChangeDependencies.
-    final authState = context.watch<AuthState>();
-
-    if (!authState.isKnown) {
+    if (authStatus == AuthStatus.unknown) {
       return const Scaffold(
         backgroundColor: gdBackground,
         body: Center(child: CircularProgressIndicator()),
@@ -2439,19 +2692,22 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     }
 
     if (!_onboarded) {
-      return OnboardingScreen(
-        isLoading: authState.isLoading,
-        errorMessage: authState.errorMessage,
-        onClearError: authState.clearError,
-        onEmailAuth: (email, password, displayName, isSignUp) =>
-            _completeOnboardingWithEmail(
-          email: email,
-          password: password,
-          displayName: displayName,
-          isSignUp: isSignUp,
+      return Consumer<AuthState>(
+        builder: (context, authState, _) => OnboardingScreen(
+          isLoading: authState.isLoading,
+          errorMessage: authState.errorMessage,
+          onClearError: authState.clearError,
+          onPasswordReset: authState.sendPasswordResetEmail,
+          onEmailAuth: (email, password, displayName, isSignUp) =>
+              _completeOnboardingWithEmail(
+            email: email,
+            password: password,
+            displayName: displayName,
+            isSignUp: isSignUp,
+          ),
+          onGoogle: () => unawaited(_completeOnboardingWithAuth('Google')),
+          onGuest: () => unawaited(_completeOnboardingWithAuth('Guest')),
         ),
-        onGoogle: () => unawaited(_completeOnboardingWithAuth('Google')),
-        onGuest: () => unawaited(_completeOnboardingWithAuth('Guest')),
       );
     }
 
