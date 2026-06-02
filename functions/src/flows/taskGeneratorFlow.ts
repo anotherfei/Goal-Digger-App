@@ -5,6 +5,7 @@
 
 import { z } from "genkit";
 import { getAI, defaultModel } from "../ai";
+import { evaluateGoal, goalGuardMessage } from "../agent/goal_guard";
 import { parseModelJson } from "../json";
 
 const TaskGeneratorInputSchema = z.object({
@@ -39,6 +40,14 @@ export function defineTaskGeneratorFlow() {
       outputSchema: TaskGeneratorOutputSchema,
     },
     async (input) => {
+      const goalReview = await evaluateGoal(input.goalTitle);
+      if (!goalReview.allowed) {
+        return {
+          tasks: [],
+          explanation: goalGuardMessage(goalReview),
+        };
+      }
+
       const priorityLabel =
         input.priority >= 4 ? "high" : input.priority >= 2 ? "medium" : "low";
 
