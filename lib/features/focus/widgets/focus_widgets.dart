@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 
@@ -13,24 +12,15 @@ class FocusSessionConfig {
   const FocusSessionConfig({
     required this.task,
     required this.durationMinutes,
-    required this.blockedApps,
-    required this.blockUnrelatedApps,
   });
 
   final MicroTask? task;
   final int durationMinutes;
-  final Set<String> blockedApps;
-  final bool blockUnrelatedApps;
 
   String get title => task?.title ?? 'Custom focus session';
 
-  String get blockingSummary {
-    if (blockedApps.isEmpty) return 'No apps selected to block';
-    if (blockUnrelatedApps && task != null) {
-      return 'Blocking unrelated apps for this goal';
-    }
-    return 'Blocking selected apps';
-  }
+  String get focusSummary =>
+      task == null ? 'Custom focus timer' : 'Goal task focus';
 }
 
 class FocusSetupSheet extends StatefulWidget {
@@ -49,24 +39,12 @@ class FocusSetupSheet extends StatefulWidget {
 
 class _FocusSetupSheetState extends State<FocusSetupSheet> {
   static const List<int> _durationPresets = [15, 25, 45, 60];
-  static const List<String> _appOptions = [
-    'Instagram',
-    'TikTok',
-    'YouTube',
-    'Games',
-    'Shopping',
-    'Messages',
-    'Browser',
-    'Music',
-  ];
 
   final TextEditingController _customDurationController = TextEditingController(text: '30');
 
   MicroTask? _selectedTask;
   int _selectedDuration = 25;
   bool _useCustomDuration = false;
-  bool _blockUnrelatedApps = true;
-  late Set<String> _blockedApps;
 
   @override
   void initState() {
@@ -81,9 +59,6 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
             ? null
             : openTasks.first;
     _selectedDuration = _selectedTask?.durationMinutes ?? 25;
-    _blockedApps = _selectedTask == null
-        ? {'Instagram', 'TikTok', 'YouTube'}
-        : {'Instagram', 'TikTok', 'YouTube', 'Games'};
   }
 
   @override
@@ -121,7 +96,6 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
       _selectedTask = task;
       _selectedDuration = task.durationMinutes;
       _useCustomDuration = false;
-      _blockUnrelatedApps = true;
     });
   }
 
@@ -129,7 +103,10 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
     final duration = _durationMinutes;
     if (duration == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a valid focus duration in minutes.')),
+        const SnackBar(
+          content: Text('Enter a valid focus duration in minutes.'),
+          duration: Duration(seconds: 2),
+        ),
       );
       return;
     }
@@ -138,8 +115,6 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
       FocusSessionConfig(
         task: _selectedTask,
         durationMinutes: duration,
-        blockedApps: Set<String>.from(_blockedApps),
-        blockUnrelatedApps: _selectedTask != null && _blockUnrelatedApps,
       ),
     );
   }
@@ -178,7 +153,7 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
                       Text('Focus mode', style: GdText.headlineMedium),
                       const SizedBox(height: 4),
                       Text(
-                        'Choose a task, set a timer, and block distracting apps.',
+                        'Choose a task, set a timer, and stay in Goal Digger.',
                         style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
                       ),
                     ],
@@ -212,7 +187,6 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
                           onSelected: (_) {
                             setState(() {
                               _selectedTask = null;
-                              _blockUnrelatedApps = false;
                             });
                           },
                         ),
@@ -297,60 +271,6 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
                         ),
                       ),
                     ],
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            Text('3. Block distractions', style: GdText.titleMedium),
-            const SizedBox(height: 10),
-            AppCard(
-              color: gdCardLight,
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (_selectedTask != null)
-                      SwitchListTile.adaptive(
-                        contentPadding: EdgeInsets.zero,
-                        value: _blockUnrelatedApps,
-                        title: const Text(
-                          'Block apps unrelated to this goal',
-                          style: TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        subtitle: Text(
-                          'Goal Digger will use your selected list as the distraction blocklist during this session.',
-                          style: TextStyle(color: gdMuted, fontWeight: FontWeight.w600),
-                        ),
-                        onChanged: (value) => setState(() => _blockUnrelatedApps = value),
-                      )
-                    else
-                      Text(
-                        'Choose the apps you want to block during this custom session.',
-                        style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
-                      ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final app in _appOptions)
-                          FilterChip(
-                            selected: _blockedApps.contains(app),
-                            label: Text(app),
-                            onSelected: (selected) {
-                              setState(() {
-                                if (selected) {
-                                  _blockedApps.add(app);
-                                } else {
-                                  _blockedApps.remove(app);
-                                }
-                              });
-                            },
-                          ),
-                      ],
-                    ),
                   ],
                 ),
               ),
@@ -515,7 +435,7 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
                         const SizedBox(height: 20),
                         Text(widget.config.title, textAlign: TextAlign.center, style: GdText.titleLarge),
                         const SizedBox(height: 8),
-                        Text(widget.config.blockingSummary, textAlign: TextAlign.center, style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                        Text(widget.config.focusSummary, textAlign: TextAlign.center, style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
                         const SizedBox(height: 24),
                         SizedBox(
                           width: 230,
@@ -544,12 +464,12 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(children: [Icon(Icons.block_rounded, size: 20), SizedBox(width: 8), Text('Blocked during focus', style: TextStyle(fontWeight: FontWeight.w900, color: gdInk))]),
+                                Row(children: [Icon(Icons.center_focus_strong_rounded, size: 20), SizedBox(width: 8), Text('Stay in focus', style: TextStyle(fontWeight: FontWeight.w900, color: gdInk))]),
                                 const SizedBox(height: 10),
-                                if (widget.config.blockedApps.isEmpty)
-                                  Text('No apps selected.', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700))
-                                else
-                                  Wrap(spacing: 8, runSpacing: 8, children: [for (final app in widget.config.blockedApps) Chip(backgroundColor: gdPrimarySoft, avatar: Icon(Icons.lock_rounded, size: 16, color: gdPrimary), label: Text(app, style: TextStyle(color: gdInk, fontWeight: FontWeight.w800)))]),
+                                Text(
+                                  'Leaving Goal Digger during a running session will ask you to stay focused. Leaving again resets the timer.',
+                                  style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                                ),
                               ],
                             ),
                           ),

@@ -23,6 +23,8 @@ class PlannerPage extends StatelessWidget {
     required this.onEditGoalDeadline,
     required this.onEditGoalPriority,
     required this.onCreateFirstGoal,
+    required this.onToggleTask,
+    this.highlightedGoalId,
   });
 
   final List<GoalProject> goals;
@@ -41,6 +43,8 @@ class PlannerPage extends StatelessWidget {
   final ValueChanged<GoalProject> onEditGoalDeadline;
   final ValueChanged<GoalProject> onEditGoalPriority;
   final VoidCallback onCreateFirstGoal;
+  final ValueChanged<MicroTask> onToggleTask;
+  final int? highlightedGoalId;
 
   @override
   Widget build(BuildContext context) {
@@ -139,9 +143,11 @@ class PlannerPage extends StatelessWidget {
             ...goals.map((goal) => GoalCard(
                   goal: goal,
                   today: today,
+                  highlighted: goal.id == highlightedGoalId,
                   onDelete: () => onDeleteGoal(goal),
                   onEditDeadline: () => onEditGoalDeadline(goal),
                   onEditPriority: () => onEditGoalPriority(goal),
+                  onToggleTask: onToggleTask,
                 )),
         ],
       ),

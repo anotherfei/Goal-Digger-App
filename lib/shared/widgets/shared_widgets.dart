@@ -782,6 +782,8 @@ class GoalCard extends StatelessWidget {
     required this.onDelete,
     required this.onEditDeadline,
     required this.onEditPriority,
+    this.highlighted = false,
+    this.onToggleTask,
   });
 
   final GoalProject goal;
@@ -789,6 +791,8 @@ class GoalCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onEditDeadline;
   final VoidCallback onEditPriority;
+  final bool highlighted;
+  final ValueChanged<MicroTask>? onToggleTask;
 
   void _showTaskDetail(BuildContext context, MicroTask task) {
     showModalBottomSheet<void>(
@@ -924,6 +928,7 @@ class GoalCard extends StatelessWidget {
               data:
                   Theme.of(context).copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
+                initiallyExpanded: highlighted,
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: EdgeInsets.zero,
                 title: Text('Subtasks',
@@ -961,6 +966,20 @@ class GoalCard extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(8)),
                             leading: Icon(task.load.icon,
                                 color: task.done ? gdMuted : gdPrimary),
+                            trailing: IconButton(
+                              tooltip: task.done
+                                  ? 'Mark task incomplete'
+                                  : 'Mark task complete',
+                              onPressed: onToggleTask == null
+                                  ? null
+                                  : () => onToggleTask!(task),
+                              icon: Icon(
+                                task.done
+                                    ? Icons.check_circle_rounded
+                                    : Icons.radio_button_unchecked_rounded,
+                                color: task.done ? gdPrimary : gdMuted,
+                              ),
+                            ),
                             title: Text(
                               task.title,
                               maxLines: 1,
@@ -1108,7 +1127,7 @@ class TaskCard extends StatelessWidget {
     return task.load == TaskLoad.light
         ? 'Start here when energy is low. This task is intentionally small.'
         : task.load == TaskLoad.focus
-            ? 'Block distractions and work on this single step first.'
+            ? 'Stay focused and work on this single step first.'
             : 'This is a higher-effort step. Do it when you have enough time.';
   }
 

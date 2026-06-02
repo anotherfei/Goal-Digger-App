@@ -46,10 +46,16 @@ class _NotificationInboxPageState extends State<NotificationInboxPage> {
   Widget build(BuildContext context) {
     // Keep the token resolver matched to the applied theme on this route.
     GdColors.setBrightness(Theme.of(context).brightness);
-    final importantUnread = _visibleNotifications
+    final petNotifications = _visibleNotifications
+        .where((notification) => notification.isPetRelated)
+        .toList();
+    final nonPetNotifications = _visibleNotifications
+        .where((notification) => !notification.isPetRelated)
+        .toList();
+    final importantUnread = nonPetNotifications
         .where((notification) => notification.important && notification.isUnread)
         .toList();
-    final regularNotifications = _visibleNotifications
+    final regularNotifications = nonPetNotifications
         .where(
           (notification) =>
               !(notification.important && notification.isUnread),
@@ -57,6 +63,10 @@ class _NotificationInboxPageState extends State<NotificationInboxPage> {
         .toList();
     final unreadCount =
         _visibleNotifications.where((item) => item.isUnread).length;
+    final regularUnreadCount =
+        regularNotifications.where((item) => item.isUnread).length;
+    final petUnreadCount =
+        petNotifications.where((item) => item.isUnread).length;
 
     return Scaffold(
       backgroundColor: gdBackground,
@@ -111,14 +121,33 @@ class _NotificationInboxPageState extends State<NotificationInboxPage> {
                   ),
                 const SizedBox(height: 12),
               ],
-              SectionTitle(
-                title: importantUnread.isEmpty
-                    ? 'All notifications'
-                    : 'Other notifications',
-                trailing: unreadCount == 0 ? 'All read' : '$unreadCount unread',
-              ),
-              const SizedBox(height: 10),
-              if (regularNotifications.isEmpty)
+              if (petNotifications.isNotEmpty) ...[
+                _PetNotificationGroup(
+                  notifications: petNotifications,
+                  unreadCount: petUnreadCount,
+                  onMarkRead: _markRead,
+                  onDelete: _delete,
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (regularNotifications.isNotEmpty) ...[
+                SectionTitle(
+                  title: importantUnread.isEmpty
+                      ? 'All notifications'
+                      : 'Other notifications',
+                  trailing: regularUnreadCount == 0
+                      ? 'All read'
+                      : '$regularUnreadCount unread',
+                ),
+                const SizedBox(height: 10),
+                for (final notification in regularNotifications)
+                  _NotificationTile(
+                    notification: notification,
+                    highlight: notification.important && notification.isUnread,
+                    onMarkRead: () => _markRead(notification),
+                    onDelete: () => _delete(notification),
+                  ),
+              ] else if (petNotifications.isEmpty)
                 AppCard(
                   child: Padding(
                     padding: EdgeInsets.all(18),
@@ -130,13 +159,6 @@ class _NotificationInboxPageState extends State<NotificationInboxPage> {
                       ),
                     ),
                   ),
-                ),
-              for (final notification in regularNotifications)
-                _NotificationTile(
-                  notification: notification,
-                  highlight: notification.important && notification.isUnread,
-                  onMarkRead: () => _markRead(notification),
-                  onDelete: () => _delete(notification),
                 ),
             ],
           ],
@@ -174,6 +196,172 @@ class _NotificationInboxPageState extends State<NotificationInboxPage> {
           .toList();
     });
     widget.onDelete(notification);
+  }
+}
+
+class _PetNotificationGroup extends StatelessWidget {
+  const _PetNotificationGroup({
+    required this.notifications,
+    required this.unreadCount,
+    required this.onMarkRead,
+    required this.onDelete,
+  });
+
+  final List<AppNotification> notifications;
+  final int unreadCount;
+  final ValueChanged<AppNotification> onMarkRead;
+  final ValueChanged<AppNotification> onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final newest = notifications.first.createdAt;
+    final updateLabel = notifications.length == 1
+        ? '1 update'
+        : '${notifications.length} updates';
+
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          leading: CircleAvatar(
+            backgroundColor: gdPrimarySoft,
+            child: Icon(Icons.pets_rounded, color: gdPrimary),
+          ),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Pet rewards',
+                  style: TextStyle(
+                    color: gdInk,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              if (unreadCount > 0)
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: gdPrimary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+            ],
+          ),
+          subtitle: Text(
+            '$updateLabel - latest ${shortDate(newest)}',
+            style: TextStyle(
+              color: gdMuted,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          children: List.generate(notifications.length, (index) {
+            final notification = notifications[index];
+            return _PetNotificationRow(
+              notification: notification,
+              showTopBorder: index > 0,
+              onMarkRead: () => onMarkRead(notification),
+              onDelete: () => onDelete(notification),
+            );
+          }),
+        ),
+      ),
+    );
+  }
+}
+
+class _PetNotificationRow extends StatelessWidget {
+  const _PetNotificationRow({
+    required this.notification,
+    required this.showTopBorder,
+    required this.onMarkRead,
+    required this.onDelete,
+  });
+
+  final AppNotification notification;
+  final bool showTopBorder;
+  final VoidCallback onMarkRead;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border:
+            showTopBorder ? Border(top: BorderSide(color: gdBorder)) : null,
+      ),
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        minVerticalPadding: 10,
+        leading: Icon(
+          Icons.card_giftcard_rounded,
+          color: notification.isUnread ? gdPrimary : gdMuted,
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                notification.title,
+                style: TextStyle(
+                  color: gdInk,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            if (notification.isUnread)
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  color: gdPrimary,
+                  shape: BoxShape.circle,
+                ),
+              ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                notification.body,
+                style: TextStyle(
+                  color: gdMuted,
+                  fontWeight: FontWeight.w700,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                shortDate(notification.createdAt),
+                style: TextStyle(
+                  color: gdMuted,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        trailing: PopupMenuButton<String>(
+          tooltip: 'Pet notification actions',
+          onSelected: (value) {
+            if (value == 'read') onMarkRead();
+            if (value == 'delete') onDelete();
+          },
+          itemBuilder: (context) => [
+            if (notification.isUnread)
+              const PopupMenuItem(value: 'read', child: Text('Mark read')),
+            const PopupMenuItem(value: 'delete', child: Text('Delete')),
+          ],
+        ),
+        onTap: notification.isUnread ? onMarkRead : null,
+      ),
+    );
   }
 }
 
