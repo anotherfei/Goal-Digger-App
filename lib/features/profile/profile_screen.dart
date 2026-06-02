@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/gd_colors.dart';
+import '../../core/theme/gd_design.dart';
 import '../../models/models.dart';
 import '../../shared/widgets/shared_widgets.dart';
 

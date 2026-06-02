@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/gd_colors.dart';
+import '../../core/theme/gd_design.dart';
 import '../../core/utils/date_helpers.dart';
 import '../../shared/widgets/shared_widgets.dart';
 import 'models/notification_models.dart';
@@ -228,8 +228,7 @@ class _NotificationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = notification.important ? gdWarning : gdPrimary;
-    final background =
-        highlight ? const Color(0xFFFFFBEB) : gdSurface;
+    final background = highlight ? gdWarningSoft : gdSurface;
 
     return AppCard(
       color: background,
@@ -238,7 +237,7 @@ class _NotificationTile extends StatelessWidget {
         minVerticalPadding: 12,
         leading: CircleAvatar(
           backgroundColor:
-              notification.important ? const Color(0xFFFEF3C7) : gdPrimarySoft,
+              notification.important ? gdWarningSoft : gdPrimarySoft,
           child: Icon(_iconFor(notification.type), color: color),
         ),
         title: Row(

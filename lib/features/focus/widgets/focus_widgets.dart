@@ -4,7 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/gd_constants.dart';
-import '../../../core/theme/gd_colors.dart';
+import '../../../core/theme/gd_design.dart';
 import '../../../core/utils/date_helpers.dart';
 import '../../../models/models.dart';
 import '../../../shared/widgets/shared_widgets.dart';
@@ -315,7 +315,6 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
                       SwitchListTile.adaptive(
                         contentPadding: EdgeInsets.zero,
                         value: _blockUnrelatedApps,
-                        activeColor: gdPrimary,
                         title: const Text(
                           'Block apps unrelated to this goal',
                           style: TextStyle(fontWeight: FontWeight.w900),
@@ -416,7 +415,7 @@ class _GoalTaskExpansionTile extends StatelessWidget {
           ListTile(
             dense: true,
             contentPadding: const EdgeInsets.only(left: 12, right: 4),
-            leading: Icon(task.load.icon, color: gdPrimary),
+            leading: Icon(task.load.icon, color: task.load.color),
             title: Text(
               task.title,
               style: const TextStyle(fontWeight: FontWeight.w900),

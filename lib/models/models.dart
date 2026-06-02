@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../core/theme/gd_design.dart';
+
 enum TaskLoad { light, focus, stretch }
 
 extension TaskLoadX on TaskLoad {
@@ -22,6 +24,32 @@ extension TaskLoadX on TaskLoad {
         return Icons.track_changes_rounded;
       case TaskLoad.stretch:
         return Icons.local_fire_department_rounded;
+    }
+  }
+
+  /// Colour mirrors the cognitive arousal a load implies: light work reads as
+  /// calm/info, focused work as steady brand blue, a stretch task as
+  /// high-energy warm — so effort is legible at a glance, not just by icon.
+  Color get color {
+    switch (this) {
+      case TaskLoad.light:
+        return GdColors.info;
+      case TaskLoad.focus:
+        return GdColors.brand;
+      case TaskLoad.stretch:
+        return GdColors.warm;
+    }
+  }
+
+  /// Soft surface paired with [color] for chips and icon tiles.
+  Color get softColor {
+    switch (this) {
+      case TaskLoad.light:
+        return GdColors.infoSoft;
+      case TaskLoad.focus:
+        return GdColors.brandSoft;
+      case TaskLoad.stretch:
+        return GdColors.warmSoft;
     }
   }
 }

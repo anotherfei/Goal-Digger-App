@@ -1,9 +1,18 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 
-import '../../core/theme/gd_colors.dart';
+import '../../core/theme/gd_design.dart';
 import '../../shared/widgets/shared_widgets.dart';
+
+/// Calm, monochrome chrome buttons for the app bar. Utility actions (profile,
+/// notifications, settings) stay neutral so they don't compete with the title;
+/// colour up here is reserved for the notification badge alone.
+final ButtonStyle _chromeIconButtonStyle = IconButton.styleFrom(
+  backgroundColor: gdCardLight,
+  foregroundColor: gdInk,
+  hoverColor: gdBorder,
+  highlightColor: gdBorder,
+  shape: const CircleBorder(),
+);
 
 class ResponsiveGoalShell extends StatelessWidget {
   const ResponsiveGoalShell({
@@ -59,7 +68,8 @@ class ResponsiveGoalShell extends StatelessWidget {
         leadingWidth: 72,
         leading: Padding(
           padding: const EdgeInsets.only(left: 12),
-          child: IconButton.filledTonal(
+          child: IconButton(
+            style: _chromeIconButtonStyle,
             tooltip: 'Profile and friends',
             onPressed: onProfile,
             icon: const Icon(Icons.account_circle_rounded),
@@ -78,7 +88,8 @@ class ResponsiveGoalShell extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: IconButton.filledTonal(
+            child: IconButton(
+              style: _chromeIconButtonStyle,
               tooltip: 'Settings',
               onPressed: onSettings,
               icon: const Icon(Icons.settings_rounded),
@@ -292,7 +303,8 @@ class _NotificationIconButton extends StatelessWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        IconButton.filledTonal(
+        IconButton(
+          style: _chromeIconButtonStyle,
           tooltip: 'Notifications',
           onPressed: onPressed,
           icon: Icon(
@@ -346,43 +358,45 @@ class _GoalBottomNavigation extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 112,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(36),
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-          child: Container(
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Container(
-              height: 88,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-              decoration: BoxDecoration(
-                color: gdSurface.withValues(alpha: 0.96),
-                borderRadius: BorderRadius.circular(32),
-                border: Border.all(color: gdBorder),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.10),
-                    blurRadius: 24,
-                    offset: const Offset(0, 12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Container(
+          height: 88,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+          decoration: BoxDecoration(
+            // Fully opaque, elegant surface — clear separation comes from the
+            // layered shadow and a hairline border, not from a blur.
+            color: gdSurface,
+            borderRadius: BorderRadius.circular(32),
+            border: Border.all(color: gdBorder),
+            boxShadow: [
+              // Soft ambient lift — floats the island clear of the page.
+              BoxShadow(
+                color: gdShadow.withValues(alpha: 0.16),
+                blurRadius: 32,
+                offset: const Offset(0, 16),
+              ),
+              // Tight contact shadow — gives a crisp, defined edge.
+              BoxShadow(
+                color: gdShadow.withValues(alpha: 0.08),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              for (var i = 0; i < labels.length; i++)
+                Expanded(
+                  child: _BottomNavItem(
+                    label: labels[i],
+                    icon: icons[i],
+                    selected: selectedIndex == i,
+                    highlighted: selectedIndex == i && i == 2,
+                    onTap: () => onSelect(i),
                   ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  for (var i = 0; i < labels.length; i++)
-                    Expanded(
-                      child: _BottomNavItem(
-                        label: labels[i],
-                        icon: icons[i],
-                        selected: selectedIndex == i,
-                        highlighted: selectedIndex == i && i == 2,
-                        onTap: () => onSelect(i),
-                      ),
-                    ),
-                ],
-              ),
-            ),
+                ),
+            ],
           ),
         ),
       ),

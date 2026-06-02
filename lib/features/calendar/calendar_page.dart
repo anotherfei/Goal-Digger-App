@@ -2,7 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
-import '../../core/theme/gd_colors.dart';
+import '../../core/theme/gd_design.dart';
 import '../../core/utils/date_helpers.dart';
 import '../../models/models.dart';
 import '../../shared/widgets/shared_widgets.dart';
@@ -212,13 +212,13 @@ class _CalendarPageState extends State<CalendarPage> {
           ),
           const SizedBox(height: 18),
           AppCard(
-            color: const Color(0xFFFFFBEB),
+            color: gdWarningSoft,
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Row(children: [
                 CircleAvatar(
                     backgroundColor: selectedTasks.isEmpty
-                        ? const Color(0xFFE2E8F0)
+                        ? gdBorder
                         : gdPrimarySoft,
                     child: Icon(
                         selectedTasks.isEmpty
@@ -365,8 +365,8 @@ class _CalendarTaskDetailTile extends StatelessWidget {
       child: ListTile(
         minVerticalPadding: 12,
         leading: CircleAvatar(
-          backgroundColor: gdPrimarySoft,
-          child: Icon(task.load.icon, color: gdPrimary),
+          backgroundColor: task.load.softColor,
+          child: Icon(task.load.icon, color: task.load.color),
         ),
         title: Text(
           task.title,
@@ -516,7 +516,7 @@ class _CalendarDayCell extends StatelessWidget {
                 ? gdWarning
                 : selected
                     ? gdPrimary
-                    : const Color(0xFFE2E8F0),
+                    : gdBorder,
             width: today || selected ? 2 : 1,
           ),
         ),

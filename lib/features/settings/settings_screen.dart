@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/gd_colors.dart';
+import '../../core/theme/gd_design.dart';
 import '../notifications/models/notification_models.dart';
 import '../../shared/widgets/shared_widgets.dart';
 
@@ -150,7 +150,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   SwitchListTile.adaptive(
                     value: goalReminders,
                     onChanged: onGoalRemindersChanged,
-                    activeColor: gdPrimary,
                     title: const Text(
                       'Android notifications',
                       style: TextStyle(
@@ -170,7 +169,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   SwitchListTile.adaptive(
                     value: friendProgressSharing,
                     onChanged: onFriendProgressSharingChanged,
-                    activeColor: gdPrimary,
                     title: const Text(
                       'Friend progress sharing',
                       style: TextStyle(
@@ -535,7 +533,6 @@ class _NotificationSwitch extends StatelessWidget {
     return SwitchListTile.adaptive(
       value: value,
       onChanged: enabled ? onChanged : null,
-      activeColor: gdPrimary,
       title: Text(
         title,
         style: const TextStyle(

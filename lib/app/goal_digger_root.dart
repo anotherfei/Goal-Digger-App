@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../core/constants/gd_constants.dart';
-import '../core/theme/gd_colors.dart';
+import '../core/theme/gd_design.dart';
 import '../core/utils/date_helpers.dart';
 import '../data/seed_data.dart';
 import '../features/calendar/calendar_page.dart';
@@ -1565,7 +1565,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
             Widget buildMessageBubble(Map<String, dynamic> message) {
               final isUser = message['role'] == 'user';
-              final bubbleColor = isUser ? gdPrimary : const Color(0xFFF3F5F8);
+              final bubbleColor = isUser ? gdPrimary : gdCardLight;
               final textColor = isUser ? Colors.white : gdInk;
               final tasks = (message['tasks'] as List?)?.cast<String>();
 
@@ -1705,7 +1705,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                   const Text(
                                     'GOAL BREAKDOWN',
                                     style: TextStyle(
-                                      color: Color(0xFF7C8AA5),
+                                      color: gdHint,
                                       fontSize: 13,
                                       letterSpacing: 3,
                                       fontWeight: FontWeight.w900,
@@ -1725,7 +1725,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                             ),
                             Container(
                               decoration: BoxDecoration(
-                                color: const Color(0xFFF1F3F6),
+                                color: gdCardLight,
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: IconButton(
@@ -1741,7 +1741,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                         Expanded(
                           child: Container(
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFBFCFE),
+                              color: gdSurface,
                               borderRadius: BorderRadius.circular(28),
                               border: Border.all(color: gdBorder),
                             ),
@@ -1788,13 +1788,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                       ? 'AI is thinking…'
                                       : 'Adjust the AI plan...',
                                   filled: true,
-                                  fillColor: const Color(0xFFF7F5EF),
+                                  fillColor: gdCardLight,
                                   contentPadding: const EdgeInsets.symmetric(
                                       horizontal: 18, vertical: 18),
                                   enabledBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(24),
-                                    borderSide: const BorderSide(
-                                        color: Color(0xFFE6DFD2)),
+                                    borderSide: const BorderSide(color: gdBorder),
                                   ),
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(24),
@@ -1827,8 +1826,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                           width: double.infinity,
                           child: FilledButton(
                             style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFF10B981),
-                              foregroundColor: Colors.white,
+                              backgroundColor: gdSuccess,
+                              foregroundColor: gdOnDark,
                               minimumSize: const Size.fromHeight(64),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(24)),
@@ -1904,20 +1903,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _showMessage('Goal created. AI subtasks are scheduled and synced.');
   }
 
-  List<Color> _categoryColors(String category) {
-    switch (category) {
-      case 'Career':
-        return [gdGradientCareerFrom, gdGradientCareerTo];
-      case 'Wellness':
-        return [gdGradientWellnessFrom, gdGradientWellnessTo];
-      case 'Finance':
-        return [gdGradientFinanceFrom, gdGradientFinanceTo];
-      case 'Creative':
-        return [gdGradientCreativeFrom, gdGradientCreativeTo];
-      default:
-        return [gdGradientStudyFrom, gdGradientStudyTo];
-    }
-  }
+  List<Color> _categoryColors(String category) =>
+      GdCategory.colorsFor(category);
 
   List<String> _generateTaskTitles(String title) {
     final lower = title.toLowerCase();

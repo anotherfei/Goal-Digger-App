@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/gd_colors.dart';
+import '../../core/theme/gd_design.dart';
 import '../../models/models.dart';
 import '../../shared/widgets/shared_widgets.dart';
 
@@ -56,7 +56,7 @@ class _CompanionPageState extends State<CompanionPage> {
               // ),
               const SizedBox(height: 16),
               AppCard(
-                color: const Color(0xFFEAF1FF),
+                color: gdPrimarySoft,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
                   child: Column(
@@ -323,7 +323,7 @@ class _SkinPill extends StatelessWidget {
         height: 62,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-            color: selected ? const Color(0xFF071022) : Colors.white,
+            color: selected ? gdInk : Colors.white,
             borderRadius: BorderRadius.circular(20),
             boxShadow: selected
                 ? null

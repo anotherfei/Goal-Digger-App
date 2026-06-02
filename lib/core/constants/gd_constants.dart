@@ -1,5 +1,5 @@
 import '../../models/models.dart';
-import '../theme/gd_colors.dart';
+import '../theme/gd_design.dart';
 
 const List<String> categories = [
   'Study',

@@ -9,7 +9,7 @@ import 'package:provider/provider.dart';
 import '../../firebase/auth/auth_state.dart';
 import '../onboarding/onboarding_screen.dart';
 
-import '../../core/theme/gd_colors.dart';
+import '../../core/theme/gd_design.dart';
 import '../../models/models.dart';
 import '../../shared/widgets/shared_widgets.dart';
 

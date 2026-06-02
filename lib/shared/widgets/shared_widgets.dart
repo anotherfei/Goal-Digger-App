@@ -3,7 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../../core/constants/gd_constants.dart';
-import '../../core/theme/gd_colors.dart';
+import '../../core/theme/gd_design.dart';
 import '../../core/utils/date_helpers.dart';
 import '../../models/models.dart';
 
@@ -45,26 +45,19 @@ class PageScaffold extends StatelessWidget {
   }
 }
 
+/// The app's base canvas. Deliberately a single flat, calm colour rather than
+/// a gradient: the background is the quietest layer in a focus tool, so it
+/// should add zero visual energy and let content + reward colour do the work.
+/// (Energy/gradients are reserved for gamified surfaces like the pet and
+/// rewards.)
 class AmbientBackground extends StatelessWidget {
   const AmbientBackground({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Positioned.fill(
+    return const Positioned.fill(
       child: IgnorePointer(
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                gdBackground,
-                const Color(0xFFE0F2FE).withValues(alpha: 0.7),
-                const Color(0xFFFCE7F3).withValues(alpha: 0.45),
-              ],
-            ),
-          ),
-        ),
+        child: ColoredBox(color: GdColors.canvas),
       ),
     );
   }
@@ -83,14 +76,8 @@ class AppCard extends StatelessWidget {
       margin: margin,
       decoration: BoxDecoration(
         color: color ?? gdSurface,
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-        ],
+        borderRadius: GdRadius.card,
+        boxShadow: GdShadows.soft,
       ),
       clipBehavior: Clip.antiAlias,
       child: child,
@@ -161,22 +148,25 @@ class MoodCheckPanel extends StatelessWidget {
     _MoodOption(
       label: 'Tired',
       icon: Icons.spa_rounded,
-      color: gdGradientWellnessTo,
-      softColor: gdAccentSoft,
+      // Low energy → a calm, restorative green (settle and recover gently).
+      color: GdColors.positive,
+      softColor: GdColors.positiveSoft,
       subtitle: 'Light pace',
     ),
     _MoodOption(
       label: 'Okay',
       icon: Icons.tune_rounded,
-      color: gdPrimary,
-      softColor: gdPrimarySoft,
+      // Balanced → steady brand blue (neutral-positive).
+      color: GdColors.brand,
+      softColor: GdColors.brandSoft,
       subtitle: 'Balanced',
     ),
     _MoodOption(
       label: 'Great',
       icon: Icons.bolt_rounded,
-      color: gdGradientStudyFrom,
-      softColor: Color(0xFFFFF7ED),
+      // High energy → energising warm coral (enthusiasm, push further).
+      color: GdColors.warm,
+      softColor: GdColors.warmSoft,
       subtitle: 'Stretch',
     ),
   ];
@@ -302,15 +292,7 @@ class _MoodButton extends StatelessWidget {
             color: selected ? option.color : gdBorder,
             width: selected ? 1.6 : 1,
           ),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: option.color.withValues(alpha: 0.14),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ]
-              : null,
+          boxShadow: selected ? GdShadows.glow(option.color) : null,
         ),
         child: Material(
           color: Colors.transparent,
@@ -327,12 +309,12 @@ class _MoodButton extends StatelessWidget {
                     height: 42,
                     decoration: BoxDecoration(
                       color: selected
-                          ? option.color.withValues(alpha: 0.14)
+                          ? option.color.withValues(alpha: GdAlpha.soft)
                           : gdSurface,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: selected
-                            ? option.color.withValues(alpha: 0.24)
+                            ? option.color.withValues(alpha: GdAlpha.muted)
                             : gdBorder,
                       ),
                     ),
@@ -528,7 +510,7 @@ class CircularProgressBadge extends StatelessWidget {
             child: CircularProgressIndicator(
               value: safeProgress,
               strokeWidth: strokeWidth,
-              backgroundColor: const Color(0xFFE2E8F0),
+              backgroundColor: gdBorder,
               color: gdPrimary,
             ),
           ),
@@ -684,22 +666,7 @@ class CategorySelector extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onChanged;
 
-  IconData _iconFor(String category) {
-    switch (category) {
-      case 'Career':
-        return Icons.work_rounded;
-      case 'Wellness':
-        return Icons.favorite_rounded;
-      case 'Finance':
-        return Icons.savings_rounded;
-      case 'Creative':
-        return Icons.palette_rounded;
-      case 'Study':
-        return Icons.school_rounded;
-      default:
-        return Icons.more_horiz_rounded;
-    }
-  }
+  IconData _iconFor(String category) => GdCategory.iconFor(category);
 
   @override
   Widget build(BuildContext context) {
@@ -1050,11 +1017,7 @@ class MoodAdjustmentNotice extends StatelessWidget {
             : 'Goal Digger keeps today’s tasks at their normal size.';
 
     return AppCard(
-      color: mood == 'Tired'
-          ? const Color(0xFFF0FDF4)
-          : mood == 'Great'
-              ? const Color(0xFFFFF7ED)
-              : gdCardLight,
+      color: GdMood.surface(mood),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Row(
@@ -1144,8 +1107,8 @@ class TaskCard extends StatelessWidget {
   }
 
   Color get _moodChipColor {
-    if (mood == 'Tired') return const Color(0xFFDCFCE7);
-    if (mood == 'Great') return const Color(0xFFFFEDD5);
+    if (mood == 'Tired') return GdColors.positiveSoft;
+    if (mood == 'Great') return GdColors.warmSoft;
     return gdPrimarySoft;
   }
 
