@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../core/constants/gd_constants.dart';
@@ -13,6 +14,9 @@ import '../features/calendar/calendar_page.dart';
 import '../features/community/community_page.dart';
 import '../features/companion/companion_page.dart';
 import '../features/focus/widgets/focus_widgets.dart';
+import '../features/notifications/models/notification_models.dart';
+import '../features/notifications/notification_inbox_page.dart';
+import '../features/notifications/services/android_notification_service.dart';
 import '../features/onboarding/onboarding_screen.dart';
 import '../features/planner/planner_page.dart';
 import '../features/profile/profile_screen.dart';
@@ -44,6 +48,24 @@ class _DraftTaskSpec {
       '$title · $durationMinutes min · ${load.label} · Day ${dayOffset + 1}';
 }
 
+class _SystemNotificationRequest {
+  const _SystemNotificationRequest({
+    required this.id,
+    required this.title,
+    required this.body,
+    required this.scheduledAt,
+    required this.important,
+    required this.payload,
+  });
+
+  final int id;
+  final String title;
+  final String body;
+  final DateTime scheduledAt;
+  final bool important;
+  final String payload;
+}
+
 class GoalDiggerRoot extends StatefulWidget {
   const GoalDiggerRoot({super.key});
 
@@ -70,9 +92,20 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   StreamSubscription<List<CommunityGroup>>? _communitiesSub;
   StreamSubscription<Set<String>>? _joinedCommunitiesSub;
   StreamSubscription<List<RoutineItem>>? _routinesSub;
+  StreamSubscription<List<AppNotification>>? _notificationsSub;
   String? _activeUid;
   Set<String> _joinedCommunityIds = {};
   List<RoutineItem> _routines = [];
+  List<AppNotification> _notifications = [];
+  final Set<String> _locallyReadNotificationIds = {};
+  final AndroidNotificationService _androidNotifications =
+      AndroidNotificationService();
+  NotificationSettings _notificationSettings =
+      const NotificationSettings.defaults();
+  Timer? _notificationScheduleDebounce;
+  bool _notificationBridgeReady = false;
+  bool _notificationPermissionPrompted = false;
+  Future<bool>? _notificationPermissionRequest;
 
   // Auth listener wiring — avoids calling side-effecting _bindAuthState
   // inside build(), which can trigger setState-during-build violations.
@@ -107,7 +140,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   FocusSessionConfig? _activeFocusConfig;
   int _focusRemainingSeconds = 0;
   bool _focusPaused = false;
+  bool _focusCompletionHandled = false;
   Timer? _focusTimer;
+  final Set<String> _sentDeadlineSystemNoticeIds = {};
 
   bool get _hasActiveFocus =>
       _activeFocusConfig != null && _focusRemainingSeconds > 0;
@@ -120,6 +155,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _goals = seedGoals(today);
     _routines = _defaultRoutines();
     _communities = _defaultCommunities();
+    unawaited(_initializeNotificationBridge());
   }
 
   @override
@@ -204,6 +240,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _processingTimer?.cancel();
     _moodAdviceTimer?.cancel();
     _focusTimer?.cancel();
+    _notificationScheduleDebounce?.cancel();
     _disposeSync();
     _goalController.dispose();
     _communityController.dispose();
@@ -216,11 +253,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _communitiesSub?.cancel();
     _joinedCommunitiesSub?.cancel();
     _routinesSub?.cancel();
+    _notificationsSub?.cancel();
     _goalsSub = null;
     _profileSub = null;
     _communitiesSub = null;
     _joinedCommunitiesSub = null;
     _routinesSub = null;
+    _notificationsSub = null;
     _sync?.dispose();
     _sync = null;
   }
@@ -230,6 +269,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _moodAdviceTimer?.cancel();
     _moodAdviceRequestSerial++;
     _moodAdvisorAvailable = true;
+    _notificationPermissionRequest = null;
     _disposeSync();
     setState(() {
       _onboarded = false;
@@ -238,8 +278,14 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _selectedIndex = 2;
       _goals = seedGoals(today);
       _routines = _defaultRoutines();
+      _notifications = [];
+      _locallyReadNotificationIds.clear();
+      _sentDeadlineSystemNoticeIds.clear();
+      _notificationSettings = const NotificationSettings.defaults();
+      _goalReminders = _notificationSettings.systemNotificationsEnabled;
       _friends = ['Maya Chen', 'Leo Tan', 'Ari Putra'];
     });
+    unawaited(_androidNotifications.cancelAll());
   }
 
   Future<void> _ensureUserProfile(AuthState authState) async {
@@ -270,6 +316,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       (goals) {
         if (!mounted) return;
         setState(() => _goals = goals);
+        _queueNotificationScheduleSync();
+        _ensureImportantDeadlineNotifications();
       },
       onError: (Object error) => debugPrint('Goal sync error: $error'),
     );
@@ -293,6 +341,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               ? syncedDisplayName
               : _profileDisplayName;
           _goalReminders = profile.goalReminders;
+          _notificationSettings = profile.notificationSettings;
           _friendProgressSharing = profile.friendProgressSharing;
           _friends = profile.friends.isEmpty
               ? ['Maya Chen', 'Leo Tan', 'Ari Putra']
@@ -307,8 +356,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                   ? 'Google'
                   : providerId == 'password'
                       ? 'Email'
-                      : 'Firebase';
+              : 'Firebase';
         });
+        _queueNotificationScheduleSync();
       },
       onError: (Object error) => debugPrint('Profile sync error: $error'),
     );
@@ -336,8 +386,28 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       (routines) {
         if (!mounted) return;
         setState(() => _routines = routines);
+        _queueNotificationScheduleSync();
       },
       onError: (Object error) => debugPrint('Routine sync error: $error'),
+    );
+
+    _notificationsSub = sync.notificationsStream.listen(
+      (notifications) {
+        if (!mounted) return;
+        final now = DateTime.now();
+        final mergedNotifications = notifications
+            .map(
+              (notification) =>
+                  _locallyReadNotificationIds.contains(notification.id) &&
+                          notification.isUnread
+                      ? notification.copyWith(readAt: now)
+                      : notification,
+            )
+            .toList();
+        setState(() => _notifications = mergedNotifications);
+        _ensureImportantDeadlineNotifications();
+      },
+      onError: (Object error) => debugPrint('Notification sync error: $error'),
     );
   }
 
@@ -383,6 +453,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       await sync.updatePreferences(
         goalReminders: _goalReminders,
         friendProgressSharing: _friendProgressSharing,
+        notificationSettings: _notificationSettings,
       );
     } catch (e) {
       debugPrint('Preference write failed: $e');
@@ -390,13 +461,28 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   void _setGoalReminders(bool value) {
-    setState(() => _goalReminders = value);
+    setState(() {
+      _goalReminders = value;
+      _notificationSettings = _notificationSettings.copyWith(
+        systemNotificationsEnabled: value,
+      );
+    });
     unawaited(_persistPreferences());
+    _queueNotificationScheduleSync();
   }
 
   void _setFriendProgressSharing(bool value) {
     setState(() => _friendProgressSharing = value);
     unawaited(_persistPreferences());
+  }
+
+  void _setNotificationSettings(NotificationSettings settings) {
+    setState(() {
+      _notificationSettings = settings;
+      _goalReminders = settings.systemNotificationsEnabled;
+    });
+    unawaited(_persistPreferences());
+    _queueNotificationScheduleSync();
   }
 
   Future<void> _handleSignOut() async {
@@ -480,6 +566,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _signedInWith = provider;
       _onboarded = true;
     });
+    _queueNotificationScheduleSync();
     _showMessage('Welcome! You signed in with $provider.');
   }
 
@@ -525,6 +612,11 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     );
   }
 
+  void _showCoinRewardPrompt(int coins, String reason) {
+    if (coins <= 0) return;
+    _showMessage('${_activePetSkin.name} says: +$coins coins $reason.');
+  }
+
   void _showHelpfulError({
     required String title,
     required String message,
@@ -553,6 +645,522 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           ],
         );
       },
+    );
+  }
+
+  Future<void> _initializeNotificationBridge() async {
+    _notificationBridgeReady = await _androidNotifications.initialize();
+    _queueNotificationScheduleSync();
+  }
+
+  void _queueNotificationScheduleSync() {
+    _notificationScheduleDebounce?.cancel();
+    _notificationScheduleDebounce =
+        Timer(const Duration(milliseconds: 350), () {
+      unawaited(_syncSystemNotifications());
+    });
+  }
+
+  Future<void> _syncSystemNotifications() async {
+    if (!_onboarded) return;
+    if (!_androidNotifications.isSupported) return;
+    if (!_notificationBridgeReady) {
+      _notificationBridgeReady = await _androidNotifications.initialize();
+    }
+
+    if (!_notificationSettings.hasAnySystemNotification) {
+      await _androidNotifications.cancelAll();
+      return;
+    }
+
+    final allowed = await _ensureAndroidNotificationPermission();
+    if (!allowed) {
+      await _androidNotifications.cancelAll();
+      _addInAppNotification(
+        id: 'important_android_notifications_disabled',
+        title: 'Android notifications are off',
+        body:
+            'Goal Digger cannot show routine, streak, deadline, or focus pop-ups until notification permission is enabled.',
+        type: AppNotificationType.important,
+        important: true,
+        sourceId: 'android_permission',
+      );
+      return;
+    }
+
+    await _androidNotifications.cancelScheduled();
+    final requests = _buildSystemNotificationRequests();
+    for (final request in requests.take(80)) {
+      await _androidNotifications.schedule(
+        id: request.id,
+        title: request.title,
+        body: request.body,
+        scheduledAt: request.scheduledAt,
+        important: request.important,
+        payload: request.payload,
+      );
+    }
+  }
+
+  Future<bool> _ensureAndroidNotificationPermission() async {
+    if (await _androidNotifications.areNotificationsEnabled()) return true;
+    final pendingRequest = _notificationPermissionRequest;
+    if (pendingRequest != null) return pendingRequest;
+    if (_notificationPermissionPrompted) return false;
+    _notificationPermissionPrompted = true;
+    final request = () async {
+      final granted = await _androidNotifications.requestPermission();
+      if (!granted) return false;
+      return _androidNotifications.areNotificationsEnabled();
+    }();
+    _notificationPermissionRequest = request;
+    try {
+      return await request;
+    } finally {
+      _notificationPermissionRequest = null;
+    }
+  }
+
+  Future<void> _showSystemNotificationNow({
+    required String key,
+    required String title,
+    required String body,
+    required AppNotificationType type,
+    bool important = false,
+    String? sourceId,
+  }) async {
+    if (!_androidNotifications.isSupported) return;
+    if (!_notificationBridgeReady) {
+      _notificationBridgeReady = await _androidNotifications.initialize();
+    }
+    final allowed = await _ensureAndroidNotificationPermission();
+    if (!allowed) return;
+
+    final id = _stableNotificationId(key);
+    await _androidNotifications.cancel(id);
+    await _androidNotifications.showNow(
+      id: id,
+      title: title,
+      body: body,
+      important: important,
+      payload: '${type.name}:${sourceId ?? key}',
+    );
+  }
+
+  List<_SystemNotificationRequest> _buildSystemNotificationRequests() {
+    final now = DateTime.now();
+    final start = dateOnly(now);
+    final horizon = addDays(start, 30);
+    final requests = <_SystemNotificationRequest>[];
+
+    void addRequest({
+      required String key,
+      required String title,
+      required String body,
+      required DateTime scheduledAt,
+      required AppNotificationType type,
+      bool important = false,
+      String? sourceId,
+    }) {
+      if (!scheduledAt.isAfter(now)) return;
+      if (!scheduledAt.isBefore(horizon)) return;
+      requests.add(
+        _SystemNotificationRequest(
+          id: _stableNotificationId(key),
+          title: title,
+          body: body,
+          scheduledAt: scheduledAt,
+          important: important,
+          payload: '${type.name}:${sourceId ?? key}',
+        ),
+      );
+    }
+
+    if (_notificationSettings.dailyPlanEnabled) {
+      for (var offset = 0; offset < 7; offset++) {
+        final day = addDays(start, offset);
+        final tasks = _unfinishedTasksForDay(day);
+        if (tasks.isEmpty) continue;
+        final minutes = tasks.fold<int>(
+          0,
+          (sum, task) => sum + task.durationMinutes,
+        );
+        addRequest(
+          key: 'daily_plan_${dateKey(day)}',
+          title: 'Today in Goal Digger',
+          body:
+              '${tasks.length} goal action${tasks.length == 1 ? '' : 's'} are waiting, about $minutes minutes total.',
+          scheduledAt: _dateAtNotificationTime(
+            day,
+            _notificationSettings.dailyPlanHour,
+            _notificationSettings.dailyPlanMinute,
+          ),
+          type: AppNotificationType.dailyPlan,
+          sourceId: dateKey(day),
+        );
+      }
+    }
+
+    if (_notificationSettings.streakSaverEnabled) {
+      for (var offset = 0; offset < 7; offset++) {
+        final day = addDays(start, offset);
+        final tasks = _unfinishedTasksForDay(day);
+        if (tasks.isEmpty) continue;
+        if (dateOnly(day) == start && _todayCompleted > 0) continue;
+        addRequest(
+          key: 'streak_${dateKey(day)}',
+          title: 'Protect your streak',
+          body: 'One small completed task keeps your momentum alive.',
+          scheduledAt: _dateAtNotificationTime(
+            day,
+            _notificationSettings.streakSaverHour,
+            _notificationSettings.streakSaverMinute,
+          ),
+          type: AppNotificationType.streakSaver,
+          important: offset == 0,
+          sourceId: dateKey(day),
+        );
+      }
+    }
+
+    if (_notificationSettings.deadlineWarningsEnabled) {
+      for (final goal in _goals.where((goal) => goal.progress < 1)) {
+        final deadlineDay = dateOnly(goal.deadline);
+        final daysLeft = daysBetween(start, deadlineDay);
+        final warningDay =
+            addDays(deadlineDay, -_notificationSettings.deadlineWarningDays);
+        final candidateDays = <String, DateTime>{
+          'warning': warningDay,
+          'deadline': deadlineDay,
+          if (daysLeft < 0) 'overdue': start,
+        };
+
+        for (final entry in candidateDays.entries) {
+          final day = entry.value;
+          if (day.isBefore(start)) continue;
+          addRequest(
+            key: 'deadline_${goal.id}_${entry.key}_${dateKey(day)}',
+            title: daysLeft < 0 ? 'Goal overdue' : 'Deadline coming up',
+            body:
+                '${goal.title} is ${daysLeft < 0 ? 'overdue' : 'due in $daysLeft day${daysLeft == 1 ? '' : 's'}'}.',
+            scheduledAt: _dateAtNotificationTime(
+              day,
+              _notificationSettings.dailyPlanHour,
+              _notificationSettings.dailyPlanMinute,
+            ).add(const Duration(minutes: 45)),
+            type: AppNotificationType.deadlineWarning,
+            important: daysLeft <= 1,
+            sourceId: goal.id.toString(),
+          );
+        }
+      }
+    }
+
+    if (_notificationSettings.routineRemindersEnabled) {
+      for (final routine in _routines) {
+        for (final occurrence in _routineOccurrences(routine, now, horizon)) {
+          addRequest(
+            key: 'routine_${routine.id}_${occurrence.millisecondsSinceEpoch}',
+            title: routine.title,
+            body: '${routine.repeat.label} routine in Goal Digger.',
+            scheduledAt: occurrence,
+            type: AppNotificationType.routineReminder,
+            sourceId: routine.id,
+          );
+        }
+      }
+    }
+
+    final focusConfig = _activeFocusConfig;
+    if (_notificationSettings.focusNotificationsEnabled &&
+        focusConfig != null &&
+        _focusRemainingSeconds > 0 &&
+        !_focusPaused) {
+      addRequest(
+        key: 'focus_complete',
+        title: 'Focus session complete',
+        body: '${focusConfig.title} is ready to wrap up.',
+        scheduledAt: now.add(Duration(seconds: _focusRemainingSeconds)),
+        type: AppNotificationType.focusComplete,
+        important: true,
+        sourceId: focusConfig.title,
+      );
+    }
+
+    requests.sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+    return requests;
+  }
+
+  List<MicroTask> _unfinishedTasksForDay(DateTime day) {
+    final target = dateOnly(day);
+    return _allTasks
+        .where(
+          (task) => dateOnly(task.scheduledDate) == target && !task.done,
+        )
+        .toList()
+      ..sort((a, b) => a.durationMinutes.compareTo(b.durationMinutes));
+  }
+
+  DateTime _dateAtNotificationTime(DateTime day, int hour, int minute) {
+    final date = dateOnly(day);
+    return DateTime(date.year, date.month, date.day, hour, minute);
+  }
+
+  Iterable<DateTime> _routineOccurrences(
+    RoutineItem routine,
+    DateTime now,
+    DateTime horizon,
+  ) sync* {
+    var current = routine.startsAt;
+    while (current.isBefore(now)) {
+      final next = _nextRoutineOccurrence(current, routine.repeat);
+      if (!next.isAfter(current)) return;
+      current = next;
+    }
+
+    var emitted = 0;
+    while (current.isBefore(horizon) && emitted < 40) {
+      yield current;
+      emitted++;
+      if (routine.repeat == RoutineRepeat.custom) return;
+      current = _nextRoutineOccurrence(current, routine.repeat);
+    }
+  }
+
+  DateTime _nextRoutineOccurrence(DateTime from, RoutineRepeat repeat) {
+    switch (repeat) {
+      case RoutineRepeat.daily:
+        return from.add(const Duration(days: 1));
+      case RoutineRepeat.weekly:
+        return from.add(const Duration(days: 7));
+      case RoutineRepeat.monthly:
+        final month = DateTime(from.year, from.month + 1);
+        final day = min(from.day, DateTime(month.year, month.month + 1, 0).day);
+        return DateTime(
+          month.year,
+          month.month,
+          day,
+          from.hour,
+          from.minute,
+        );
+      case RoutineRepeat.yearly:
+        final year = from.year + 1;
+        final day = min(from.day, DateTime(year, from.month + 1, 0).day);
+        return DateTime(year, from.month, day, from.hour, from.minute);
+      case RoutineRepeat.custom:
+        return from.add(const Duration(days: 3650));
+    }
+  }
+
+  int _stableNotificationId(String key) {
+    var hash = 0x811c9dc5;
+    for (final codeUnit in key.codeUnits) {
+      hash ^= codeUnit;
+      hash = (hash * 0x01000193) & 0x7fffffff;
+    }
+    return hash == 0 ? 1 : hash;
+  }
+
+  bool _addInAppNotification({
+    String? id,
+    required String title,
+    required String body,
+    required AppNotificationType type,
+    bool important = false,
+    String? sourceId,
+    Map<String, dynamic>? payload,
+  }) {
+    if (!important && !_notificationSettings.inAppNotificationsEnabled) {
+      return false;
+    }
+    if (important && !_notificationSettings.importantInAppEnabled) {
+      return false;
+    }
+
+    final notificationId =
+        id ?? 'local_${DateTime.now().microsecondsSinceEpoch}';
+    if (_notifications.any((item) => item.id == notificationId)) return false;
+
+    final notification = AppNotification(
+      id: notificationId,
+      title: title,
+      body: body,
+      type: type,
+      delivery: NotificationDelivery.inApp,
+      createdAt: DateTime.now(),
+      important: important,
+      sourceId: sourceId,
+      payload: payload,
+    );
+
+    if (mounted) {
+      setState(() => _notifications = [notification, ..._notifications]);
+    }
+
+    final sync = _sync;
+    if (sync != null) {
+      unawaited(sync.addNotification(notification).catchError((Object e) {
+        debugPrint('Notification save failed: $e');
+      }));
+    }
+
+    if (important) _showImportantNotificationSnack(notification);
+    return true;
+  }
+
+  void _showImportantNotificationSnack(AppNotification notification) {
+    if (!mounted) return;
+    final isPermissionNotice = notification.sourceId == 'android_permission';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Important: ${notification.title}'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: isPermissionNotice ? 'Settings' : 'Inbox',
+          onPressed: isPermissionNotice
+              ? _openAndroidNotificationSettings
+              : _openNotifications,
+        ),
+      ),
+    );
+  }
+
+  void _ensureImportantDeadlineNotifications() {
+    final todayKey = dateKey(today);
+    for (final goal in _goals.where((goal) => goal.progress < 1)) {
+      final daysLeft = daysBetween(today, goal.deadline);
+      if (daysLeft > 1) continue;
+      final id = 'important_deadline_${goal.id}_$todayKey';
+      final title = daysLeft < 0 ? 'Goal is overdue' : 'Goal deadline is near';
+      final body = daysLeft < 0
+          ? '${goal.title} is overdue. Pick one unfinished task to regain control.'
+          : '${goal.title} is due ${daysLeft == 0 ? 'today' : 'tomorrow'}.';
+      _addInAppNotification(
+        id: id,
+        title: title,
+        body: body,
+        type: AppNotificationType.important,
+        important: true,
+        sourceId: goal.id.toString(),
+      );
+      if (_notificationSettings.systemNotificationsEnabled &&
+          _notificationSettings.deadlineWarningsEnabled &&
+          _sentDeadlineSystemNoticeIds.add(id)) {
+        unawaited(
+          _showSystemNotificationNow(
+            key: 'system_$id',
+            title: title,
+            body: body,
+            type: AppNotificationType.deadlineWarning,
+            important: true,
+            sourceId: goal.id.toString(),
+          ),
+        );
+      }
+    }
+  }
+
+  void _openNotifications() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (context) => NotificationInboxPage(
+          notifications: _notifications,
+          onMarkRead: _markNotificationRead,
+          onMarkAllRead: _markAllNotificationsRead,
+          onDelete: _deleteNotification,
+          onOpenNotificationSettings: _openAndroidNotificationSettings,
+        ),
+      ),
+    );
+  }
+
+  void _openAndroidNotificationSettings() {
+    if (!_androidNotifications.isSupported) {
+      _openSettings();
+      return;
+    }
+    unawaited(_androidNotifications.openNotificationSettings());
+  }
+
+  void _markNotificationRead(AppNotification notification) {
+    if (!notification.isUnread) return;
+    setState(() {
+      _locallyReadNotificationIds.add(notification.id);
+      _notifications = _notifications
+          .map((item) => item.id == notification.id
+              ? item.copyWith(readAt: DateTime.now())
+              : item)
+          .toList();
+    });
+    final sync = _sync;
+    if (sync != null) {
+      unawaited(
+        sync.markNotificationRead(notification.id).catchError((Object e) {
+          debugPrint('Notification read sync failed: $e');
+        }),
+      );
+    }
+  }
+
+  void _markAllNotificationsRead() {
+    final now = DateTime.now();
+    setState(() {
+      _locallyReadNotificationIds
+          .addAll(_notifications.map((notification) => notification.id));
+      _notifications = _notifications
+          .map((item) => item.isUnread ? item.copyWith(readAt: now) : item)
+          .toList();
+    });
+    final sync = _sync;
+    if (sync != null) {
+      unawaited(sync.markAllNotificationsRead().catchError((Object e) {
+        debugPrint('Notification mark-all sync failed: $e');
+      }));
+    }
+  }
+
+  void _deleteNotification(AppNotification notification) {
+    setState(() {
+      _notifications =
+          _notifications.where((item) => item.id != notification.id).toList();
+    });
+    final sync = _sync;
+    if (sync != null) {
+      unawaited(sync.deleteNotification(notification.id).catchError((Object e) {
+        debugPrint('Notification delete sync failed: $e');
+      }));
+    }
+  }
+
+  Future<void> _sendTestNotification() async {
+    if (!_androidNotifications.isSupported) {
+      _showMessage('Android notifications are only available on Android.');
+      return;
+    }
+    final allowed = await _ensureAndroidNotificationPermission();
+    if (!allowed) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Android notification permission is not enabled.'),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: 'Settings',
+            onPressed: _openAndroidNotificationSettings,
+          ),
+        ),
+      );
+      return;
+    }
+    await _androidNotifications.showNow(
+      id: _stableNotificationId('test_${DateTime.now().millisecondsSinceEpoch}'),
+      title: 'Goal Digger test',
+      body: 'Android notifications are ready.',
+      important: true,
+      payload: 'test',
     );
   }
 
@@ -1225,6 +1833,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         return;
       }
     }
+    _queueNotificationScheduleSync();
+    _ensureImportantDeadlineNotifications();
     _showMessage('Goal created. AI subtasks are scheduled and synced.');
   }
 
@@ -1433,8 +2043,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         _petHappiness = max(0, _petHappiness - 8);
       }
     });
+    if (task.done) {
+      _showCoinRewardPrompt(
+        task.points,
+        'for completing "${task.title}"',
+      );
+    }
     unawaited(_persistTaskToggle(goal, task));
     unawaited(_persistProfileStats());
+    _queueNotificationScheduleSync();
   }
 
   Future<void> _persistTaskToggle(GoalProject goal, MicroTask task) async {
@@ -1460,6 +2077,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         debugPrint('Delete goal sync failed: $e');
       }));
     }
+    _queueNotificationScheduleSync();
     _showMessage('Removed ${goal.title}.');
   }
 
@@ -1503,6 +2121,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         _showMessage('Community created locally, but Firebase save failed.');
       }));
     }
+    _addInAppNotification(
+      title: 'Community created',
+      body: '${community.name} is ready for accountability.',
+      type: AppNotificationType.community,
+      sourceId: community.name,
+    );
     _showMessage('Community created.');
   }
 
@@ -1515,6 +2139,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         debugPrint('Join community sync failed: $e');
       }));
     }
+    _addInAppNotification(
+      title: 'Community joined',
+      body: 'You joined ${group.name}.',
+      type: AppNotificationType.community,
+      sourceId: id ?? group.name,
+    );
     _showMessage('Joined ${group.name}.');
   }
 
@@ -1543,6 +2173,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     if (cleaned.isEmpty || _friends.contains(cleaned)) return;
     setState(() => _friends.add(cleaned));
     _persistFriends();
+    _addInAppNotification(
+      title: 'Friend added',
+      body: '$cleaned can now be part of your accountability circle.',
+      type: AppNotificationType.community,
+      sourceId: cleaned,
+    );
     _showMessage('$cleaned added as a friend.');
   }
 
@@ -1586,6 +2222,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _petHappiness = min(100, _petHappiness + 6);
     });
     unawaited(_persistProfileStats());
+    _addInAppNotification(
+      title: 'Chest reward unlocked',
+      body: '${skin.name} skin and $accessory are now in your collection.',
+      type: AppNotificationType.reward,
+      sourceId: '${skin.name}_$accessory',
+    );
     _showMessage('Chest opened: ${skin.name} skin + $accessory unlocked!');
   }
 
@@ -1624,7 +2266,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _openActiveFocusDialog();
       return;
     }
-    final unfinishedToday = _todayTasks.where((task) => !task.done).toList();
     final config = await showModalBottomSheet<FocusSessionConfig>(
       context: context,
       isScrollControlled: true,
@@ -1632,7 +2273,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       backgroundColor: gdSurface,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      builder: (context) => FocusSetupSheet(todayTasks: unfinishedToday),
+      builder: (context) => FocusSetupSheet(goals: _goals, today: today),
     );
     if (!mounted || config == null) return;
     _startFocusSession(config);
@@ -1667,6 +2308,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           mood != _selectedMood) {
         return;
       }
+      _addInAppNotification(
+        title: 'AI mood plan',
+        body: advice.message,
+        type: AppNotificationType.moodNudge,
+        important: mood == 'Tired' || mood == 'Stressed',
+        sourceId: mood,
+      );
       _showMessage('AI mood plan: ${advice.message}');
     } catch (e) {
       if (e.toString().contains('not-found')) {
@@ -1682,15 +2330,47 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _activeFocusConfig = config;
       _focusRemainingSeconds = config.durationMinutes * 60;
       _focusPaused = false;
+      _focusCompletionHandled = false;
     });
     _focusTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
       if (_focusPaused) return;
       setState(
           () => _focusRemainingSeconds = max(0, _focusRemainingSeconds - 1));
-      if (_focusRemainingSeconds == 0) timer.cancel();
+      if (_focusRemainingSeconds == 0) {
+        timer.cancel();
+        _handleFocusSessionCompleted();
+      }
     });
+    _queueNotificationScheduleSync();
     _openActiveFocusDialog();
+  }
+
+  void _handleFocusSessionCompleted() {
+    final config = _activeFocusConfig;
+    if (_focusCompletionHandled || config == null) return;
+    _focusCompletionHandled = true;
+    _focusTimer?.cancel();
+    unawaited(SystemSound.play(SystemSoundType.alert));
+    _showMessage('Focus session complete. Nice work.');
+    if (_notificationSettings.systemNotificationsEnabled &&
+        _notificationSettings.focusNotificationsEnabled) {
+      unawaited(_showFocusCompleteSystemNotification(config));
+    }
+    _queueNotificationScheduleSync();
+  }
+
+  Future<void> _showFocusCompleteSystemNotification(
+    FocusSessionConfig config,
+  ) {
+    return _showSystemNotificationNow(
+      key: 'focus_complete',
+      title: 'Focus session complete',
+      body: '${config.title} is ready to wrap up.',
+      type: AppNotificationType.focusComplete,
+      important: true,
+      sourceId: config.title,
+    );
   }
 
   void _openActiveFocusDialog() {
@@ -1723,11 +2403,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     );
   }
 
-  void _toggleFocusPause() => setState(() => _focusPaused = !_focusPaused);
+  void _toggleFocusPause() {
+    setState(() => _focusPaused = !_focusPaused);
+    _queueNotificationScheduleSync();
+  }
 
   void _stopFocusSession() {
     final config = _activeFocusConfig;
     final completed = _focusRemainingSeconds <= 0;
+    if (completed) _handleFocusSessionCompleted();
     _focusTimer?.cancel();
 
     if (completed && config?.task != null && config!.task!.done == false) {
@@ -1738,7 +2422,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _activeFocusConfig = null;
       _focusRemainingSeconds = 0;
       _focusPaused = false;
+      _focusCompletionHandled = false;
     });
+    _queueNotificationScheduleSync();
     Navigator.of(context, rootNavigator: true).maybePop();
 
     if (config != null) {
@@ -1768,8 +2454,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           _petHappiness = min(100, _petHappiness + 4);
         });
         unawaited(_persistProfileStats());
+        _showMessage(
+          '${_activePetSkin.name} says: +${insight.coinsEarned} coins for finishing ${config.durationMinutes} focused minutes. AI focus insight: ${insight.insight}',
+        );
+      } else {
+        _showMessage('AI focus insight: ${insight.insight}');
       }
-      _showMessage('AI focus insight: ${insight.insight}');
     } catch (e) {
       debugPrint('Focus insight unavailable: $e');
     }
@@ -1953,6 +2643,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         return routine;
       }));
     }
+    _queueNotificationScheduleSync();
     _showMessage('Routine added.');
   }
 
@@ -1964,6 +2655,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         debugPrint('Routine delete sync failed: $e');
       }));
     }
+    _queueNotificationScheduleSync();
     _showMessage('Routine deleted.');
   }
 
@@ -1974,8 +2666,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         builder: (context) => SettingsScreen(
           goalReminders: _goalReminders,
           friendProgressSharing: _friendProgressSharing,
+          notificationSettings: _notificationSettings,
           onGoalRemindersChanged: _setGoalReminders,
           onFriendProgressSharingChanged: _setFriendProgressSharing,
+          onNotificationSettingsChanged: _setNotificationSettings,
+          onTestNotification: () => unawaited(_sendTestNotification()),
+          onOpenNotificationSettings: _openAndroidNotificationSettings,
           onSignOut: () => unawaited(_handleSignOut()),
         ),
       ),
@@ -1997,6 +2693,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         debugPrint('Deadline sync failed: $e');
       }));
     }
+    _queueNotificationScheduleSync();
+    _ensureImportantDeadlineNotifications();
     _showMessage('Deadline updated to ${shortDate(picked)}.');
   }
 
@@ -2042,6 +2740,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         debugPrint('Priority sync failed: $e');
       }));
     }
+    _queueNotificationScheduleSync();
     _showMessage('Priority updated.');
   }
 
@@ -2153,6 +2852,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       onFocusMode: _openFocusMode,
       onProfile: _openProfile,
       onSettings: _openSettings,
+      onNotifications: _openNotifications,
+      unreadNotifications:
+          _notifications.where((notification) => notification.isUnread).length,
+      importantUnreadNotifications: _notifications
+          .where((notification) => notification.important && notification.isUnread)
+          .length,
       hasActiveFocus: _hasActiveFocus || _focusComplete,
       focusLabel: _activeFocusConfig == null
           ? null

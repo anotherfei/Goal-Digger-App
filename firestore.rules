@@ -11,121 +11,126 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-    function isDirectChatMember() {
-      return isSignedIn()
-        && request.auth.uid in resource.data.members;
+    function validString(val, maxLen) {
+      return val is string && val.size() > 0 && val.size() <= maxLen;
     }
 
-    function validDirectChatCreate() {
-      return isSignedIn()
-        && request.resource.data.type == 'direct'
-        && request.resource.data.members is list
-        && request.resource.data.members.size() == 2
-        && request.auth.uid in request.resource.data.members;
+    function validOptionalString(val, maxLen) {
+      return val == null || (val is string && val.size() <= maxLen);
     }
 
-    function isChatMember(chatId) {
-      return isSignedIn()
-        && exists(/databases/$(database)/documents/chats/$(chatId))
-        && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members;
+    function validNotificationType(type) {
+      return type in [
+        'dailyPlan',
+        'taskReminder',
+        'streakSaver',
+        'deadlineWarning',
+        'routineReminder',
+        'focusComplete',
+        'moodNudge',
+        'reward',
+        'community',
+        'important'
+      ];
     }
 
-    function validCommunityCreate() {
-      return isSignedIn()
-        && request.resource.data.name is string
-        && request.resource.data.ownerUid == request.auth.uid
-        && request.resource.data.members is list
-        && request.resource.data.members.size() == 1
-        && request.auth.uid in request.resource.data.members;
+    function validNotificationDelivery(delivery) {
+      return delivery in ['system', 'inApp'];
     }
 
-    function isCommunityOwner() {
-      return isSignedIn()
-        && resource.data.ownerUid == request.auth.uid;
+    function validNotification(data, notificationId) {
+      return data.keys().hasOnly([
+          'id',
+          'title',
+          'body',
+          'type',
+          'delivery',
+          'createdAt',
+          'readAt',
+          'important',
+          'sourceId',
+          'payload',
+          'updatedAt'
+        ])
+        && data.keys().hasAll([
+          'id',
+          'title',
+          'body',
+          'type',
+          'delivery',
+          'createdAt',
+          'important'
+        ])
+        && validString(data.id, 140)
+        && data.id == notificationId
+        && validString(data.title, 120)
+        && data.body is string
+        && data.body.size() <= 500
+        && validNotificationType(data.type)
+        && validNotificationDelivery(data.delivery)
+        && data.createdAt is timestamp
+        && validOptionalString(data.sourceId, 140)
+        && (data.readAt == null || data.readAt is timestamp)
+        && data.important is bool
+        && (data.payload == null ||
+          (data.payload is map && data.payload.keys().size() <= 10))
+        && (data.updatedAt == null || data.updatedAt is timestamp);
     }
 
-    function isExistingCommunityMember() {
-      return isSignedIn()
-        && request.auth.uid in resource.data.members;
-    }
-
-    function isJoiningCommunity() {
-      return isSignedIn()
-        && !(request.auth.uid in resource.data.members)
-        && request.auth.uid in request.resource.data.members;
-    }
-
-    function isLeavingCommunity() {
-      return isSignedIn()
-        && request.auth.uid in resource.data.members
-        && !(request.auth.uid in request.resource.data.members);
-    }
-
+    // ── User profiles ─────────────────────────────────────────────────────────
+    // Users can read/write only their own profile document.
     match /users/{uid} {
       allow read, write: if isOwner(uid);
 
-      match /{document=**} {
-        allow read, write: if isOwner(uid);
-      }
+    // ── Goals ─────────────────────────────────────────────────────────────────
+    match /users/{uid}/goals/{goalId} {
+      allow read, write: if isOwner(uid);
     }
 
-    match /public_profiles/{uid} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isOwner(uid);
+    // ── Routines ──────────────────────────────────────────────────────────────
+    match /users/{uid}/routines/{routineId} {
+      allow read, write: if isOwner(uid);
     }
 
+    // ── Agent memory ──────────────────────────────────────────────────────────
+    // Written exclusively by Firebase Functions (Admin SDK bypasses rules).
+    // Users can read their own memory (e.g. to display streak analytics),
+    // but cannot write directly — all writes go through Cloud Functions.
+    // Notifications / inbox
+    match /users/{uid}/notifications/{notificationId} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid)
+        && validNotification(request.resource.data, notificationId);
+      allow update: if isOwner(uid)
+        && validNotification(request.resource.data, notificationId)
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(uid);
+    }
+
+    match /agent_memory/{uid} {
+      allow read:  if isOwner(uid);
+      allow write: if false; // Cloud Functions (Admin SDK) only
+    }
+
+    // ── Communities ───────────────────────────────────────────────────────────
+    // Anyone signed in can read communities.
+    // Only the creator (stored in the document) can update or delete.
+    // Members sub-collection is managed per-user for privacy.
     match /communities/{communityId} {
       allow read: if isSignedIn();
-
-      // The app creates communities with ownerUid, not creatorUid.
-      allow create: if validCommunityCreate();
-
-      // Allows:
-      // - owner editing community fields
-      // - members joining/leaving via members/memberCount/updatedAt
-      allow update: if isCommunityOwner()
-        || isExistingCommunityMember()
-        || isJoiningCommunity()
-        || isLeavingCommunity();
-
-      allow delete: if isCommunityOwner();
-
-      match /messages/{messageId} {
-        allow read: if isSignedIn()
-          && request.auth.uid in get(/databases/$(database)/documents/communities/$(communityId)).data.members;
-
-        allow create: if isSignedIn()
-          && request.auth.uid in get(/databases/$(database)/documents/communities/$(communityId)).data.members
-          && request.resource.data.senderUid == request.auth.uid
-          && request.resource.data.text is string
-          && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 2000;
-
-        allow update, delete: if false;
-      }
+      allow create: if isSignedIn()
+        && validString(request.resource.data.name, 80)
+        && request.resource.data.creatorUid == request.auth.uid;
+      allow update: if isSignedIn()
+        && resource.data.creatorUid == request.auth.uid;
+      allow delete: if isSignedIn()
+        && resource.data.creatorUid == request.auth.uid;
     }
 
-    match /chats/{chatId} {
-      allow read: if isDirectChatMember();
-
-      allow create: if validDirectChatCreate();
-
-      allow update: if isDirectChatMember()
-        && request.resource.data.members == resource.data.members;
-
-      allow delete: if false;
-
-      match /messages/{messageId} {
-        allow read: if isChatMember(chatId);
-
-        allow create: if isChatMember(chatId)
-          && request.resource.data.senderUid == request.auth.uid
-          && request.resource.data.text is string
-          && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 2000;
-
-        allow update, delete: if false;
-      }
+    // Community membership — each user tracks their own joined communities
+    match /users/{uid}/communities/{communityId} {
+      allow read, write: if isOwner(uid);
     }
   }
 }

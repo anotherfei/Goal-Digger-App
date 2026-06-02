@@ -8,7 +8,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
-import '../../../../models/models.dart';
+import '../../../features/notifications/models/notification_models.dart';
+import '../../../models/models.dart';
 import '../firestore_paths.dart';
 import '../firestore_service.dart';
 
@@ -25,6 +26,7 @@ class UserProfile {
     required this.activeAccessory,
     required this.selectedMood,
     required this.goalReminders,
+    required this.notificationSettings,
     required this.friendProgressSharing,
     required this.friends,
     required this.onboarded,
@@ -43,6 +45,7 @@ class UserProfile {
   final String activeAccessory;
   final String selectedMood;
   final bool goalReminders;
+  final NotificationSettings notificationSettings;
   final bool friendProgressSharing;
   final List<String> friends;
   final bool onboarded;
@@ -106,6 +109,7 @@ class UserRepository {
       'activeAccessory': 'Cap',
       'selectedMood': 'Okay',
       'goalReminders': true,
+      'notificationSettings': const NotificationSettings.defaults().toMap(),
       'friendProgressSharing': true,
       'friends': <String>[],
       'onboarded': false,
@@ -174,12 +178,17 @@ class UserRepository {
     required String uid,
     required bool goalReminders,
     required bool friendProgressSharing,
+    NotificationSettings? notificationSettings,
   }) async {
-    await _svc.updateDoc(FirestorePaths.userDoc(uid), {
+    final data = <String, dynamic>{
       'goalReminders': goalReminders,
       'friendProgressSharing': friendProgressSharing,
       'updatedAt': FirestoreService.serverTimestamp,
-    });
+    };
+    if (notificationSettings != null) {
+      data['notificationSettings'] = notificationSettings.toMap();
+    }
+    await _svc.updateDoc(FirestorePaths.userDoc(uid), data);
   }
 
   Future<void> updateFriends(String uid, List<String> friends) async {
@@ -221,6 +230,11 @@ class UserRepository {
       activeAccessory: d['activeAccessory'] as String? ?? 'Cap',
       selectedMood: d['selectedMood'] as String? ?? 'Okay',
       goalReminders: d['goalReminders'] as bool? ?? true,
+      notificationSettings: NotificationSettings.fromMap(
+        d['notificationSettings'] as Map<String, dynamic>?,
+      ).copyWith(
+        systemNotificationsEnabled: d['goalReminders'] as bool?,
+      ),
       friendProgressSharing: d['friendProgressSharing'] as bool? ?? true,
       friends: (d['friends'] as List<dynamic>? ?? [])
           .map((friend) => friend.toString())

@@ -41,6 +41,12 @@ class FirestorePaths {
 
   // ── Community ────────────────────────────────────────────────────────────────
 
+  // Notifications
+
+  static String notificationsCol(String uid) => 'users/$uid/notifications';
+  static String notificationDoc(String uid, String notificationId) =>
+      'users/$uid/notifications/$notificationId';
+
   /// Global community groups (not per-user)
   static const String communitiesCol = 'communities';
   static String communityDoc(String communityId) =>
