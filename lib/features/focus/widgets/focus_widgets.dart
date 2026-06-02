@@ -153,9 +153,9 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
         data: Theme.of(context).chipTheme.copyWith(
           backgroundColor: gdSurface,
           selectedColor: gdPrimary,
-          labelStyle: const TextStyle(color: gdInk, fontWeight: FontWeight.w800),
+          labelStyle: TextStyle(color: gdInk, fontWeight: FontWeight.w800),
           secondaryLabelStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
-          side: const BorderSide(color: gdBorderStrong),
+          side: BorderSide(color: gdBorderStrong),
         ),
         child: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + bottomInset),
@@ -165,7 +165,7 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
           children: [
             Row(
               children: [
-                const CircleAvatar(
+                CircleAvatar(
                   radius: 24,
                   backgroundColor: gdPrimarySoft,
                   child: Icon(Icons.track_changes_rounded, color: gdPrimary),
@@ -175,9 +175,9 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Focus mode', style: Theme.of(context).textTheme.headlineMedium),
+                      Text('Focus mode', style: GdText.headlineMedium),
                       const SizedBox(height: 4),
-                      const Text(
+                      Text(
                         'Choose a task, set a timer, and block distracting apps.',
                         style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
                       ),
@@ -192,7 +192,7 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
               ],
             ),
             const SizedBox(height: 20),
-            Text('1. Choose focus task', style: Theme.of(context).textTheme.titleMedium),
+            Text('1. Choose focus task', style: GdText.titleMedium),
             const SizedBox(height: 10),
             AppCard(
               color: gdCardLight,
@@ -221,7 +221,7 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
                     const SizedBox(height: 10),
                     if (_allOpenTasks().isEmpty) ...[
                       const SizedBox(height: 10),
-                      const Text(
+                      Text(
                         'No unfinished subtasks yet, so this will start a custom focus session.',
                         style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
                       ),
@@ -241,7 +241,7 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
               ),
             ),
             const SizedBox(height: 18),
-            Text('2. Select duration', style: Theme.of(context).textTheme.titleMedium),
+            Text('2. Select duration', style: GdText.titleMedium),
             const SizedBox(height: 10),
             AppCard(
               color: gdCardLight,
@@ -302,7 +302,7 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
               ),
             ),
             const SizedBox(height: 18),
-            Text('3. Block distractions', style: Theme.of(context).textTheme.titleMedium),
+            Text('3. Block distractions', style: GdText.titleMedium),
             const SizedBox(height: 10),
             AppCard(
               color: gdCardLight,
@@ -319,14 +319,14 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
                           'Block apps unrelated to this goal',
                           style: TextStyle(fontWeight: FontWeight.w900),
                         ),
-                        subtitle: const Text(
+                        subtitle: Text(
                           'Goal Digger will use your selected list as the distraction blocklist during this session.',
                           style: TextStyle(color: gdMuted, fontWeight: FontWeight.w600),
                         ),
                         onChanged: (value) => setState(() => _blockUnrelatedApps = value),
                       )
                     else
-                      const Text(
+                      Text(
                         'Choose the apps you want to block during this custom session.',
                         style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
                       ),
@@ -404,11 +404,11 @@ class _GoalTaskExpansionTile extends StatelessWidget {
       ),
       title: Text(
         goal.title,
-        style: const TextStyle(fontWeight: FontWeight.w900, color: gdInk),
+        style: TextStyle(fontWeight: FontWeight.w900, color: gdInk),
       ),
       subtitle: Text(
         '${tasks.length} open subtasks${todayCount == 0 ? '' : ' - $todayCount today'}',
-        style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+        style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
       ),
       children: [
         for (final task in tasks)
@@ -422,7 +422,7 @@ class _GoalTaskExpansionTile extends StatelessWidget {
             ),
             subtitle: Text(
               '${shortDate(task.scheduledDate)} - ${task.durationMinutes}m - ${task.load.label}',
-              style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
             ),
             trailing: Icon(
               identical(selectedTask, task)
@@ -499,9 +499,9 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
             children: [
               Row(
                 children: [
-                  const CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.track_changes_rounded, color: gdPrimary)),
+                  CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.track_changes_rounded, color: gdPrimary)),
                   const SizedBox(width: 12),
-                  Expanded(child: Text(_isComplete ? 'Focus complete' : 'Focus mode', style: Theme.of(context).textTheme.headlineMedium)),
+                  Expanded(child: Text(_isComplete ? 'Focus complete' : 'Focus mode', style: GdText.headlineMedium)),
                   IconButton.filledTonal(tooltip: 'Minimize without stopping', onPressed: widget.onMinimize, icon: const Icon(Icons.keyboard_arrow_down_rounded)),
                 ],
               ),
@@ -513,9 +513,9 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
                       children: [
                         PetAvatar(pet: defaultPet, size: 112),
                         const SizedBox(height: 20),
-                        Text(widget.config.title, textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleLarge),
+                        Text(widget.config.title, textAlign: TextAlign.center, style: GdText.titleLarge),
                         const SizedBox(height: 8),
-                        Text(widget.config.blockingSummary, textAlign: TextAlign.center, style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                        Text(widget.config.blockingSummary, textAlign: TextAlign.center, style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
                         const SizedBox(height: 24),
                         SizedBox(
                           width: 230,
@@ -529,8 +529,8 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
                                 children: [
                                   Icon(_isComplete ? Icons.check_circle_rounded : _paused ? Icons.pause_circle_filled_rounded : Icons.track_changes_rounded, size: 34, color: gdPrimary),
                                   const SizedBox(height: 8),
-                                  Text(_formatTime(_remainingSeconds), style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w900, letterSpacing: -1.5, color: gdInk)),
-                                  Text(_isComplete ? 'Nice work' : _paused ? 'Paused' : 'Running', style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w800)),
+                                  Text(_formatTime(_remainingSeconds), style: TextStyle(fontSize: 42, fontWeight: FontWeight.w900, letterSpacing: -1.5, color: gdInk)),
+                                  Text(_isComplete ? 'Nice work' : _paused ? 'Paused' : 'Running', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w800)),
                                 ],
                               ),
                             ],
@@ -544,12 +544,12 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Row(children: [Icon(Icons.block_rounded, size: 20), SizedBox(width: 8), Text('Blocked during focus', style: TextStyle(fontWeight: FontWeight.w900, color: gdInk))]),
+                                Row(children: [Icon(Icons.block_rounded, size: 20), SizedBox(width: 8), Text('Blocked during focus', style: TextStyle(fontWeight: FontWeight.w900, color: gdInk))]),
                                 const SizedBox(height: 10),
                                 if (widget.config.blockedApps.isEmpty)
-                                  const Text('No apps selected.', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700))
+                                  Text('No apps selected.', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700))
                                 else
-                                  Wrap(spacing: 8, runSpacing: 8, children: [for (final app in widget.config.blockedApps) Chip(backgroundColor: gdPrimarySoft, avatar: const Icon(Icons.lock_rounded, size: 16, color: gdPrimary), label: Text(app, style: const TextStyle(color: gdInk, fontWeight: FontWeight.w800)))]),
+                                  Wrap(spacing: 8, runSpacing: 8, children: [for (final app in widget.config.blockedApps) Chip(backgroundColor: gdPrimarySoft, avatar: Icon(Icons.lock_rounded, size: 16, color: gdPrimary), label: Text(app, style: TextStyle(color: gdInk, fontWeight: FontWeight.w800)))]),
                               ],
                             ),
                           ),

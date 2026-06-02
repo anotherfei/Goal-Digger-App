@@ -20,7 +20,7 @@ const String _fontFamily = 'PlusJakartaSans';
 ThemeData buildGoalDiggerTheme() {
   final scheme = ColorScheme.fromSeed(
     seedColor: GdColors.brand,
-    brightness: Brightness.light,
+    brightness: GdColors.brightness,
   ).copyWith(
     primary: GdColors.brand,
     onPrimary: GdColors.onColor,
@@ -54,13 +54,13 @@ ThemeData buildGoalDiggerTheme() {
     scaffoldBackgroundColor: GdColors.canvas,
     colorScheme: scheme,
     splashFactory: InkSparkle.splashFactory,
-    iconTheme: const IconThemeData(color: GdColors.brand),
-    dividerTheme: const DividerThemeData(
+    iconTheme: IconThemeData(color: GdColors.brand),
+    dividerTheme: DividerThemeData(
       color: GdColors.border,
       thickness: 1,
       space: GdSpace.xl,
     ),
-    appBarTheme: const AppBarTheme(
+    appBarTheme: AppBarTheme(
       centerTitle: false,
       backgroundColor: GdColors.canvas,
       surfaceTintColor: Colors.transparent,
@@ -103,7 +103,7 @@ ThemeData buildGoalDiggerTheme() {
         ),
       ),
     ),
-    textTheme: const TextTheme(
+    textTheme: TextTheme(
       headlineLarge: TextStyle(
         color: GdColors.ink,
         fontSize: 34,
@@ -162,12 +162,12 @@ ThemeData buildGoalDiggerTheme() {
       backgroundColor: GdColors.brandSoft,
       selectedColor: GdColors.brand,
       disabledColor: GdColors.surfaceMuted,
-      labelStyle: const TextStyle(
+      labelStyle: TextStyle(
         color: GdColors.ink,
         fontWeight: FontWeight.w800,
         fontFamily: _fontFamily,
       ),
-      secondaryLabelStyle: const TextStyle(
+      secondaryLabelStyle: TextStyle(
         color: GdColors.onColor,
         fontWeight: FontWeight.w800,
         fontFamily: _fontFamily,
@@ -189,23 +189,23 @@ ThemeData buildGoalDiggerTheme() {
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: GdRadius.field,
-        borderSide: const BorderSide(color: GdColors.border),
+        borderSide: BorderSide(color: GdColors.border),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: GdRadius.field,
-        borderSide: const BorderSide(color: GdColors.brand, width: 2),
+        borderSide: BorderSide(color: GdColors.brand, width: 2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: GdRadius.field,
-        borderSide: const BorderSide(color: GdColors.danger),
+        borderSide: BorderSide(color: GdColors.danger),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: GdRadius.field,
-        borderSide: const BorderSide(color: GdColors.danger, width: 2),
+        borderSide: BorderSide(color: GdColors.danger, width: 2),
       ),
       labelStyle:
-          const TextStyle(color: GdColors.inkMuted, fontWeight: FontWeight.w700),
-      hintStyle: const TextStyle(color: GdColors.inkFaint),
+          TextStyle(color: GdColors.inkMuted, fontWeight: FontWeight.w700),
+      hintStyle: TextStyle(color: GdColors.inkFaint),
       prefixIconColor: GdColors.inkMuted,
       suffixIconColor: GdColors.inkMuted,
     ),
@@ -234,7 +234,7 @@ ThemeData buildGoalDiggerTheme() {
           fontSize: 15,
           fontWeight: FontWeight.w900,
         ),
-        side: const BorderSide(color: GdColors.borderStrong),
+        side: BorderSide(color: GdColors.borderStrong),
         shape: RoundedRectangleBorder(borderRadius: GdRadius.control),
       ),
     ),
@@ -277,8 +277,8 @@ ThemeData buildGoalDiggerTheme() {
             ? GdColors.brand
             : Colors.transparent,
       ),
-      checkColor: const WidgetStatePropertyAll(GdColors.onColor),
-      side: const BorderSide(color: GdColors.borderStrong, width: 1.5),
+      checkColor: WidgetStatePropertyAll(GdColors.onColor),
+      side: BorderSide(color: GdColors.borderStrong, width: 1.5),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(GdSpace.sm),
       ),
@@ -289,12 +289,12 @@ ThemeData buildGoalDiggerTheme() {
       thumbColor: GdColors.brand,
       overlayColor: GdColors.brand.withValues(alpha: 0.18),
     ),
-    progressIndicatorTheme: const ProgressIndicatorThemeData(
+    progressIndicatorTheme: ProgressIndicatorThemeData(
       color: GdColors.brand,
       linearTrackColor: GdColors.brandSoft,
       circularTrackColor: GdColors.brandSoft,
     ),
-    listTileTheme: const ListTileThemeData(
+    listTileTheme: ListTileThemeData(
       iconColor: GdColors.brand,
       textColor: GdColors.ink,
       titleTextStyle: TextStyle(
@@ -316,21 +316,21 @@ ThemeData buildGoalDiggerTheme() {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(GdRadius.xl),
       ),
-      titleTextStyle: const TextStyle(
+      titleTextStyle: TextStyle(
         fontFamily: _fontFamily,
         color: GdColors.ink,
         fontSize: 20,
         fontWeight: FontWeight.w900,
         letterSpacing: -0.3,
       ),
-      contentTextStyle: const TextStyle(
+      contentTextStyle: TextStyle(
         fontFamily: _fontFamily,
         color: GdColors.inkMuted,
         fontSize: 15,
         height: 1.45,
       ),
     ),
-    bottomSheetTheme: const BottomSheetThemeData(
+    bottomSheetTheme: BottomSheetThemeData(
       backgroundColor: GdColors.surface,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
@@ -342,10 +342,10 @@ ThemeData buildGoalDiggerTheme() {
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
-      backgroundColor: GdColors.ink,
-      contentTextStyle: const TextStyle(
+      backgroundColor: GdColors.inverseSurface,
+      contentTextStyle: TextStyle(
         fontFamily: _fontFamily,
-        color: GdColors.onColor,
+        color: GdColors.onInverse,
         fontWeight: FontWeight.w700,
       ),
       actionTextColor: GdColors.reward,
@@ -355,17 +355,17 @@ ThemeData buildGoalDiggerTheme() {
     ),
     tooltipTheme: TooltipThemeData(
       decoration: BoxDecoration(
-        color: GdColors.ink,
+        color: GdColors.inverseSurface,
         borderRadius: BorderRadius.circular(GdSpace.sm),
       ),
-      textStyle: const TextStyle(
+      textStyle: TextStyle(
         fontFamily: _fontFamily,
-        color: GdColors.onColor,
+        color: GdColors.onInverse,
         fontSize: 12,
         fontWeight: FontWeight.w600,
       ),
     ),
-    tabBarTheme: const TabBarThemeData(
+    tabBarTheme: TabBarThemeData(
       labelColor: GdColors.brand,
       unselectedLabelColor: GdColors.inkMuted,
       indicatorColor: GdColors.brand,

@@ -694,7 +694,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          icon: const Icon(Icons.error_outline_rounded, color: gdError),
+          icon: Icon(Icons.error_outline_rounded, color: gdError),
           title: Text(title),
           content: Text(message),
           actions: [
@@ -1296,7 +1296,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const SizedBox(
+              SizedBox(
                 width: 38,
                 height: 38,
                 child: CircularProgressIndicator(strokeWidth: 3, color: gdPrimary),
@@ -1304,14 +1304,14 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               const SizedBox(height: 18),
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   color: gdInk,
                   fontSize: 15,
                   fontWeight: FontWeight.w800,
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 'This may take a few seconds…',
                 style: TextStyle(color: gdMuted, fontSize: 13, fontWeight: FontWeight.w600),
               ),
@@ -1592,7 +1592,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                     children: [
                       if (!isUser)
                         Row(
-                          children: const [
+                          children: [
                             CircleAvatar(
                               radius: 15,
                               backgroundColor: gdPrimarySoft,
@@ -1632,7 +1632,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                   decoration: BoxDecoration(
                                     color: isUser
                                         ? Colors.white.withValues(alpha: 0.14)
-                                        : Colors.white,
+                                        : gdSurface,
                                     borderRadius: BorderRadius.circular(999),
                                     border: Border.all(
                                       color: isUser ? Colors.white24 : gdBorder,
@@ -1702,7 +1702,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
+                                  Text(
                                     'GOAL BREAKDOWN',
                                     style: TextStyle(
                                       color: gdHint,
@@ -1714,7 +1714,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                   const SizedBox(height: 8),
                                   Text(
                                     title,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: gdInk,
                                       fontSize: 22,
                                       fontWeight: FontWeight.w900,
@@ -1731,7 +1731,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                               child: IconButton(
                                 tooltip: 'Close',
                                 onPressed: () => Navigator.pop(dialogContext),
-                                icon: const Icon(Icons.close_rounded,
+                                icon: Icon(Icons.close_rounded,
                                     color: gdMuted),
                               ),
                             ),
@@ -1793,11 +1793,11 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                       horizontal: 18, vertical: 18),
                                   enabledBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(24),
-                                    borderSide: const BorderSide(color: gdBorder),
+                                    borderSide: BorderSide(color: gdBorder),
                                   ),
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(24),
-                                    borderSide: const BorderSide(
+                                    borderSide: BorderSide(
                                         color: gdPrimary, width: 1.6),
                                   ),
                                 ),
@@ -2800,7 +2800,7 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(goal.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: gdMuted, fontWeight: FontWeight.w800)),
               const SizedBox(height: 14),
               PrioritySelector(
@@ -2835,6 +2835,12 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
 
   @override
   Widget build(BuildContext context) {
+    // Pin the token resolver to the theme MaterialApp actually resolved (this
+    // context is inside the applied theme). Reading Theme.of also makes the
+    // shell rebuild on any theme change, so every screen repaints in the
+    // active light/dark palette, consistently with the themed text styles.
+    GdColors.setBrightness(Theme.of(context).brightness);
+
     // Rebuild the root only when the auth status itself changes. Loading and
     // error changes are only needed by onboarding, and rebuilding the signed-in
     // shell during modal cleanup can upset Flutter's inherited-widget tree.
@@ -2844,7 +2850,7 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
     // All side effects (sync activation, Firestore writes) are handled
     // in _onAuthStateChanged via the addListener wired in didChangeDependencies.
     if (authStatus == AuthStatus.unknown) {
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: gdBackground,
         body: Center(child: CircularProgressIndicator()),
       );

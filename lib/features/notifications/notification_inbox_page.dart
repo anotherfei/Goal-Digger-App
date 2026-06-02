@@ -44,6 +44,8 @@ class _NotificationInboxPageState extends State<NotificationInboxPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Keep the token resolver matched to the applied theme on this route.
+    GdColors.setBrightness(Theme.of(context).brightness);
     final importantUnread = _visibleNotifications
         .where((notification) => notification.important && notification.isUnread)
         .toList();
@@ -117,7 +119,7 @@ class _NotificationInboxPageState extends State<NotificationInboxPage> {
               ),
               const SizedBox(height: 10),
               if (regularNotifications.isEmpty)
-                const AppCard(
+                AppCard(
                   child: Padding(
                     padding: EdgeInsets.all(18),
                     child: Text(
@@ -185,15 +187,15 @@ class _NotificationSettingsSection extends StatelessWidget {
     return AppCard(
       child: ListTile(
         minVerticalPadding: 12,
-        leading: const CircleAvatar(
+        leading: CircleAvatar(
           backgroundColor: gdPrimarySoft,
           child: Icon(Icons.settings_applications_rounded, color: gdPrimary),
         ),
-        title: const Text(
+        title: Text(
           'Android notification settings',
           style: TextStyle(color: gdInk, fontWeight: FontWeight.w900),
         ),
-        subtitle: const Text(
+        subtitle: Text(
           'Open system settings for sounds, permission, and notification bar behavior.',
           style: TextStyle(
             color: gdMuted,
@@ -245,7 +247,7 @@ class _NotificationTile extends StatelessWidget {
             Expanded(
               child: Text(
                 notification.title,
-                style: const TextStyle(
+                style: TextStyle(
                   color: gdInk,
                   fontWeight: FontWeight.w900,
                 ),
@@ -266,7 +268,7 @@ class _NotificationTile extends StatelessWidget {
             children: [
               Text(
                 notification.body,
-                style: const TextStyle(
+                style: TextStyle(
                   color: gdMuted,
                   fontWeight: FontWeight.w700,
                   height: 1.35,

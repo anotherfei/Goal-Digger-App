@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/theme/gd_design.dart';
+import '../../core/theme/theme_controller.dart';
 import '../notifications/models/notification_models.dart';
 import '../../shared/widgets/shared_widgets.dart';
 
@@ -101,6 +103,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Pin the token resolver to the applied theme (and rebuild on change) so
+    // toggling the selector below switches this whole page live.
+    GdColors.setBrightness(Theme.of(context).brightness);
     return Scaffold(
       backgroundColor: gdBackground,
       appBar: AppBar(
@@ -121,7 +126,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 padding: const EdgeInsets.all(18),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
+                  children: [
                     Text(
                       'App preferences',
                       style: TextStyle(
@@ -144,20 +149,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 14),
+            const _AppearanceCard(),
+            const SizedBox(height: 14),
             AppCard(
               child: Column(
                 children: [
                   SwitchListTile.adaptive(
                     value: goalReminders,
                     onChanged: onGoalRemindersChanged,
-                    title: const Text(
+                    title: Text(
                       'Android notifications',
                       style: TextStyle(
                         color: gdInk,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    subtitle: const Text(
+                    subtitle: Text(
                       'Allow scheduled pop-ups for goals and routines.',
                       style: TextStyle(
                         color: gdMuted,
@@ -169,14 +176,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   SwitchListTile.adaptive(
                     value: friendProgressSharing,
                     onChanged: onFriendProgressSharingChanged,
-                    title: const Text(
+                    title: Text(
                       'Friend progress sharing',
                       style: TextStyle(
                         color: gdInk,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    subtitle: const Text(
+                    subtitle: Text(
                       'Show my streak to approved friends.',
                       style: TextStyle(
                         color: gdMuted,
@@ -193,7 +200,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
                 child: Column(
                   children: [
-                    const ListTile(
+                    ListTile(
                       leading: CircleAvatar(
                         backgroundColor: gdPrimarySoft,
                         child: Icon(
@@ -278,7 +285,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         'Daily plan time',
                         style: TextStyle(fontWeight: FontWeight.w900),
                       ),
-                      subtitle: const Text(
+                      subtitle: Text(
                         'Also used as the base time for deadline alerts.',
                         style: TextStyle(
                           color: gdMuted,
@@ -317,7 +324,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         'Streak saver time',
                         style: TextStyle(fontWeight: FontWeight.w900),
                       ),
-                      subtitle: const Text(
+                      subtitle: Text(
                         'Only fires when today has no completed task.',
                         style: TextStyle(
                           color: gdMuted,
@@ -356,7 +363,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         'Deadline warning',
                         style: TextStyle(fontWeight: FontWeight.w900),
                       ),
-                      subtitle: const Text(
+                      subtitle: Text(
                         'How early unfinished goals become urgent.',
                         style: TextStyle(
                           color: gdMuted,
@@ -440,7 +447,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             AppCard(
               child: Column(
                 children: [
-                  const ListTile(
+                  ListTile(
                     leading: CircleAvatar(
                       backgroundColor: gdPrimarySoft,
                       child: Icon(Icons.palette_rounded, color: gdPrimary),
@@ -461,7 +468,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   const Divider(height: 1),
-                  const ListTile(
+                  ListTile(
                     leading: CircleAvatar(
                       backgroundColor: gdPrimarySoft,
                       child: Icon(Icons.notifications_active_rounded, color: gdPrimary),
@@ -483,18 +490,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const Divider(height: 1),
                   ListTile(
-                    leading: const CircleAvatar(
+                    leading: CircleAvatar(
                       backgroundColor: gdErrorSoft,
                       child: Icon(Icons.logout_rounded, color: gdError),
                     ),
-                    title: const Text(
+                    title: Text(
                       'Sign out',
                       style: TextStyle(
                         color: gdError,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    subtitle: const Text(
+                    subtitle: Text(
                       'Return to onboarding and stop syncing this session.',
                       style: TextStyle(
                         color: gdMuted,
@@ -504,6 +511,99 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onTap: onSignOut,
                   ),
                 ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Light / Dark / System selector. Reads and writes the app-wide
+/// [ThemeController] directly, so the choice applies instantly and persists.
+class _AppearanceCard extends StatelessWidget {
+  const _AppearanceCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<ThemeController>();
+    return AppCard(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: gdPrimarySoft,
+                    borderRadius: BorderRadius.circular(GdRadius.sm),
+                  ),
+                  child: Icon(Icons.dark_mode_rounded,
+                      color: gdPrimary, size: 21),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Appearance',
+                        style: TextStyle(
+                          color: gdInk,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Use light, dark, or match your device.',
+                        style: TextStyle(
+                          color: gdMuted,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<ThemeMode>(
+                style: SegmentedButton.styleFrom(
+                  foregroundColor: gdMuted,
+                  selectedForegroundColor: gdPrimary,
+                  selectedBackgroundColor: gdPrimarySoft,
+                  side: BorderSide(color: gdBorder),
+                ),
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(
+                    value: ThemeMode.light,
+                    icon: Icon(Icons.light_mode_rounded),
+                    label: Text('Light'),
+                  ),
+                  ButtonSegment(
+                    value: ThemeMode.dark,
+                    icon: Icon(Icons.dark_mode_rounded),
+                    label: Text('Dark'),
+                  ),
+                  ButtonSegment(
+                    value: ThemeMode.system,
+                    icon: Icon(Icons.brightness_auto_rounded),
+                    label: Text('System'),
+                  ),
+                ],
+                selected: {controller.mode},
+                onSelectionChanged: (selection) =>
+                    controller.setMode(selection.first),
               ),
             ),
           ],
@@ -535,14 +635,14 @@ class _NotificationSwitch extends StatelessWidget {
       onChanged: enabled ? onChanged : null,
       title: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           color: gdInk,
           fontWeight: FontWeight.w900,
         ),
       ),
       subtitle: Text(
         subtitle,
-        style: const TextStyle(
+        style: TextStyle(
           color: gdMuted,
           fontWeight: FontWeight.w700,
         ),

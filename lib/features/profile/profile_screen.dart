@@ -210,6 +210,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Keep the token resolver matched to the applied theme on this route.
+    GdColors.setBrightness(Theme.of(context).brightness);
     final completedTasks = tasks.where((task) => task.done).length;
     final focusMinutes = tasks
         .where((task) => task.done)
@@ -536,7 +538,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        icon: const Icon(Icons.warning_amber_rounded, color: gdError),
+        icon: Icon(Icons.warning_amber_rounded, color: gdError),
         title: const Text('Delete account?'),
         content: const Text(
           'This removes the Firebase Auth account from this project. This action may require a fresh login.',
@@ -639,7 +641,7 @@ class _ProfileHeader extends StatelessWidget {
                       ? null
                       : NetworkImage(photoUrl!),
                   child: photoUrl == null || photoUrl!.isEmpty
-                      ? const Icon(
+                      ? Icon(
                           Icons.account_circle_rounded,
                           size: 48,
                           color: gdPrimary,
@@ -666,12 +668,12 @@ class _ProfileHeader extends StatelessWidget {
                       else
                         Text(
                           displayName,
-                          style: Theme.of(context).textTheme.headlineMedium,
+                          style: GdText.headlineMedium,
                         ),
                       const SizedBox(height: 6),
                       Text(
                         email.isEmpty ? 'Guest preview account' : email,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: gdMuted,
                           fontWeight: FontWeight.w800,
                         ),
@@ -897,7 +899,7 @@ class _InlineDivider extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               color: gdMuted,
               fontSize: 12,
               fontWeight: FontWeight.w900,
@@ -1020,11 +1022,11 @@ class _CompanionSection extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: Theme.of(context).textTheme.titleLarge),
+                  Text(title, style: GdText.titleLarge),
                   const SizedBox(height: 6),
                   Text(
                     '${pet.name} companion with $accessory. Mood: $selectedMood.',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: gdMuted,
                       fontWeight: FontWeight.w800,
                     ),
@@ -1253,18 +1255,18 @@ class _SocialPrivacySection extends StatelessWidget {
           ),
           const Divider(height: 1),
           ListTile(
-            leading: const CircleAvatar(
+            leading: CircleAvatar(
               backgroundColor: gdPrimarySoft,
               child: Icon(Icons.person_add_alt_1_rounded, color: gdPrimary),
             ),
-            title: const Text(
+            title: Text(
               'Friends',
               style: TextStyle(fontWeight: FontWeight.w900, color: gdInk),
             ),
             subtitle: Text(
               '$friends friends. $joinedCommunities/$totalCommunities communities joined.',
               style:
-                  const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                  TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
             ),
           ),
           const Divider(height: 1),
@@ -1272,17 +1274,17 @@ class _SocialPrivacySection extends StatelessWidget {
             value: friendProgressSharing,
             activeThumbColor: gdPrimary,
             onChanged: onFriendProgressSharingChanged,
-            title: const Text(
+            title: Text(
               'Share progress with friends',
               style: TextStyle(fontWeight: FontWeight.w900, color: gdInk),
             ),
-            subtitle: const Text(
+            subtitle: Text(
               'Allow approved friends to see streak and progress signals.',
               style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
             ),
           ),
           const Divider(height: 1),
-          const ListTile(
+          ListTile(
             leading: CircleAvatar(
               backgroundColor: gdPrimarySoft,
               child: Icon(Icons.visibility_rounded, color: gdPrimary),
@@ -1333,11 +1335,11 @@ class _PreferencesSection extends StatelessWidget {
             value: goalReminders,
             activeThumbColor: gdPrimary,
             onChanged: onGoalRemindersChanged,
-            title: const Text(
+            title: Text(
               'Goal reminders',
               style: TextStyle(fontWeight: FontWeight.w900, color: gdInk),
             ),
-            subtitle: const Text(
+            subtitle: Text(
               'Nudge me before scheduled tasks and routines.',
               style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
             ),
@@ -1397,15 +1399,15 @@ class _DangerZoneSection extends StatelessWidget {
           ),
           const Divider(height: 1),
           ListTile(
-            leading: const CircleAvatar(
+            leading: CircleAvatar(
               backgroundColor: gdSurface,
               child: Icon(Icons.logout_rounded, color: gdError),
             ),
-            title: const Text(
+            title: Text(
               'Sign out',
               style: TextStyle(color: gdError, fontWeight: FontWeight.w900),
             ),
-            subtitle: const Text(
+            subtitle: Text(
               'Return to login and stop syncing this session.',
               style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
             ),
@@ -1414,11 +1416,11 @@ class _DangerZoneSection extends StatelessWidget {
           const Divider(height: 1),
           ListTile(
             enabled: !isGuest,
-            leading: const CircleAvatar(
+            leading: CircleAvatar(
               backgroundColor: gdSurface,
               child: Icon(Icons.delete_forever_rounded, color: gdError),
             ),
-            title: const Text(
+            title: Text(
               'Delete account',
               style: TextStyle(color: gdError, fontWeight: FontWeight.w900),
             ),
@@ -1427,7 +1429,7 @@ class _DangerZoneSection extends StatelessWidget {
                   ? 'Guest preview accounts can simply sign out.'
                   : 'Permanently delete the Firebase Auth account.',
               style:
-                  const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                  TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
             ),
             onTap: isGuest ? null : onDeleteAccount,
           ),
@@ -1462,11 +1464,11 @@ class _SectionHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: Theme.of(context).textTheme.titleLarge),
+              Text(title, style: GdText.titleLarge),
               const SizedBox(height: 3),
               Text(
                 subtitle,
-                style: const TextStyle(
+                style: TextStyle(
                   color: gdMuted,
                   fontWeight: FontWeight.w700,
                   height: 1.35,
@@ -1507,7 +1509,7 @@ class _StatusChip extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               color: gdInk,
               fontWeight: FontWeight.w900,
               fontSize: 12,
@@ -1547,7 +1549,7 @@ class _MetricTile extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               color: gdInk,
               fontSize: 18,
               fontWeight: FontWeight.w900,
@@ -1555,7 +1557,7 @@ class _MetricTile extends StatelessWidget {
           ),
           Text(
             label,
-            style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+            style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
           ),
         ],
       ),
@@ -1638,11 +1640,11 @@ class _ProfileActionTile extends StatelessWidget {
       ),
       title: Text(
         title,
-        style: const TextStyle(color: gdInk, fontWeight: FontWeight.w900),
+        style: TextStyle(color: gdInk, fontWeight: FontWeight.w900),
       ),
       subtitle: Text(
         subtitle,
-        style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+        style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
       ),
       trailing: TextButton(onPressed: onTap, child: Text(actionLabel)),
       onTap: onTap,

@@ -63,7 +63,7 @@ class _CompanionPageState extends State<CompanionPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const SizedBox(height: 8),
-                      const Center(
+                      Center(
                         child: Text(
                           'PET PREVIEW',
                           style: TextStyle(
@@ -107,7 +107,7 @@ class _CompanionPageState extends State<CompanionPage> {
                                 ),
                                 child: Text(
                                   widget.accessory,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       color: gdInk,
                                       fontWeight: FontWeight.w900),
                                 ),
@@ -129,18 +129,18 @@ class _CompanionPageState extends State<CompanionPage> {
                           children: [
                             Row(
                               children: [
-                                const Icon(Icons.favorite_rounded,
+                                Icon(Icons.favorite_rounded,
                                     color: gdAccent, size: 20),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     'Happiness ${widget.happiness}%',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         color: gdInk,
                                         fontWeight: FontWeight.w900),
                                   ),
                                 ),
-                                const Text(
+                                Text(
                                   'Tap to cheer up',
                                   style: TextStyle(
                                       color: gdMuted,
@@ -199,7 +199,7 @@ class _CompanionPageState extends State<CompanionPage> {
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(children: const [
+                        Row(children: [
                           CircleAvatar(
                               backgroundColor: gdPrimarySoft,
                               child: Icon(Icons.inventory_2_rounded,
@@ -271,7 +271,7 @@ class _FloatingWallet extends StatelessWidget {
             width: 30,
             height: 30,
             decoration:
-                const BoxDecoration(color: gdStarGold, shape: BoxShape.circle),
+                BoxDecoration(color: gdStarGold, shape: BoxShape.circle),
             alignment: Alignment.center,
             child: const Text(
               'C',
@@ -286,7 +286,7 @@ class _FloatingWallet extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
+              Text(
                 'Wallet',
                 style: TextStyle(
                     color: gdMuted,
@@ -296,7 +296,7 @@ class _FloatingWallet extends StatelessWidget {
               ),
               Text(
                 '$coins coins',
-                style: const TextStyle(
+                style: TextStyle(
                     color: gdInk, fontSize: 13, fontWeight: FontWeight.w900),
               ),
             ],
@@ -323,17 +323,18 @@ class _SkinPill extends StatelessWidget {
         height: 62,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-            color: selected ? gdInk : Colors.white,
+            color: selected ? gdPrimary : gdSurface,
             borderRadius: BorderRadius.circular(20),
             boxShadow: selected
                 ? null
                 : [
                     BoxShadow(
-                        color: Colors.black.withOpacity(0.04), blurRadius: 12)
+                        color: gdShadow.withValues(alpha: GdAlpha.faint),
+                        blurRadius: 12)
                   ]),
         child: Text(label,
             style: TextStyle(
-                color: selected ? Colors.white : gdMuted,
+                color: selected ? gdOnDark : gdMuted,
                 fontSize: 18,
                 fontWeight: FontWeight.w800)),
       ),

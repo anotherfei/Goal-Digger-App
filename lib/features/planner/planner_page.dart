@@ -60,7 +60,7 @@ class PlannerPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(children: const [
+                  Row(children: [
                     Expanded(
                         child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,

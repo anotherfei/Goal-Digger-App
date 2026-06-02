@@ -620,7 +620,7 @@ class _CommunityPageState extends State<CommunityPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const CircleAvatar(
+            CircleAvatar(
               radius: 30,
               backgroundColor: gdPrimarySoft,
               child: Icon(
@@ -632,7 +632,7 @@ class _CommunityPageState extends State<CommunityPage> {
             const SizedBox(height: 16),
             Text(
               isGuest ? 'Full sign-in required' : 'Sign in to use Social',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w900,
                 color: gdInk,
@@ -643,7 +643,7 @@ class _CommunityPageState extends State<CommunityPage> {
               isGuest
                   ? 'Guest mode is only for preview. Friends, friend search, communities, and chat need a full account so your data can sync safely with Firestore.'
                   : 'Friends, friend search, communities, and chat need an account so your data can sync safely with Firestore.',
-              style: const TextStyle(
+              style: TextStyle(
                 color: gdMuted,
                 fontWeight: FontWeight.w700,
                 height: 1.4,
@@ -775,7 +775,7 @@ class _CommunityPageState extends State<CommunityPage> {
                   style: OutlinedButton.styleFrom(
                     backgroundColor: gdPrimary,
                     foregroundColor: gdCardLight,
-                    side: const BorderSide(color: gdPrimary, width: 1.5),
+                    side: BorderSide(color: gdPrimary, width: 1.5),
                   ),
                   onPressed: () => _openAllFriendsPage(context, friends),
                   icon: const Icon(Icons.people_rounded),
@@ -1181,7 +1181,7 @@ class _CommunityPageState extends State<CommunityPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Create or join community',
                       style: TextStyle(
                           fontSize: 18, fontWeight: FontWeight.w900, color: gdInk),
@@ -1306,7 +1306,7 @@ class _CommunityPageState extends State<CommunityPage> {
                   style: OutlinedButton.styleFrom(
                     backgroundColor: gdPrimary,
                     foregroundColor: gdCardLight,
-                    side: const BorderSide(color: gdPrimary, width: 1.5),
+                    side: BorderSide(color: gdPrimary, width: 1.5),
                   ),
                   onPressed: () => _openAllCommunitiesPage(context, joined),
                   icon: const Icon(Icons.groups_rounded),
@@ -1640,7 +1640,7 @@ class _FriendListCard extends StatelessWidget {
           subtitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+          style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
         ),
         trailing: Wrap(
           spacing: 4,
@@ -1660,7 +1660,7 @@ class _FriendListCard extends StatelessWidget {
                     child: Container(
                       width: 10,
                       height: 10,
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         color: gdError,
                         shape: BoxShape.circle,
                       ),
@@ -1672,7 +1672,7 @@ class _FriendListCard extends StatelessWidget {
               IconButton(
                 tooltip: 'Delete friend',
                 onPressed: onDelete,
-                icon: const Icon(Icons.delete_outline_rounded, color: gdError),
+                icon: Icon(Icons.delete_outline_rounded, color: gdError),
               )
             else
               IconButton(
@@ -1904,7 +1904,7 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Search real communities',
                       style: TextStyle(
                           fontSize: 18,
@@ -1912,7 +1912,7 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
                           color: gdInk),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
+                    Text(
                       'These are documents from Firestore communities, not dummy data.',
                       style: TextStyle(
                           color: gdMuted, fontWeight: FontWeight.w700),
@@ -2033,7 +2033,7 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                   padding: const EdgeInsets.all(20),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: const [
+                    children: [
                       CircleAvatar(
                         radius: 34,
                         backgroundColor: gdPrimarySoft,
@@ -2078,7 +2078,7 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Search users',
                       style: TextStyle(
                           fontSize: 18,
@@ -2086,7 +2086,7 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                           color: gdInk),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
+                    Text(
                       'Search real public profile documents from Firestore. Adding someone stores their uid in your users/{uid}.friends list.',
                       style: TextStyle(
                           color: gdMuted, fontWeight: FontWeight.w700),
@@ -2156,7 +2156,7 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                                   const TextStyle(fontWeight: FontWeight.w900)),
                           subtitle: Text(
                             '${profile.username} · ${profile.streak} day streak',
-                            style: const TextStyle(
+                            style: TextStyle(
                                 color: gdMuted, fontWeight: FontWeight.w700),
                           ),
                           trailing: FilledButton(
@@ -2213,16 +2213,16 @@ class _SuggestedFriendsPanel extends StatelessWidget {
                     backgroundColor: gdPrimarySoft,
                     child: Text(
                       filtered[i].substring(0, 1).toUpperCase(),
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: gdPrimary, fontWeight: FontWeight.w900),
                     ),
                   ),
                   title: Text(
                     filtered[i],
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontWeight: FontWeight.w900, color: gdInk),
                   ),
-                  subtitle: const Text(
+                  subtitle: Text(
                     'Suggested accountability friend',
                     style:
                         TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
@@ -2380,7 +2380,7 @@ class _DirectChatPageState extends State<_DirectChatPage> {
   }
 
   Widget _emptyMessagesPrompt() {
-    return const Center(
+    return Center(
       child: Padding(
         padding: EdgeInsets.all(24),
         child: Text(
@@ -2416,7 +2416,7 @@ class _DirectChatPageState extends State<_DirectChatPage> {
                   padding: const EdgeInsets.all(20),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: const [
+                    children: [
                       CircleAvatar(
                         radius: 34,
                         backgroundColor: gdPrimarySoft,
@@ -2607,7 +2607,7 @@ class _CommunityListCard extends StatelessWidget {
         leading: InkResponse(
           onTap: onDetails,
           radius: 28,
-          child: const CircleAvatar(
+          child: CircleAvatar(
             backgroundColor: gdPrimarySoft,
             child: Icon(Icons.groups_rounded, color: gdPrimary),
           ),
@@ -2618,7 +2618,7 @@ class _CommunityListCard extends StatelessWidget {
           '${group.members} members · ${group.tag} · code ${group.joinCode}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+          style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
         ),
         trailing: Wrap(
           spacing: 4,
@@ -2833,7 +2833,7 @@ class _CommunityDetailPage extends StatelessWidget {
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const CircleAvatar(
+                            CircleAvatar(
                               radius: 34,
                               backgroundColor: gdPrimarySoft,
                               child: Icon(
@@ -2849,7 +2849,7 @@ class _CommunityDetailPage extends StatelessWidget {
                                 children: [
                                   Text(
                                     group.name,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 22,
                                       fontWeight: FontWeight.w900,
                                       color: gdInk,
@@ -2878,7 +2878,7 @@ class _CommunityDetailPage extends StatelessWidget {
                         const SizedBox(height: 16),
                         Text(
                           group.description,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: gdMuted,
                             fontWeight: FontWeight.w700,
                             height: 1.4,
@@ -3018,7 +3018,7 @@ class _CommunityDetailPage extends StatelessWidget {
                                 member.username,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: gdMuted,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -3157,7 +3157,7 @@ class _UserDetailPage extends StatelessWidget {
                         Text(
                           profile.displayName,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.w900,
                             color: gdInk,
@@ -3167,7 +3167,7 @@ class _UserDetailPage extends StatelessWidget {
                         Text(
                           profile.username,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: gdMuted,
                             fontWeight: FontWeight.w800,
                           ),
@@ -3323,7 +3323,7 @@ class _CommunityInfoRow extends StatelessWidget {
             children: [
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   color: gdMuted,
                   fontWeight: FontWeight.w800,
                 ),
@@ -3331,7 +3331,7 @@ class _CommunityInfoRow extends StatelessWidget {
               const SizedBox(height: 2),
               SelectableText(
                 value.isEmpty ? '-' : value,
-                style: const TextStyle(
+                style: TextStyle(
                   color: gdInk,
                   fontWeight: FontWeight.w900,
                 ),
@@ -3476,7 +3476,7 @@ class _CommunityChatPageState extends State<_CommunityChatPage> {
                   padding: const EdgeInsets.all(20),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: const [
+                    children: [
                       CircleAvatar(
                         radius: 34,
                         backgroundColor: gdPrimarySoft,
@@ -3513,7 +3513,7 @@ class _CommunityChatPageState extends State<_CommunityChatPage> {
       appBar: AppBar(
         title: Row(
           children: [
-            const CircleAvatar(
+            CircleAvatar(
               radius: 18,
               backgroundColor: gdPrimarySoft,
               child: Icon(Icons.groups_rounded, color: gdPrimary, size: 18),
@@ -3570,7 +3570,7 @@ class _CommunityChatPageState extends State<_CommunityChatPage> {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const CircleAvatar(
+                                CircleAvatar(
                                   radius: 34,
                                   backgroundColor: gdPrimarySoft,
                                   child: Icon(Icons.forum_rounded,
@@ -3580,19 +3580,19 @@ class _CommunityChatPageState extends State<_CommunityChatPage> {
                                 Text(
                                   widget.group.name,
                                   style:
-                                      Theme.of(context).textTheme.headlineMedium,
+                                      GdText.headlineMedium,
                                   textAlign: TextAlign.center,
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
                                   '${widget.group.members} members · code ${widget.group.joinCode}',
                                   textAlign: TextAlign.center,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       color: gdMuted,
                                       fontWeight: FontWeight.w700),
                                 ),
                                 const SizedBox(height: 8),
-                                const Text(
+                                Text(
                                   'No community messages yet. Start the first update for the group.',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
@@ -3727,7 +3727,7 @@ class _CommunityLeaderboardTile extends StatelessWidget {
           Text(group.name, style: const TextStyle(fontWeight: FontWeight.w900)),
       subtitle: Text(
         '${group.members} members · ${group.tag}',
-        style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+        style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
       ),
       trailing: Chip(label: Text(group.joined ? 'Joined' : '${group.similarity}% fit')),
     );
@@ -3812,7 +3812,7 @@ class _SystemMessageBubble extends StatelessWidget {
         child: Text(
           cleaned,
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style: TextStyle(
             color: gdMuted,
             fontSize: 12,
             fontWeight: FontWeight.w900,
@@ -3865,7 +3865,7 @@ class _MessageBubble extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 3),
                 child: Text(
                   senderName,
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: gdMuted,
                       fontSize: 12,
                       fontWeight: FontWeight.w900),
@@ -3903,7 +3903,7 @@ class _Avatar extends StatelessWidget {
       backgroundColor: gdPrimarySoft,
       child: Text(
         label.trim().isEmpty ? '?' : label.trim().substring(0, 1).toUpperCase(),
-        style: const TextStyle(color: gdPrimary, fontWeight: FontWeight.w900),
+        style: TextStyle(color: gdPrimary, fontWeight: FontWeight.w900),
       ),
     );
   }
@@ -4070,11 +4070,11 @@ class _DbCommunityMatchCard extends StatelessWidget {
             Text(
               '${group.members} members · ${group.tag} · code ${group.joinCode}',
               style:
-                  const TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
+                  TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
             Text(group.description,
-                style: const TextStyle(
+                style: TextStyle(
                     color: gdMuted, fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
             SizedBox(
@@ -4419,14 +4419,14 @@ class FriendSuggestionCard extends StatelessWidget {
     return AppCard(
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
-        leading: const CircleAvatar(
+        leading: CircleAvatar(
           backgroundColor: gdPrimarySoft,
           child: Icon(Icons.person_search_rounded, color: gdPrimary),
         ),
         title: Text(name, style: const TextStyle(fontWeight: FontWeight.w900)),
         subtitle: Text(
           '$match% similar goals · active this week',
-          style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+          style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
         ),
         trailing: FilledButton(onPressed: onAdd, child: const Text('Add')),
       ),
@@ -4467,11 +4467,11 @@ class CommunityMatchCard extends StatelessWidget {
             Text(
               '${group.members} members · ${group.tag}',
               style:
-                  const TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
+                  TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
             Text(group.description,
-                style: const TextStyle(
+                style: TextStyle(
                     color: gdMuted, fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
             SizedBox(

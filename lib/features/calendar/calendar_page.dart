@@ -163,11 +163,11 @@ class _CalendarPageState extends State<CalendarPage> {
                     Text(
                         '${monthNames[_visibleMonth.month - 1]} ${_visibleMonth.year}',
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineMedium),
+                        style: GdText.headlineMedium),
                     const SizedBox(height: 4),
                     Text(
                         '${monthTasks.length} tasks · $completedThisMonth done',
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: gdMuted, fontWeight: FontWeight.w800))
                   ])),
                   IconButton.filledTonal(
@@ -238,7 +238,7 @@ class _CalendarPageState extends State<CalendarPage> {
                           selectedTasks.isEmpty
                               ? 'No goals scheduled on this date.'
                               : '${selectedTasks.length} scheduled goal actions. Open Home to check them off.',
-                          style: const TextStyle(
+                          style: TextStyle(
                               color: gdMuted, fontWeight: FontWeight.w800))
                     ])),
               ]),
@@ -285,7 +285,7 @@ class _CalendarPageState extends State<CalendarPage> {
                         style: TextStyle(
                             fontWeight: FontWeight.w900, fontSize: 16)),
                     const SizedBox(height: 6),
-                    const Text(
+                    Text(
                         'Choose the name, date, time, and repeat pattern yourself.',
                         style: TextStyle(
                             color: gdMuted, fontWeight: FontWeight.w700)),
@@ -374,7 +374,7 @@ class _CalendarTaskDetailTile extends StatelessWidget {
         ),
         subtitle: Text(
           '${goal.title} · ${shortDate(task.scheduledDate)} · ${task.durationMinutes} min · ${task.load.label}',
-          style: const TextStyle(
+          style: TextStyle(
             color: gdMuted,
             fontWeight: FontWeight.w700,
           ),
@@ -435,7 +435,7 @@ class RoutineTile extends StatelessWidget {
     return AppCard(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        leading: const CircleAvatar(
+        leading: CircleAvatar(
             backgroundColor: gdPrimarySoft,
             child: Icon(Icons.repeat_rounded, color: gdPrimary)),
         title: Text(routine.title,
@@ -443,13 +443,13 @@ class RoutineTile extends StatelessWidget {
         subtitle: Text(
             '${longDate(routine.startsAt)} · $time · ${routine.repeat.label}',
             style:
-                const TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
         trailing: onDelete == null
             ? null
             : IconButton(
                 tooltip: 'Delete routine',
                 onPressed: onDelete,
-                icon: const Icon(Icons.delete_outline_rounded, color: gdError),
+                icon: Icon(Icons.delete_outline_rounded, color: gdError),
               ),
       ),
     );
@@ -467,7 +467,7 @@ class _WeekdayLabel extends StatelessWidget {
       child: Center(
         child: Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             color: gdMuted,
             fontWeight: FontWeight.w900,
           ),
@@ -582,7 +582,7 @@ class _CalendarStatCard extends StatelessWidget {
                 children: [
                   Text(
                     label,
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: gdMuted, fontWeight: FontWeight.w800),
                   ),
                   Text(

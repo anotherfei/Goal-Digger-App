@@ -10,15 +10,17 @@ typedef EmailAuthCallback = Future<void> Function(
 );
 typedef PasswordResetCallback = Future<bool> Function(String email);
 
-const Color _authBackground = gdBackground;
-const Color _authPanel = gdSurface;
-const Color _authPanelSoft = gdCardLight;
-const Color _authBorder = gdBorder;
-const Color _authText = gdInk;
-const Color _authMuted = gdMuted;
-const Color _authAction = gdPrimary;
+// Getters (not stored values) so they resolve against the live light/dark
+// tokens on every read instead of baking a colour at first access.
+Color get _authBackground => gdBackground;
+Color get _authPanel => gdSurface;
+Color get _authPanelSoft => gdCardLight;
+Color get _authBorder => gdBorder;
+Color get _authText => gdInk;
+Color get _authMuted => gdMuted;
+Color get _authAction => gdPrimary;
 const Color _authBlue = gdPetMintTo;
-const Color _authCoral = gdAccent;
+Color get _authCoral => gdAccent;
 const Color _googleBlue = Color(0xFF4285F4);
 const Color _googleRed = Color(0xFFEA4335);
 const Color _googleYellow = Color(0xFFFBBC05);
@@ -40,13 +42,13 @@ class _ProviderPalette {
   final Color border;
 }
 
-const _emailPalette = _ProviderPalette(
-  primary: _authAction,
-  secondary: _authBlue,
-  tertiary: gdPetMintFrom,
-  surface: gdPrimarySoft,
-  border: Color(0xFFD3E1F7),
-);
+_ProviderPalette get _emailPalette => _ProviderPalette(
+      primary: _authAction,
+      secondary: _authBlue,
+      tertiary: gdPetMintFrom,
+      surface: gdPrimarySoft,
+      border: const Color(0xFFD3E1F7),
+    );
 const _googlePalette = _ProviderPalette(
   primary: _googleBlue,
   secondary: _googleRed,
@@ -54,13 +56,13 @@ const _googlePalette = _ProviderPalette(
   surface: Color(0xFFEAF2FF),
   border: Color(0xFFD1E3FF),
 );
-const _guestPalette = _ProviderPalette(
-  primary: _authCoral,
-  secondary: gdGradientStudyFrom,
-  tertiary: gdGradientCreativeFrom,
-  surface: gdAccentSoft,
-  border: Color(0xFFFBD0D5),
-);
+_ProviderPalette get _guestPalette => _ProviderPalette(
+      primary: _authCoral,
+      secondary: gdGradientStudyFrom,
+      tertiary: gdGradientCreativeFrom,
+      surface: gdAccentSoft,
+      border: const Color(0xFFFBD0D5),
+    );
 
 class OnboardingScreen extends StatelessWidget {
   const OnboardingScreen({
@@ -208,7 +210,7 @@ class _AuthBackdropPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final basePaint = Paint()
-      ..shader = const LinearGradient(
+      ..shader = LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
         colors: [
@@ -324,7 +326,7 @@ class _BrandPanel extends StatelessWidget {
         color: _authPanel,
         borderRadius: BorderRadius.circular(30),
         border: Border.all(color: _authBorder),
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
@@ -364,7 +366,7 @@ class _BrandPanel extends StatelessWidget {
               const SizedBox(height: 14),
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 440),
-                child: const Text(
+                child: Text(
                   'Dig into the next win with goals, focus sessions, streaks, and a little momentum in your pocket.',
                   style: TextStyle(
                     color: _authMuted,
@@ -505,7 +507,7 @@ class _AuthFormPanelState extends State<_AuthFormPanel> {
             Text(
               title,
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 color: _authText,
                 fontSize: 38,
                 height: 1.02,
@@ -572,7 +574,7 @@ class _AuthFormPanelState extends State<_AuthFormPanel> {
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: widget.isLoading ? null : _requestPasswordReset,
-                  child: const Text(
+                  child: Text(
                     'Forgot password?',
                     style: TextStyle(
                       color: _authMuted,
@@ -615,7 +617,7 @@ class _AuthFormPanelState extends State<_AuthFormPanel> {
                 ),
               ),
               child: widget.isLoading
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 22,
                       height: 22,
                       child: CircularProgressIndicator(
@@ -646,7 +648,7 @@ class _AuthFormPanelState extends State<_AuthFormPanel> {
             Text(
               switchPrompt,
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 color: _authMuted,
                 fontWeight: FontWeight.w700,
               ),
@@ -655,7 +657,7 @@ class _AuthFormPanelState extends State<_AuthFormPanel> {
               onPressed: widget.isLoading ? null : _toggleMode,
               child: Text(
                 switchLabel,
-                style: const TextStyle(
+                style: TextStyle(
                   color: _authText,
                   fontWeight: FontWeight.w900,
                   fontSize: 16,
@@ -729,7 +731,7 @@ class _AuthTextField extends StatelessWidget {
       validator: validator,
       onChanged: onChanged,
       onFieldSubmitted: onFieldSubmitted,
-      style: const TextStyle(
+      style: TextStyle(
         color: _authText,
         fontSize: 16,
         fontWeight: FontWeight.w700,
@@ -741,15 +743,15 @@ class _AuthTextField extends StatelessWidget {
         suffixIcon: suffixIcon,
         filled: true,
         fillColor: palette.surface.withValues(alpha: 0.58),
-        labelStyle: const TextStyle(
+        labelStyle: TextStyle(
           color: _authText,
           fontWeight: FontWeight.w900,
         ),
-        hintStyle: const TextStyle(
+        hintStyle: TextStyle(
           color: gdHint,
           fontWeight: FontWeight.w600,
         ),
-        errorStyle: const TextStyle(
+        errorStyle: TextStyle(
           color: gdError,
           fontWeight: FontWeight.w800,
         ),
@@ -767,11 +769,11 @@ class _AuthTextField extends StatelessWidget {
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: gdError),
+          borderSide: BorderSide(color: gdError),
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: gdError, width: 2),
+          borderSide: BorderSide(color: gdError, width: 2),
         ),
       ),
     );
@@ -903,7 +905,7 @@ class _AuthDivider extends StatelessWidget {
     return Row(
       children: [
         Expanded(child: Container(height: 1, color: _authBorder)),
-        const Padding(
+        Padding(
           padding: EdgeInsets.symmetric(horizontal: 14),
           child: Text(
             'or',
@@ -936,12 +938,12 @@ class _InlineAuthError extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.error_outline_rounded, color: gdError),
+          Icon(Icons.error_outline_rounded, color: gdError),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(
+              style: TextStyle(
                 color: _authText,
                 height: 1.35,
                 fontWeight: FontWeight.w700,
@@ -1128,7 +1130,7 @@ class _PreviewPill extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               color: _authText,
               fontWeight: FontWeight.w900,
             ),

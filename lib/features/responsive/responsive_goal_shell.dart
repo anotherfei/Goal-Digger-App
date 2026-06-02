@@ -6,13 +6,15 @@ import '../../shared/widgets/shared_widgets.dart';
 /// Calm, monochrome chrome buttons for the app bar. Utility actions (profile,
 /// notifications, settings) stay neutral so they don't compete with the title;
 /// colour up here is reserved for the notification badge alone.
-final ButtonStyle _chromeIconButtonStyle = IconButton.styleFrom(
-  backgroundColor: gdCardLight,
-  foregroundColor: gdInk,
-  hoverColor: gdBorder,
-  highlightColor: gdBorder,
-  shape: const CircleBorder(),
-);
+// A getter (not a stored value) so it resolves against the live light/dark
+// tokens on every build instead of baking a colour at first access.
+ButtonStyle get _chromeIconButtonStyle => IconButton.styleFrom(
+      backgroundColor: gdCardLight,
+      foregroundColor: gdInk,
+      hoverColor: gdBorder,
+      highlightColor: gdBorder,
+      shape: const CircleBorder(),
+    );
 
 class ResponsiveGoalShell extends StatelessWidget {
   const ResponsiveGoalShell({
@@ -172,7 +174,7 @@ class _ActiveFocusBanner extends StatelessWidget {
         child: ListTile(
           dense: true,
           minVerticalPadding: 12,
-          leading: const CircleAvatar(
+          leading: CircleAvatar(
             backgroundColor: gdPrimarySoft,
             child: Icon(Icons.track_changes_rounded, color: gdPrimary),
           ),
@@ -184,7 +186,7 @@ class _ActiveFocusBanner extends StatelessWidget {
             focusLabel == null || focusLabel!.isEmpty
                 ? 'Tap to reopen'
                 : 'Tap to reopen - $focusLabel',
-            style: const TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+            style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
           ),
           trailing: const Icon(Icons.open_in_full_rounded),
           onTap: onTap,
@@ -328,7 +330,7 @@ class _NotificationIconButton extends StatelessWidget {
               ),
               child: Text(
                 badgeText,
-                style: const TextStyle(
+                style: TextStyle(
                   color: gdOnDark,
                   fontSize: 11,
                   fontWeight: FontWeight.w900,
