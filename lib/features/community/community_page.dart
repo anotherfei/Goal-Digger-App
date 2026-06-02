@@ -18,7 +18,7 @@ import '../../core/theme/gd_design.dart';
 import '../../models/models.dart';
 import '../../shared/widgets/shared_widgets.dart';
 
-const bool kDebugAllowGuestSocialAccess = true;
+const bool kDebugAllowGuestSocialAccess = false;
 
 class CommunityPage extends StatefulWidget {
   const CommunityPage({
