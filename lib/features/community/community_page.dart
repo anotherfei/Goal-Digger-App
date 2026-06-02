@@ -2262,11 +2262,15 @@ class _DirectChatPageState extends State<_DirectChatPage> {
   bool _sending = false;
   bool _addingFriend = false;
   bool _addedAsFriend = false;
+  bool _chatExists = false;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_markChatRead());
+    _chatExists = widget.friend.hasChat;
+    if (_chatExists) {
+      unawaited(_markChatRead());
+    }
   }
 
   @override
@@ -2289,19 +2293,9 @@ class _DirectChatPageState extends State<_DirectChatPage> {
   CollectionReference<Map<String, dynamic>> get _messages =>
       _chatRef.collection('messages');
 
-  List<String> _membersFromChatData(Map<String, dynamic>? data) {
-    final rawMembers = data?['members'];
-    if (rawMembers is! Iterable) return const [];
-
-    return rawMembers
-        .map((member) => member.toString().trim())
-        .where((member) => member.isNotEmpty)
-        .toList();
-  }
-
   Future<void> _markChatRead() async {
     final uid = _user?.uid;
-    if (uid == null) return;
+    if (uid == null || !_chatExists) return;
 
     try {
       await _chatRef.update({
@@ -2343,13 +2337,7 @@ class _DirectChatPageState extends State<_DirectChatPage> {
     setState(() => _sending = true);
     try {
       final chatRef = _chatRef;
-      final chatSnapshot = await chatRef.get();
-      final existingMembers = _membersFromChatData(chatSnapshot.data());
-      final sortedMembers = [user.uid, widget.friend.uid]..sort();
-      final memberUids = existingMembers.toSet().containsAll(sortedMembers) &&
-              existingMembers.length == sortedMembers.length
-          ? existingMembers
-          : sortedMembers;
+      final memberUids = [user.uid, widget.friend.uid]..sort();
 
       final chatData = <String, dynamic>{
         'type': 'direct',
@@ -2364,13 +2352,11 @@ class _DirectChatPageState extends State<_DirectChatPage> {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      // Only set createdAt when the chat room is first created.
-      // Re-writing createdAt on every send can break stricter Firestore rules.
-      if (!chatSnapshot.exists) {
-        chatData['createdAt'] = FieldValue.serverTimestamp();
-      }
-
+      // Brand-new chats cannot be read before creation under the chat rules.
       await chatRef.set(chatData, SetOptions(merge: true));
+      if (!_chatExists && mounted) {
+        setState(() => _chatExists = true);
+      }
 
       await chatRef.update({
         'unreadBy': FieldValue.arrayRemove([user.uid]),
@@ -2391,6 +2377,19 @@ class _DirectChatPageState extends State<_DirectChatPage> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  Widget _emptyMessagesPrompt() {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(24),
+        child: Text(
+          'No messages yet. Send a quick accountability update.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
+        ),
+      ),
+    );
   }
 
   void _snack(String message) {
@@ -2502,58 +2501,50 @@ class _DirectChatPageState extends State<_DirectChatPage> {
         child: Column(
           children: [
             Expanded(
-              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: _messages
-                    .orderBy('createdAt', descending: true)
-                    .limit(60)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(18),
-                        child: HelpfulErrorBox(
-                          title: 'Chat failed to load',
-                          message:
-                              'Check Firestore chat rules. Details: ${snapshot.error}',
-                          actionLabel: 'OK',
-                          showAction: false,
-                        ),
-                      ),
-                    );
-                  }
+              child: _chatExists
+                  ? StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: _messages
+                          .orderBy('createdAt', descending: true)
+                          .limit(60)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(18),
+                              child: HelpfulErrorBox(
+                                title: 'Chat failed to load',
+                                message:
+                                    'Check Firestore chat rules. Details: ${snapshot.error}',
+                                actionLabel: 'OK',
+                                showAction: false,
+                              ),
+                            ),
+                          );
+                        }
 
-                  final docs = snapshot.data?.docs ?? [];
-                  if (docs.isEmpty) {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text(
-                          'No messages yet. Send a quick accountability update.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              color: gdMuted, fontWeight: FontWeight.w800),
-                        ),
-                      ),
-                    );
-                  }
+                        final docs = snapshot.data?.docs ?? [];
+                        if (docs.isEmpty) {
+                          return _emptyMessagesPrompt();
+                        }
 
-                  return ListView.builder(
-                    reverse: true,
-                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-                    itemCount: docs.length,
-                    itemBuilder: (context, index) {
-                      final data = docs[index].data();
-                      final isMine = data['senderUid'] == currentUid;
-                      return _MessageBubble(
-                        text: data['text']?.toString() ?? '',
-                        isMine: isMine,
-                        senderName: data['senderName']?.toString() ?? '',
-                      );
-                    },
-                  );
-                },
-              ),
+                        return ListView.builder(
+                          reverse: true,
+                          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                          itemCount: docs.length,
+                          itemBuilder: (context, index) {
+                            final data = docs[index].data();
+                            final isMine = data['senderUid'] == currentUid;
+                            return _MessageBubble(
+                              text: data['text']?.toString() ?? '',
+                              isMine: isMine,
+                              senderName: data['senderName']?.toString() ?? '',
+                            );
+                          },
+                        );
+                      },
+                    )
+                  : _emptyMessagesPrompt(),
             ),
             SafeArea(
               top: false,
@@ -4566,4 +4557,3 @@ String _fallbackUsernameFor(String displayName, String email, String uid) {
 
   return cleaned.startsWith('@') ? cleaned : '@$cleaned';
 }
-
