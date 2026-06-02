@@ -107,26 +107,6 @@ class AuthState extends ChangeNotifier {
     );
   }
 
-  Future<void> signInAsGuest() {
-    return _runAuthAction(
-      actionName: 'signInAsGuest',
-      fallbackError: 'Could not start a guest session.',
-      timeoutError:
-          'Guest sign-in is taking too long. Check your connection and try again.',
-      action: _authService.signInAsGuest,
-    );
-  }
-
-  Future<void> signOut() {
-    return _runAuthAction(
-      actionName: 'signOut',
-      fallbackError: 'Could not sign out. Please try again.',
-      timeoutError:
-          'Sign out is taking too long. Restart the app if this keeps happening.',
-      action: _authService.signOut,
-    );
-  }
-
   // ── Internals ─────────────────────────────────────────────────────────────────
 
   Future<void> _runAuthAction({

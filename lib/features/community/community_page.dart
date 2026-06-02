@@ -1561,6 +1561,7 @@ class _FullAccountLoginPage extends StatelessWidget {
                 displayName,
                 isSignUp,
               ),
+              onPasswordReset: authState.sendPasswordResetEmail,
               onGoogle: () => unawaited(_handleGoogle(context)),
               onGuest: () => Navigator.of(context).pop(),
               onClearError: authState.clearError,
