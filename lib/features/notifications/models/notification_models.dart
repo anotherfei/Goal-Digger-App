@@ -8,6 +8,8 @@ enum AppNotificationType {
   moodNudge,
   reward,
   community,
+  friend,
+  chat,
   important,
 }
 
@@ -32,6 +34,10 @@ extension AppNotificationTypeX on AppNotificationType {
         return 'Reward';
       case AppNotificationType.community:
         return 'Community';
+      case AppNotificationType.friend:
+        return 'Friend';
+      case AppNotificationType.chat:
+        return 'Chat';
       case AppNotificationType.important:
         return 'Important';
     }

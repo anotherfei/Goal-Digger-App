@@ -22,6 +22,9 @@ import { defineFocusInsightFlow }  from "./flows/focusInsightFlow";
 import { getAI, defaultModel }     from "./ai";
 import { runAgent }                from "./agent/runtime";
 
+import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { logger } from "firebase-functions";
+
 // ── Initialise Admin SDK ──────────────────────────────────────────────────────
 admin.initializeApp();
 
@@ -154,5 +157,53 @@ Reply conversationally (1–3 sentences). Be warm and specific.`.trim();
     } finally {
       res.end();
     }
+  }
+);
+
+export const sendNotificationPush = onDocumentCreated(
+  {
+    region: "asia-east1",
+    document: "users/{uid}/notifications/{notificationId}",
+  },
+  async (event) => {
+    const uid = String(event.params.uid);
+    const notificationId = String(event.params.notificationId);
+    const snapshot = event.data;
+    if (!snapshot) return;
+
+    const data = snapshot.data();
+
+    const tokensSnapshot = await admin
+      .firestore()
+      .collection("users")
+      .doc(uid)
+      .collection("fcmTokens")
+      .get();
+
+    const tokens = tokensSnapshot.docs
+      .map((doc) => String(doc.data().token ?? ""))
+      .filter((token) => token.length > 0);
+
+    if (tokens.length === 0) {
+      logger.info("No FCM tokens found", { uid, notificationId });
+      return;
+    }
+
+    await admin.messaging().sendEachForMulticast({
+      tokens,
+      notification: {
+        title: String(data.title ?? "Goal Digger"),
+        body: String(data.body ?? ""),
+      },
+      data: {
+        notificationId,
+        type: String(data.type ?? ""),
+        sourceId: String(data.sourceId ?? ""),
+        actorUid: String(data.actorUid ?? ""),
+        route: String(data.payload?.route ?? ""),
+        chatId: String(data.payload?.chatId ?? ""),
+        friendUid: String(data.payload?.friendUid ?? ""),
+      },
+    });
   }
 );

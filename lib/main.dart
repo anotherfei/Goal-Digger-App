@@ -15,12 +15,15 @@ import 'firebase/auth/auth_service.dart';
 import 'firebase/auth/auth_state.dart';
 import 'firebase/firebase_initializer.dart';
 import 'genkit/genkit_service.dart';
+import 'features/notifications/services/push_notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialise Firebase (core + App Check)
   await FirebaseInitializer.init();
+
+  await PushNotificationService.instance.init();
 
   // Wire services
   final authService = AuthService();

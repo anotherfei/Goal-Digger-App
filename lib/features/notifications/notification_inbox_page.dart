@@ -325,6 +325,10 @@ class _NotificationTile extends StatelessWidget {
         return Icons.paid_rounded;
       case AppNotificationType.community:
         return Icons.groups_rounded;
+      case AppNotificationType.friend:
+        return Icons.person_add_alt_1_rounded;
+      case AppNotificationType.chat:
+        return Icons.chat_bubble_rounded;
       case AppNotificationType.important:
         return Icons.priority_high_rounded;
     }

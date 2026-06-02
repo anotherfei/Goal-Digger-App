@@ -38,6 +38,21 @@ class NotificationRepository {
     );
   }
 
+  Future addSocialNotification({
+    required String recipientUid,
+    required String actorUid,
+    required AppNotification notification,
+  }) async {
+    await _svc.setDoc(
+      FirestorePaths.notificationDoc(recipientUid, notification.id),
+      {
+        ..._notificationToMap(notification),
+        'actorUid': actorUid,
+      },
+      merge: false,
+    );
+  }
+
   Future<void> markRead(
     String uid,
     String notificationId,

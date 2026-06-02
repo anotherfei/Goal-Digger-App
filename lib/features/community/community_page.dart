@@ -1,6 +1,11 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:uuid/uuid.dart';
+
+import '../../firebase/firestore/repositories/notification_repository.dart';
+import '../notifications/models/notification_models.dart';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -49,6 +54,8 @@ class _CommunityPageState extends State<CommunityPage> {
   int _tab = 0;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final NotificationRepository _notificationRepository = NotificationRepository();
+  final Uuid _uuid = const Uuid();
 
   @override
   void initState() {
@@ -538,6 +545,29 @@ class _CommunityPageState extends State<CommunityPage> {
       'friends': FieldValue.arrayUnion([friendUid]),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+
+    final actorName = _cleanDisplayName(user.displayName, user.email);
+
+    await _notificationRepository.addSocialNotification(
+        recipientUid: friendUid,
+        actorUid: user.uid,
+        notification: AppNotification(
+            id: _uuid.v4(),
+            title: 'New friend',
+            body: '$actorName added you as a friend.',
+            type: AppNotificationType.friend,
+            delivery: NotificationDelivery.inApp,
+            createdAt: DateTime.now(),
+            important: false,
+            sourceId: user.uid,
+            payload: {
+                'actorUid': user.uid,
+                'actorName': actorName,
+                'route': 'friends',
+                'friendUid': user.uid,
+            },
+        ),
+     );
 
     widget.onAddFriend(displayName);
     _showSnack('$displayName added to your friends.');
@@ -2259,6 +2289,9 @@ class _DirectChatPageState extends State<_DirectChatPage> {
   final TextEditingController _controller = TextEditingController();
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final NotificationRepository _notificationRepository = NotificationRepository();
+  final Uuid _uuid = const Uuid();
+
   bool _sending = false;
   bool _addingFriend = false;
   bool _addedAsFriend = false;
@@ -2320,6 +2353,16 @@ class _DirectChatPageState extends State<_DirectChatPage> {
     }
   }
 
+  String _cleanDisplayName(String? displayName, String? email) {
+    final fromName = displayName?.trim();
+    if (fromName != null && fromName.isNotEmpty) return fromName;
+
+    final fromEmail = email?.split('@').first.trim();
+    if (fromEmail != null && fromEmail.isNotEmpty) return fromEmail;
+
+    return 'Goal Digger User';
+  }
+
   Future<void> _send() async {
     final user = _user;
     final text = _controller.text.trim();
@@ -2368,6 +2411,31 @@ class _DirectChatPageState extends State<_DirectChatPage> {
         'text': text,
         'createdAt': FieldValue.serverTimestamp(),
       });
+
+      final senderName = _cleanDisplayName(user.displayName, user.email);
+    final preview = text.length > 120 ? '${text.substring(0, 117)}...' : text;
+
+    await _notificationRepository.addSocialNotification(
+    recipientUid: widget.friend.uid,
+    actorUid: user.uid,
+    notification: AppNotification(
+        id: _uuid.v4(),
+        title: senderName,
+        body: preview,
+        type: AppNotificationType.chat,
+        delivery: NotificationDelivery.inApp,
+        createdAt: DateTime.now(),
+        important: false,
+        sourceId: chatRef.id,
+        payload: {
+        'actorUid': user.uid,
+        'actorName': senderName,
+        'route': 'chat',
+        'chatId': chatRef.id,
+        'senderUid': user.uid,
+        },
+    ),
+    );
 
       _controller.clear();
     } on FirebaseException catch (error) {

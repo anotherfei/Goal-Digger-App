@@ -30,6 +30,8 @@ service cloud.firestore {
         'moodNudge',
         'reward',
         'community',
+        'friend',
+        'chat',
         'important'
       ];
     }
@@ -107,7 +109,7 @@ service cloud.firestore {
         ])
         && request.resource.data.id == notificationId
         && request.resource.data.actorUid == request.auth.uid
-        && request.resource.data.type == 'community'
+        && request.resource.data.type in ['community', 'friend', 'chat']
         && request.resource.data.delivery == 'inApp'
         && request.resource.data.important == false
         && request.resource.data.title is string
@@ -151,6 +153,10 @@ service cloud.firestore {
       allow create, update, delete: if isOwner(uid);
 
       match /friends/{friendUid} {
+        allow read, create, update, delete: if isOwner(uid);
+      }
+
+      match /fcmTokens/{tokenId} {
         allow read, create, update, delete: if isOwner(uid);
       }
 
