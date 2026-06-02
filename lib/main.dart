@@ -8,6 +8,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'services/google_calendar_service.dart';
 
 import 'app/goal_digger_app.dart';
 import 'firebase/auth/auth_service.dart';
@@ -35,6 +36,11 @@ Future<void> main() async {
         // Genkit AI service – available anywhere in the tree
         Provider<GenkitService>(
           create: (_) => GenkitService(authService: authService),
+        ),
+
+        // Google Calendar service – available anywhere in the tree
+        Provider<GoogleCalendarService>(
+          create: (_) => GoogleCalendarService(authService: authService),
         ),
 
         // AuthService itself (for lower-level token access)

@@ -26,6 +26,7 @@ import '../firebase/sync/app_sync_service.dart';
 import '../genkit/genkit_service.dart';
 import '../models/models.dart';
 import '../shared/widgets/shared_widgets.dart';
+import '../services/google_calendar_service.dart';
 
 class _DraftTaskSpec {
   const _DraftTaskSpec({
@@ -113,6 +114,71 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _activeFocusConfig != null && _focusRemainingSeconds > 0;
   bool get _focusComplete =>
       _activeFocusConfig != null && _focusRemainingSeconds <= 0;
+
+  Future<void> _syncTaskToGoogleCalendar(
+    MicroTask task,
+    GoalProject goal,
+  ) async {
+    final user = context.read<AuthService>().currentUser;
+
+    if (user == null || user.isAnonymous) {
+      _showHelpfulError(
+        title: 'Google sign-in required',
+        message: 'Please sign in with Google before syncing to Google Calendar.',
+        actionLabel: 'OK',
+        onAction: () {},
+      );
+      return;
+    }
+
+    try {
+      await context.read<GoogleCalendarService>().createTaskEvent(task, goal);
+      _showMessage('Task synced to Google Calendar.');
+    } catch (e) {
+      _showHelpfulError(
+        title: 'Calendar sync failed',
+        message: '$e',
+        actionLabel: 'OK',
+        onAction: () {},
+      );
+    }
+  }
+
+  Future<void> _syncAllTasksToGoogleCalendar() async {
+  final user = context.read<AuthService>().currentUser;
+
+  if (user == null || user.isAnonymous) {
+    _showHelpfulError(
+      title: 'Google sign-in required',
+      message: 'Please sign in with Google before syncing to Google Calendar.',
+      actionLabel: 'OK',
+      onAction: () {},
+    );
+    return;
+  }
+
+  if (_allTasks.isEmpty) {
+    _showMessage('No tasks available to sync.');
+    return;
+  }
+
+  try {
+    final result = await context
+        .read<GoogleCalendarService>()
+        .syncAllTaskEvents(_allTasks, _goalForTask);
+
+    _showMessage(
+      'Calendar sync complete: ${result.created} created, ${result.skipped} already synced, ${result.failed} failed.',
+    );
+  } catch (e) {
+    _showHelpfulError(
+      title: 'Calendar sync failed',
+      message: '$e',
+      actionLabel: 'OK',
+      onAction: () {},
+    );
+  }
+}
 
   @override
   void initState() {
@@ -2109,6 +2175,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         onCreateGoal: () => setState(() => _selectedIndex = 0),
         onAddRoutine: _addRoutine,
         onDeleteRoutine: _deleteRoutine,
+        onSyncTaskToGoogle: _syncTaskToGoogleCalendar,
+        onSyncAllTasksToGoogle: _syncAllTasksToGoogleCalendar,
       ),
       TasksPage(
         mood: _selectedMood,

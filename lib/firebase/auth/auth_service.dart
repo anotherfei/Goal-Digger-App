@@ -20,10 +20,41 @@ class AuthService {
     FirebaseAuth? auth,
     GoogleSignIn? googleSignIn,
   })  : _auth = auth ?? FirebaseAuth.instance,
-        _googleSignIn = googleSignIn ?? GoogleSignIn();
+        _googleSignIn = googleSignIn ?? 
+        GoogleSignIn(
+          scopes: const [
+            'email',
+            'https://www.googleapis.com/auth/calendar.events'
+          ],
+        );
 
   final FirebaseAuth _auth;
   final GoogleSignIn _googleSignIn;
+
+  // Calendar
+  Future<Map<String, String>> getGoogleCalendarAuthHeaders() async {
+  var account = _googleSignIn.currentUser;
+
+  account ??= await _googleSignIn.signInSilently();
+
+  if (account == null) {
+    account = await _googleSignIn.signIn();
+  }
+
+  if (account == null) {
+    throw const AuthException('Google sign-in is required to sync Calendar.');
+  }
+
+  final granted = await _googleSignIn.requestScopes(const [
+    'https://www.googleapis.com/auth/calendar.events',
+  ]);
+
+  if (!granted) {
+    throw const AuthException('Google Calendar permission was not granted.');
+  }
+
+  return account.authHeaders;
+}
 
   // ── Streams ─────────────────────────────────────────────────────────────────
 
