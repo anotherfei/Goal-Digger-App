@@ -56,11 +56,31 @@ class _CommunityPageState extends State<CommunityPage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final NotificationRepository _notificationRepository = NotificationRepository();
   final Uuid _uuid = const Uuid();
+  bool _profileReady = false;
+  bool _allowFriendsError = false;
+  Timer? _friendsErrorTimer;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_ensurePublicProfile());
+
+    _friendsErrorTimer = Timer(const Duration(seconds: 2), () {
+        if (mounted) {
+            setState(() => _allowFriendsError = true);
+        }
+    });
+
+    unawaited(_prepareSocialProfile());
+  }
+
+  Future<void> _prepareSocialProfile() async {
+    try {
+        await _ensurePublicProfile();
+    } finally {
+        if (mounted) {
+            setState(() => _profileReady = true);
+        }
+    }
   }
 
   @override
@@ -73,6 +93,7 @@ class _CommunityPageState extends State<CommunityPage> {
 
   @override
   void dispose() {
+    _friendsErrorTimer?.cancel();
     super.dispose();
   }
 
@@ -701,22 +722,40 @@ class _CommunityPageState extends State<CommunityPage> {
       ),
     );
 
-    await _ensurePublicProfile();
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() => _profileReady = false);
+    await _prepareSocialProfile();
   }
 
   Widget _buildFriendsTab(BuildContext context) {
+    if (!_profileReady) {
+    return const Center(
+        child: Padding(
+        padding: EdgeInsets.all(24),
+        child: CircularProgressIndicator(),
+        ),
+      );
+    }
     return StreamBuilder<_FriendsData>(
       stream: _friendsDataStream(),
       builder: (context, snapshot) {
+        if (snapshot.hasError && !_allowFriendsError) {
+            return const Center(
+                child: Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(),
+                ),
+            );
+        }
+
         if (snapshot.hasError) {
-          return HelpfulErrorBox(
-            title: 'Friends failed to load',
-            message:
-                'Check Firestore rules for users/{uid}.friends and user profile reads. Details: ${snapshot.error}',
-            actionLabel: 'OK',
-            showAction: false,
-          );
+            return HelpfulErrorBox(
+                title: 'Friends failed to load',
+                message:
+                    'Check Firestore rules for users/{uid}.friends and user profile reads. Details: ${snapshot.error}',
+                actionLabel: 'OK',
+                showAction: false,
+            );
         }
 
         final friendsData = snapshot.data ??
