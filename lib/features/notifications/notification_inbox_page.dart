@@ -46,27 +46,22 @@ class _NotificationInboxPageState extends State<NotificationInboxPage> {
   Widget build(BuildContext context) {
     // Keep the token resolver matched to the applied theme on this route.
     GdColors.setBrightness(Theme.of(context).brightness);
-    final petNotifications = _visibleNotifications
-        .where((notification) => notification.isPetRelated)
+    final importantNotifications = _visibleNotifications
+        .where(_isImportantNotification)
         .toList();
-    final nonPetNotifications = _visibleNotifications
-        .where((notification) => !notification.isPetRelated)
-        .toList();
-    final importantUnread = nonPetNotifications
-        .where((notification) => notification.important && notification.isUnread)
-        .toList();
-    final regularNotifications = nonPetNotifications
+    final groupedNotifications = _notificationGroupsFor(
+      _visibleNotifications
         .where(
-          (notification) =>
-              !(notification.important && notification.isUnread),
+          (notification) => !_isImportantNotification(notification),
         )
-        .toList();
+        .toList(),
+    );
     final unreadCount =
         _visibleNotifications.where((item) => item.isUnread).length;
-    final regularUnreadCount =
-        regularNotifications.where((item) => item.isUnread).length;
-    final petUnreadCount =
-        petNotifications.where((item) => item.isUnread).length;
+    final groupedUnreadCount = groupedNotifications.fold<int>(
+      0,
+      (total, group) => total + group.unreadCount,
+    );
 
     return Scaffold(
       backgroundColor: gdBackground,
@@ -106,48 +101,38 @@ class _NotificationInboxPageState extends State<NotificationInboxPage> {
                 onPressed: () => Navigator.pop(context),
               )
             else ...[
-              if (importantUnread.isNotEmpty) ...[
+              if (importantNotifications.isNotEmpty) ...[
                 SectionTitle(
                   title: 'Important',
-                  trailing: '${importantUnread.length} unread',
+                  trailing: importantNotifications.any((item) => item.isUnread)
+                      ? '${importantNotifications.where((item) => item.isUnread).length} unread'
+                      : 'All read',
                 ),
                 const SizedBox(height: 10),
-                for (final notification in importantUnread)
+                for (final notification in importantNotifications)
                   _NotificationTile(
                     notification: notification,
-                    highlight: true,
+                    highlight: notification.isUnread,
                     onMarkRead: () => _markRead(notification),
                     onDelete: () => _delete(notification),
                   ),
                 const SizedBox(height: 12),
               ],
-              if (petNotifications.isNotEmpty) ...[
-                _PetNotificationGroup(
-                  notifications: petNotifications,
-                  unreadCount: petUnreadCount,
-                  onMarkRead: _markRead,
-                  onDelete: _delete,
-                ),
-                const SizedBox(height: 12),
-              ],
-              if (regularNotifications.isNotEmpty) ...[
+              if (groupedNotifications.isNotEmpty) ...[
                 SectionTitle(
-                  title: importantUnread.isEmpty
-                      ? 'All notifications'
-                      : 'Other notifications',
-                  trailing: regularUnreadCount == 0
+                  title: 'All notifications',
+                  trailing: groupedUnreadCount == 0
                       ? 'All read'
-                      : '$regularUnreadCount unread',
+                      : '$groupedUnreadCount unread',
                 ),
                 const SizedBox(height: 10),
-                for (final notification in regularNotifications)
-                  _NotificationTile(
-                    notification: notification,
-                    highlight: notification.important && notification.isUnread,
-                    onMarkRead: () => _markRead(notification),
-                    onDelete: () => _delete(notification),
+                for (final group in groupedNotifications)
+                  _NotificationGroup(
+                    group: group,
+                    onMarkRead: _markRead,
+                    onDelete: _delete,
                   ),
-              ] else if (petNotifications.isEmpty)
+              ] else if (importantNotifications.isEmpty)
                 AppCard(
                   child: Padding(
                     padding: EdgeInsets.all(18),
@@ -197,27 +182,78 @@ class _NotificationInboxPageState extends State<NotificationInboxPage> {
     });
     widget.onDelete(notification);
   }
+
+  bool _isImportantNotification(AppNotification notification) {
+    return notification.important ||
+        notification.type == AppNotificationType.important;
+  }
+
+  List<_NotificationGroupData> _notificationGroupsFor(
+    List<AppNotification> notifications,
+  ) {
+    final buckets = <String, List<AppNotification>>{};
+    for (final notification in notifications) {
+      final key = notification.isPetRelated
+          ? _petRewardGroupKey
+          : notification.type.name;
+      buckets.putIfAbsent(key, () => <AppNotification>[]).add(notification);
+    }
+
+    final groups = buckets.entries.map((entry) {
+      final items = List<AppNotification>.from(entry.value)
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      final first = items.first;
+      return _NotificationGroupData(
+        key: entry.key,
+        title: _notificationGroupTitle(entry.key, first.type),
+        icon: entry.key == _petRewardGroupKey
+            ? Icons.pets_rounded
+            : _notificationIconFor(first.type),
+        notifications: items,
+      );
+    }).toList()
+      ..sort((a, b) => b.newest.compareTo(a.newest));
+
+    return groups;
+  }
 }
 
-class _PetNotificationGroup extends StatelessWidget {
-  const _PetNotificationGroup({
+const String _petRewardGroupKey = 'pet_rewards';
+
+class _NotificationGroupData {
+  const _NotificationGroupData({
+    required this.key,
+    required this.title,
+    required this.icon,
     required this.notifications,
-    required this.unreadCount,
+  });
+
+  final String key;
+  final String title;
+  final IconData icon;
+  final List<AppNotification> notifications;
+
+  DateTime get newest => notifications.first.createdAt;
+  int get unreadCount => notifications.where((item) => item.isUnread).length;
+}
+
+class _NotificationGroup extends StatelessWidget {
+  const _NotificationGroup({
+    required this.group,
     required this.onMarkRead,
     required this.onDelete,
   });
 
-  final List<AppNotification> notifications;
-  final int unreadCount;
+  final _NotificationGroupData group;
   final ValueChanged<AppNotification> onMarkRead;
   final ValueChanged<AppNotification> onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final newest = notifications.first.createdAt;
-    final updateLabel = notifications.length == 1
+    final newest = group.newest;
+    final updateLabel = group.notifications.length == 1
         ? '1 update'
-        : '${notifications.length} updates';
+        : '${group.notifications.length} updates';
 
     return AppCard(
       margin: const EdgeInsets.only(bottom: 10),
@@ -228,20 +264,20 @@ class _PetNotificationGroup extends StatelessWidget {
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           leading: CircleAvatar(
             backgroundColor: gdPrimarySoft,
-            child: Icon(Icons.pets_rounded, color: gdPrimary),
+            child: Icon(group.icon, color: gdPrimary),
           ),
           title: Row(
             children: [
               Expanded(
                 child: Text(
-                  'Pet rewards',
+                  group.title,
                   style: TextStyle(
                     color: gdInk,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
-              if (unreadCount > 0)
+              if (group.unreadCount > 0)
                 Container(
                   width: 8,
                   height: 8,
@@ -259,9 +295,9 @@ class _PetNotificationGroup extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
-          children: List.generate(notifications.length, (index) {
-            final notification = notifications[index];
-            return _PetNotificationRow(
+          children: List.generate(group.notifications.length, (index) {
+            final notification = group.notifications[index];
+            return _NotificationGroupRow(
               notification: notification,
               showTopBorder: index > 0,
               onMarkRead: () => onMarkRead(notification),
@@ -274,8 +310,8 @@ class _PetNotificationGroup extends StatelessWidget {
   }
 }
 
-class _PetNotificationRow extends StatelessWidget {
-  const _PetNotificationRow({
+class _NotificationGroupRow extends StatelessWidget {
+  const _NotificationGroupRow({
     required this.notification,
     required this.showTopBorder,
     required this.onMarkRead,
@@ -298,7 +334,9 @@ class _PetNotificationRow extends StatelessWidget {
         contentPadding: EdgeInsets.zero,
         minVerticalPadding: 10,
         leading: Icon(
-          Icons.card_giftcard_rounded,
+          notification.isPetRelated
+              ? Icons.card_giftcard_rounded
+              : _notificationIconFor(notification.type),
           color: notification.isUnread ? gdPrimary : gdMuted,
         ),
         title: Row(
@@ -348,7 +386,7 @@ class _PetNotificationRow extends StatelessWidget {
           ),
         ),
         trailing: PopupMenuButton<String>(
-          tooltip: 'Pet notification actions',
+          tooltip: 'Notification actions',
           onSelected: (value) {
             if (value == 'read') onMarkRead();
             if (value == 'delete') onDelete();
@@ -362,6 +400,66 @@ class _PetNotificationRow extends StatelessWidget {
         onTap: notification.isUnread ? onMarkRead : null,
       ),
     );
+  }
+}
+
+String _notificationGroupTitle(String key, AppNotificationType type) {
+  if (key == _petRewardGroupKey) return 'Pet rewards';
+
+  switch (type) {
+    case AppNotificationType.dailyPlan:
+      return 'Daily plans';
+    case AppNotificationType.taskReminder:
+      return 'Tasks';
+    case AppNotificationType.streakSaver:
+      return 'Streaks';
+    case AppNotificationType.deadlineWarning:
+      return 'Deadlines';
+    case AppNotificationType.routineReminder:
+      return 'Routines';
+    case AppNotificationType.focusComplete:
+      return 'Focus';
+    case AppNotificationType.moodNudge:
+      return 'Mood';
+    case AppNotificationType.reward:
+      return 'Rewards';
+    case AppNotificationType.community:
+      return 'Community';
+    case AppNotificationType.friend:
+      return 'Friends';
+    case AppNotificationType.chat:
+      return 'Chats';
+    case AppNotificationType.important:
+      return 'Important';
+  }
+}
+
+IconData _notificationIconFor(AppNotificationType type) {
+  switch (type) {
+    case AppNotificationType.dailyPlan:
+      return Icons.today_rounded;
+    case AppNotificationType.taskReminder:
+      return Icons.task_alt_rounded;
+    case AppNotificationType.streakSaver:
+      return Icons.local_fire_department_rounded;
+    case AppNotificationType.deadlineWarning:
+      return Icons.warning_amber_rounded;
+    case AppNotificationType.routineReminder:
+      return Icons.repeat_rounded;
+    case AppNotificationType.focusComplete:
+      return Icons.track_changes_rounded;
+    case AppNotificationType.moodNudge:
+      return Icons.psychology_rounded;
+    case AppNotificationType.reward:
+      return Icons.paid_rounded;
+    case AppNotificationType.community:
+      return Icons.groups_rounded;
+    case AppNotificationType.friend:
+      return Icons.person_add_alt_1_rounded;
+    case AppNotificationType.chat:
+      return Icons.chat_bubble_rounded;
+    case AppNotificationType.important:
+      return Icons.priority_high_rounded;
   }
 }
 
@@ -417,7 +515,9 @@ class _NotificationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = notification.important ? gdWarning : gdPrimary;
+    final isImportant =
+        notification.important || notification.type == AppNotificationType.important;
+    final color = isImportant ? gdWarning : gdPrimary;
     final background = highlight ? gdWarningSoft : gdSurface;
 
     return AppCard(
@@ -426,9 +526,8 @@ class _NotificationTile extends StatelessWidget {
       child: ListTile(
         minVerticalPadding: 12,
         leading: CircleAvatar(
-          backgroundColor:
-              notification.important ? gdWarningSoft : gdPrimarySoft,
-          child: Icon(_iconFor(notification.type), color: color),
+          backgroundColor: isImportant ? gdWarningSoft : gdPrimarySoft,
+          child: Icon(_notificationIconFor(notification.type), color: color),
         ),
         title: Row(
           children: [
@@ -492,34 +591,5 @@ class _NotificationTile extends StatelessWidget {
         onTap: notification.isUnread ? onMarkRead : null,
       ),
     );
-  }
-
-  IconData _iconFor(AppNotificationType type) {
-    switch (type) {
-      case AppNotificationType.dailyPlan:
-        return Icons.today_rounded;
-      case AppNotificationType.taskReminder:
-        return Icons.task_alt_rounded;
-      case AppNotificationType.streakSaver:
-        return Icons.local_fire_department_rounded;
-      case AppNotificationType.deadlineWarning:
-        return Icons.warning_amber_rounded;
-      case AppNotificationType.routineReminder:
-        return Icons.repeat_rounded;
-      case AppNotificationType.focusComplete:
-        return Icons.track_changes_rounded;
-      case AppNotificationType.moodNudge:
-        return Icons.psychology_rounded;
-      case AppNotificationType.reward:
-        return Icons.paid_rounded;
-      case AppNotificationType.community:
-        return Icons.groups_rounded;
-      case AppNotificationType.friend:
-        return Icons.person_add_alt_1_rounded;
-      case AppNotificationType.chat:
-        return Icons.chat_bubble_rounded;
-      case AppNotificationType.important:
-        return Icons.priority_high_rounded;
-    }
   }
 }
