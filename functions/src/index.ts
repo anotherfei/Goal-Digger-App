@@ -172,6 +172,22 @@ export const sendNotificationPush = onDocumentCreated(
     if (!snapshot) return;
 
     const data = snapshot.data();
+    const title = String(data.title ?? "Goal Digger");
+    const body = String(data.body ?? "");
+    const type = String(data.type ?? "");
+    const sourceId = String(data.sourceId ?? "");
+    const isChestRewardPush =
+      type === "reward" &&
+      (sourceId.startsWith("pet_chest") ||
+        title.toLowerCase().includes("chest reward"));
+
+    if (isChestRewardPush) {
+      logger.info("Skipping push for in-app-only chest reward", {
+        uid,
+        notificationId,
+      });
+      return;
+    }
 
     const tokensSnapshot = await admin
       .firestore()
@@ -192,13 +208,13 @@ export const sendNotificationPush = onDocumentCreated(
     await admin.messaging().sendEachForMulticast({
       tokens,
       notification: {
-        title: String(data.title ?? "Goal Digger"),
-        body: String(data.body ?? ""),
+        title,
+        body,
       },
       data: {
         notificationId,
-        type: String(data.type ?? ""),
-        sourceId: String(data.sourceId ?? ""),
+        type,
+        sourceId,
         actorUid: String(data.actorUid ?? ""),
         route: String(data.payload?.route ?? ""),
         chatId: String(data.payload?.chatId ?? ""),
