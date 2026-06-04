@@ -980,52 +980,59 @@ class _CommunityPageState extends State<CommunityPage> {
   }
 
   Future<void> _showJoinCodeDialog() async {
-    final controller = TextEditingController();
     final code = await showDialog<String>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Join with code'),
-          content: TextField(
-            controller: controller,
-            textCapitalization: TextCapitalization.characters,
-            decoration: const InputDecoration(
-              labelText: 'Community code',
-              hintText: 'Example: ABC123',
-            ),
-            onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
-              child: const Text('Join'),
-            ),
-          ],
-        );
-      },
+      builder: (_) => const _JoinCommunityCodeDialog(),
     );
-    controller.dispose();
+
+    if (!mounted) return;
 
     final cleanedCode = code?.trim().toUpperCase();
     if (cleanedCode == null || cleanedCode.isEmpty) return;
 
+    await _joinCommunityByCode(cleanedCode);
+  }
+
+  Future<void> _joinCommunityByCode(String cleanedCode) async {
+    final user = _user;
+    if (user == null) {
+      _showSnack('Sign in before joining a community.');
+      return;
+    }
+
+    if (user.isAnonymous && !kDebugAllowGuestSocialAccess) {
+      _showSnack('Use a full account before joining communities.');
+      return;
+    }
+
     try {
-      final snapshot = await _communitiesCollection
+      var snapshot = await _communitiesCollection
           .where('joinCode', isEqualTo: cleanedCode)
           .limit(1)
           .get();
+
+      if (snapshot.docs.isEmpty) {
+        snapshot = await _communitiesCollection
+            .where('code', isEqualTo: cleanedCode)
+            .limit(1)
+            .get();
+      }
+
+      if (snapshot.docs.isEmpty) {
+        final lowerCode = cleanedCode.toLowerCase();
+        snapshot = await _communitiesCollection
+            .where('joinCode', isEqualTo: lowerCode)
+            .limit(1)
+            .get();
+      }
+
+      if (!mounted) return;
 
       if (snapshot.docs.isEmpty) {
         _showSnack('No community found for code $cleanedCode.');
         return;
       }
 
-      final user = _user;
-      if (user == null) return;
       await _joinCommunity(
         _DbCommunity.fromDoc(snapshot.docs.first, currentUid: user.uid),
       );
@@ -1565,6 +1572,58 @@ class _CommunityPageState extends State<CommunityPage> {
           onDelete: (latestGroup) => unawaited(_deleteOrLeaveCommunity(latestGroup)),
         ),
       ),
+    );
+  }
+}
+
+class _JoinCommunityCodeDialog extends StatefulWidget {
+  const _JoinCommunityCodeDialog();
+
+  @override
+  State<_JoinCommunityCodeDialog> createState() =>
+      _JoinCommunityCodeDialogState();
+}
+
+class _JoinCommunityCodeDialogState extends State<_JoinCommunityCodeDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final code = _controller.text.trim();
+    FocusScope.of(context).unfocus();
+    Navigator.of(context).pop(code);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Join with code'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        textCapitalization: TextCapitalization.characters,
+        textInputAction: TextInputAction.done,
+        decoration: const InputDecoration(
+          labelText: 'Community code',
+          hintText: 'Example: ABC123',
+        ),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Join'),
+        ),
+      ],
     );
   }
 }
