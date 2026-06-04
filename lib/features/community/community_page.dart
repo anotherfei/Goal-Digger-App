@@ -1360,7 +1360,7 @@ class _CommunityPageState extends State<CommunityPage> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: () => _openFindCommunitiesPage(context, groups),
+                      onPressed: () => _openFindCommunitiesPage(context),
                       icon: const Icon(Icons.travel_explore_rounded),
                       label: const Text('Find communities'),
                     ),
@@ -1398,14 +1398,18 @@ class _CommunityPageState extends State<CommunityPage> {
     );
   }
 
-  void _openFindCommunitiesPage(
-    BuildContext context,
-    List<_DbCommunity> communities,
-  ) {
+  void _openFindCommunitiesPage(BuildContext context) {
+    final user = _user;
+    if (user == null) {
+      _showSnack('Sign in before finding communities.');
+      return;
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _FindCommunitiesPage(
-          communities: communities,
+          communitiesCollection: _communitiesCollection,
+          currentUid: user.uid,
           onJoin: (group) => unawaited(_joinCommunity(group)),
         ),
       ),
@@ -1423,7 +1427,7 @@ class _CommunityPageState extends State<CommunityPage> {
           onChat: (group) => _openCommunityChatPage(context, group),
           onDetails: (group) => _openCommunityDetailsPage(context, group),
           onDelete: (group) => unawaited(_deleteOrLeaveCommunity(group)),
-          onFindCommunities: () => _openFindCommunitiesPage(context, communities),
+          onFindCommunities: () => _openFindCommunitiesPage(context),
         ),
       ),
     );
@@ -1985,11 +1989,13 @@ class _AllCommunitiesPageState extends State<_AllCommunitiesPage> {
 
 class _FindCommunitiesPage extends StatefulWidget {
   const _FindCommunitiesPage({
-    required this.communities,
+    required this.communitiesCollection,
+    required this.currentUid,
     required this.onJoin,
   });
 
-  final List<_DbCommunity> communities;
+  final CollectionReference<Map<String, dynamic>> communitiesCollection;
+  final String currentUid;
   final ValueChanged<_DbCommunity> onJoin;
 
   @override
@@ -1998,6 +2004,7 @@ class _FindCommunitiesPage extends StatefulWidget {
 
 class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
   final TextEditingController _searchController = TextEditingController();
+  final Set<String> _joiningCommunityIds = <String>{};
   String _query = '';
 
   @override
@@ -2006,20 +2013,42 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Stream<List<_DbCommunity>> _communitiesStream() {
+    return widget.communitiesCollection.limit(100).snapshots().map((snapshot) {
+      final communities = snapshot.docs
+          .map((doc) => _DbCommunity.fromDoc(doc, currentUid: widget.currentUid))
+          .toList();
+
+      communities.sort((a, b) {
+        if (a.joined != b.joined) return a.joined ? 1 : -1;
+        return b.similarity.compareTo(a.similarity);
+      });
+
+      return communities;
+    });
+  }
+
+  List<_DbCommunity> _filterCommunities(List<_DbCommunity> communities) {
     final q = _query.trim().toLowerCase();
-    final suggestions = [...widget.communities]
-      ..sort((a, b) => b.similarity.compareTo(a.similarity));
-    final filtered = suggestions.where((group) {
-      if (group.joined) return false;
+
+    return communities.where((group) {
+      if (group.joined || _joiningCommunityIds.contains(group.id)) return false;
       if (q.isEmpty) return true;
       return group.name.toLowerCase().contains(q) ||
           group.tag.toLowerCase().contains(q) ||
           group.description.toLowerCase().contains(q) ||
           group.joinCode.toLowerCase().contains(q);
     }).toList();
+  }
 
+  void _join(_DbCommunity group) {
+    if (_joiningCommunityIds.contains(group.id)) return;
+    setState(() => _joiningCommunityIds.add(group.id));
+    widget.onJoin(group);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Find communities')),
       body: PageScaffold(
@@ -2041,7 +2070,7 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'These are documents from Firestore communities, not dummy data.',
+                      'These are live documents from Firestore communities.',
                       style: TextStyle(
                           color: gdMuted, fontWeight: FontWeight.w700),
                     ),
@@ -2062,23 +2091,54 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
             const SizedBox(height: 16),
             SectionTitle(title: 'Community suggestions'),
             const SizedBox(height: 10),
-            if (filtered.isEmpty)
-              const HelpfulErrorBox(
-                title: 'No suggestions found',
-                message:
-                    'Create a community from the Social page or try another keyword.',
-                actionLabel: 'OK',
-                showAction: false,
-              )
-            else
-              for (final group in filtered)
-                _DbCommunityMatchCard(
-                  group: group,
-                  onJoin: () {
-                    widget.onJoin(group);
-                    setState(() {});
-                  },
-                ),
+            StreamBuilder<List<_DbCommunity>>(
+              stream: _communitiesStream(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    snapshot.data == null) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
+                }
+
+                if (snapshot.hasError) {
+                  return HelpfulErrorBox(
+                    title: 'Community suggestions failed to load',
+                    message:
+                        'Check Firestore rules for communities reads. Details: ${snapshot.error}',
+                    actionLabel: 'OK',
+                    showAction: false,
+                  );
+                }
+
+                final communities = snapshot.data ?? const <_DbCommunity>[];
+                final filtered = _filterCommunities(communities);
+                final joinedCount = communities.where((group) => group.joined).length;
+
+                if (filtered.isEmpty) {
+                  return HelpfulErrorBox(
+                    title: 'No suggestions found',
+                    message:
+                        'Loaded ${communities.length} communities from Firestore. $joinedCount are detected as joined. If you expected another result, check that the other community document is inside the communities collection and that its members array does not contain this UID: ${widget.currentUid}.',
+                    actionLabel: 'OK',
+                    showAction: false,
+                  );
+                }
+
+                return Column(
+                  children: [
+                    for (final group in filtered)
+                      _DbCommunityMatchCard(
+                        group: group,
+                        onJoin: () => _join(group),
+                      ),
+                  ],
+                );
+              },
+            ),
           ],
         ),
       ),
