@@ -355,224 +355,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 14),
-            AppCard(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: gdPrimarySoft,
-                        child: Icon(
-                          Icons.notifications_active_rounded,
-                          color: gdPrimary,
-                        ),
-                      ),
-                      title: Text(
-                        'Android reminders',
-                        style: TextStyle(
-                          color: gdInk,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      subtitle: Text(
-                        'Daily plan, streak, deadline, routine, and focus pop-ups.',
-                        style: TextStyle(
-                          color: gdMuted,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    _NotificationSwitch(
-                      value: notificationSettings.dailyPlanEnabled,
-                      enabled: goalReminders,
-                      title: 'Daily plan',
-                      subtitle: 'Morning summary for today\'s scheduled work.',
-                      onChanged: (value) => onNotificationSettingsChanged(
-                        notificationSettings.copyWith(
-                          dailyPlanEnabled: value,
-                        ),
-                      ),
-                    ),
-                    _NotificationSwitch(
-                      value: notificationSettings.streakSaverEnabled,
-                      enabled: goalReminders,
-                      title: 'Streak saver',
-                      subtitle: 'Evening nudge if nothing is done yet.',
-                      onChanged: (value) => onNotificationSettingsChanged(
-                        notificationSettings.copyWith(
-                          streakSaverEnabled: value,
-                        ),
-                      ),
-                    ),
-                    _NotificationSwitch(
-                      value: notificationSettings.deadlineWarningsEnabled,
-                      enabled: goalReminders,
-                      title: 'Deadline warnings',
-                      subtitle: 'Pop up when unfinished goals are close.',
-                      onChanged: (value) => onNotificationSettingsChanged(
-                        notificationSettings.copyWith(
-                          deadlineWarningsEnabled: value,
-                        ),
-                      ),
-                    ),
-                    _NotificationSwitch(
-                      value: notificationSettings.routineRemindersEnabled,
-                      enabled: goalReminders,
-                      title: 'Routine reminders',
-                      subtitle: 'Use the date, time, and repeat from Calendar.',
-                      onChanged: (value) => onNotificationSettingsChanged(
-                        notificationSettings.copyWith(
-                          routineRemindersEnabled: value,
-                        ),
-                      ),
-                    ),
-                    _NotificationSwitch(
-                      value: notificationSettings.focusNotificationsEnabled,
-                      enabled: goalReminders,
-                      title: 'Focus complete',
-                      subtitle: 'Pop up when a focus session finishes.',
-                      onChanged: (value) => onNotificationSettingsChanged(
-                        notificationSettings.copyWith(
-                          focusNotificationsEnabled: value,
-                        ),
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      title: const Text(
-                        'Daily plan time',
-                        style: TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      subtitle: Text(
-                        'Also used as the base time for deadline alerts.',
-                        style: TextStyle(
-                          color: gdMuted,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      trailing: OutlinedButton.icon(
-                        onPressed: goalReminders
-                            ? () => _pickTime(
-                                  context: context,
-                                  initialTime: TimeOfDay(
-                                    hour: notificationSettings.dailyPlanHour,
-                                    minute:
-                                        notificationSettings.dailyPlanMinute,
-                                  ),
-                                  onPicked: (picked) =>
-                                      onNotificationSettingsChanged(
-                                    notificationSettings.copyWith(
-                                      dailyPlanHour: picked.hour,
-                                      dailyPlanMinute: picked.minute,
-                                    ),
-                                  ),
-                                )
-                            : null,
-                        icon: const Icon(Icons.schedule_rounded),
-                        label: Text(
-                          TimeOfDay(
-                            hour: notificationSettings.dailyPlanHour,
-                            minute: notificationSettings.dailyPlanMinute,
-                          ).format(context),
-                        ),
-                      ),
-                    ),
-                    ListTile(
-                      title: const Text(
-                        'Streak saver time',
-                        style: TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      subtitle: Text(
-                        'Only fires when today has no completed task.',
-                        style: TextStyle(
-                          color: gdMuted,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      trailing: OutlinedButton.icon(
-                        onPressed: goalReminders
-                            ? () => _pickTime(
-                                  context: context,
-                                  initialTime: TimeOfDay(
-                                    hour: notificationSettings.streakSaverHour,
-                                    minute:
-                                        notificationSettings.streakSaverMinute,
-                                  ),
-                                  onPicked: (picked) =>
-                                      onNotificationSettingsChanged(
-                                    notificationSettings.copyWith(
-                                      streakSaverHour: picked.hour,
-                                      streakSaverMinute: picked.minute,
-                                    ),
-                                  ),
-                                )
-                            : null,
-                        icon: const Icon(Icons.schedule_rounded),
-                        label: Text(
-                          TimeOfDay(
-                            hour: notificationSettings.streakSaverHour,
-                            minute: notificationSettings.streakSaverMinute,
-                          ).format(context),
-                        ),
-                      ),
-                    ),
-                    ListTile(
-                      title: const Text(
-                        'Deadline warning',
-                        style: TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      subtitle: Text(
-                        'How early unfinished goals become urgent.',
-                        style: TextStyle(
-                          color: gdMuted,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      trailing: DropdownButton<int>(
-                        value: notificationSettings.deadlineWarningDays,
-                        onChanged: goalReminders
-                            ? (value) {
-                                if (value == null) return;
-                                onNotificationSettingsChanged(
-                                  notificationSettings.copyWith(
-                                    deadlineWarningDays: value,
-                                  ),
-                                );
-                              }
-                            : null,
-                        items: const [
-                          DropdownMenuItem(value: 1, child: Text('1 day')),
-                          DropdownMenuItem(value: 2, child: Text('2 days')),
-                          DropdownMenuItem(value: 3, child: Text('3 days')),
-                          DropdownMenuItem(value: 7, child: Text('1 week')),
-                        ],
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed: onOpenNotificationSettings,
-                            icon: const Icon(Icons.settings_applications_rounded),
-                            label: const Text('Open Android notification settings'),
-                          ),
-                          const SizedBox(height: 8),
-                          OutlinedButton.icon(
-                            onPressed:
-                                goalReminders ? onTestNotification : null,
-                            icon: const Icon(Icons.notification_add_rounded),
-                            label: const Text('Send test notification'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            _AdvancedNotificationSettingsCard(
+              goalReminders: goalReminders,
+              notificationSettings: notificationSettings,
+              onNotificationSettingsChanged: onNotificationSettingsChanged,
+              onOpenNotificationSettings: onOpenNotificationSettings,
+              onTestNotification: onTestNotification,
+              onPickTime: _pickTime,
             ),
             const SizedBox(height: 14),
             AppCard(
@@ -870,6 +659,246 @@ class _SettingsActionTile extends StatelessWidget {
       ),
       trailing: TextButton(onPressed: onTap, child: Text(actionLabel)),
       onTap: onTap,
+    );
+  }
+}
+
+class _AdvancedNotificationSettingsCard extends StatelessWidget {
+  const _AdvancedNotificationSettingsCard({
+    required this.goalReminders,
+    required this.notificationSettings,
+    required this.onNotificationSettingsChanged,
+    required this.onOpenNotificationSettings,
+    required this.onTestNotification,
+    required this.onPickTime,
+  });
+
+  final bool goalReminders;
+  final NotificationSettings notificationSettings;
+  final ValueChanged<NotificationSettings> onNotificationSettingsChanged;
+  final VoidCallback onOpenNotificationSettings;
+  final VoidCallback onTestNotification;
+  final Future<void> Function({
+    required BuildContext context,
+    required TimeOfDay initialTime,
+    required ValueChanged<TimeOfDay> onPicked,
+  }) onPickTime;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          childrenPadding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
+          leading: CircleAvatar(
+            backgroundColor: gdPrimarySoft,
+            child: Icon(
+              Icons.notifications_active_rounded,
+              color: gdPrimary,
+            ),
+          ),
+          title: Text(
+            'Advanced notification controls',
+            style: TextStyle(
+              color: gdInk,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          subtitle: Text(
+            'Daily plan, streak, deadline, routine, and focus pop-ups.',
+            style: TextStyle(
+              color: gdMuted,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          children: [
+            const Divider(height: 1),
+            _NotificationSwitch(
+              value: notificationSettings.dailyPlanEnabled,
+              enabled: goalReminders,
+              title: 'Daily plan',
+              subtitle: 'Morning summary for today\'s scheduled work.',
+              onChanged: (value) => onNotificationSettingsChanged(
+                notificationSettings.copyWith(
+                  dailyPlanEnabled: value,
+                ),
+              ),
+            ),
+            _NotificationSwitch(
+              value: notificationSettings.streakSaverEnabled,
+              enabled: goalReminders,
+              title: 'Streak saver',
+              subtitle: 'Evening nudge if nothing is done yet.',
+              onChanged: (value) => onNotificationSettingsChanged(
+                notificationSettings.copyWith(
+                  streakSaverEnabled: value,
+                ),
+              ),
+            ),
+            _NotificationSwitch(
+              value: notificationSettings.deadlineWarningsEnabled,
+              enabled: goalReminders,
+              title: 'Deadline warnings',
+              subtitle: 'Pop up when unfinished goals are close.',
+              onChanged: (value) => onNotificationSettingsChanged(
+                notificationSettings.copyWith(
+                  deadlineWarningsEnabled: value,
+                ),
+              ),
+            ),
+            _NotificationSwitch(
+              value: notificationSettings.routineRemindersEnabled,
+              enabled: goalReminders,
+              title: 'Routine reminders',
+              subtitle: 'Use the date, time, and repeat from Calendar.',
+              onChanged: (value) => onNotificationSettingsChanged(
+                notificationSettings.copyWith(
+                  routineRemindersEnabled: value,
+                ),
+              ),
+            ),
+            _NotificationSwitch(
+              value: notificationSettings.focusNotificationsEnabled,
+              enabled: goalReminders,
+              title: 'Focus complete',
+              subtitle: 'Pop up when a focus session finishes.',
+              onChanged: (value) => onNotificationSettingsChanged(
+                notificationSettings.copyWith(
+                  focusNotificationsEnabled: value,
+                ),
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              title: const Text(
+                'Daily plan time',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: Text(
+                'Also used as the base time for deadline alerts.',
+                style: TextStyle(
+                  color: gdMuted,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              trailing: OutlinedButton.icon(
+                onPressed: goalReminders
+                    ? () => onPickTime(
+                          context: context,
+                          initialTime: TimeOfDay(
+                            hour: notificationSettings.dailyPlanHour,
+                            minute: notificationSettings.dailyPlanMinute,
+                          ),
+                          onPicked: (picked) => onNotificationSettingsChanged(
+                            notificationSettings.copyWith(
+                              dailyPlanHour: picked.hour,
+                              dailyPlanMinute: picked.minute,
+                            ),
+                          ),
+                        )
+                    : null,
+                icon: const Icon(Icons.schedule_rounded),
+                label: Text(
+                  TimeOfDay(
+                    hour: notificationSettings.dailyPlanHour,
+                    minute: notificationSettings.dailyPlanMinute,
+                  ).format(context),
+                ),
+              ),
+            ),
+            ListTile(
+              title: const Text(
+                'Streak saver time',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: Text(
+                'Only fires when today has no completed task.',
+                style: TextStyle(
+                  color: gdMuted,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              trailing: OutlinedButton.icon(
+                onPressed: goalReminders
+                    ? () => onPickTime(
+                          context: context,
+                          initialTime: TimeOfDay(
+                            hour: notificationSettings.streakSaverHour,
+                            minute: notificationSettings.streakSaverMinute,
+                          ),
+                          onPicked: (picked) => onNotificationSettingsChanged(
+                            notificationSettings.copyWith(
+                              streakSaverHour: picked.hour,
+                              streakSaverMinute: picked.minute,
+                            ),
+                          ),
+                        )
+                    : null,
+                icon: const Icon(Icons.schedule_rounded),
+                label: Text(
+                  TimeOfDay(
+                    hour: notificationSettings.streakSaverHour,
+                    minute: notificationSettings.streakSaverMinute,
+                  ).format(context),
+                ),
+              ),
+            ),
+            ListTile(
+              title: const Text(
+                'Deadline warning',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: Text(
+                'How early unfinished goals become urgent.',
+                style: TextStyle(
+                  color: gdMuted,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              trailing: DropdownButton<int>(
+                value: notificationSettings.deadlineWarningDays,
+                onChanged: goalReminders
+                    ? (value) {
+                        if (value == null) return;
+                        onNotificationSettingsChanged(
+                          notificationSettings.copyWith(
+                            deadlineWarningDays: value,
+                          ),
+                        );
+                      }
+                    : null,
+                items: const [
+                  DropdownMenuItem(value: 1, child: Text('1 day')),
+                  DropdownMenuItem(value: 2, child: Text('2 days')),
+                  DropdownMenuItem(value: 3, child: Text('3 days')),
+                  DropdownMenuItem(value: 7, child: Text('1 week')),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: onOpenNotificationSettings,
+                    icon: const Icon(Icons.settings_applications_rounded),
+                    label: const Text('Open Android notification settings'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: goalReminders ? onTestNotification : null,
+                    icon: const Icon(Icons.notification_add_rounded),
+                    label: const Text('Send test notification'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
