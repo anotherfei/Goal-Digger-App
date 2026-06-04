@@ -18,6 +18,15 @@ class SettingsScreen extends StatefulWidget {
     required this.onTestNotification,
     required this.onOpenNotificationSettings,
     required this.onSignOut,
+    this.email = '',
+    this.signedInWith = 'Guest',
+    this.isGuest = false,
+    this.emailVerified = false,
+    this.providerIds = const <String>[],
+    this.onSendEmailVerification,
+    this.onRefreshEmailVerification,
+    this.onSendPasswordReset,
+    this.onDeleteAccount,
   });
 
   final bool goalReminders;
@@ -29,6 +38,15 @@ class SettingsScreen extends StatefulWidget {
   final VoidCallback onTestNotification;
   final VoidCallback onOpenNotificationSettings;
   final VoidCallback onSignOut;
+  final String email;
+  final String signedInWith;
+  final bool isGuest;
+  final bool emailVerified;
+  final List<String> providerIds;
+  final Future<bool> Function()? onSendEmailVerification;
+  final Future<bool> Function()? onRefreshEmailVerification;
+  final Future<bool> Function()? onSendPasswordReset;
+  final Future<bool> Function()? onDeleteAccount;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -88,6 +106,136 @@ class _SettingsScreenState extends State<SettingsScreen> {
   VoidCallback get onOpenNotificationSettings =>
       widget.onOpenNotificationSettings;
   VoidCallback get onSignOut => widget.onSignOut;
+
+  Future<void> _sendVerificationEmail() async {
+    final action = widget.onSendEmailVerification;
+    if (action == null) {
+      _showInfo(
+        title: 'Verify email',
+        message:
+            'Connect this action from goal_digger_root.dart so Settings can send the verification email.',
+      );
+      return;
+    }
+
+    final sent = await action();
+    if (!mounted) return;
+    _showSnack(
+      sent
+          ? 'Verification email sent. Check your inbox or emulator logs.'
+          : 'Could not send verification email.',
+    );
+  }
+
+  Future<void> _refreshVerification() async {
+    final action = widget.onRefreshEmailVerification;
+    if (action == null) {
+      _showInfo(
+        title: 'Refresh verification',
+        message:
+            'Connect this action from goal_digger_root.dart so Settings can refresh Firebase email verification status.',
+      );
+      return;
+    }
+
+    final refreshed = await action();
+    if (!mounted) return;
+    _showSnack(
+      refreshed
+          ? 'Verification status refreshed.'
+          : 'Could not refresh verification status.',
+    );
+  }
+
+  Future<void> _sendPasswordReset() async {
+    final action = widget.onSendPasswordReset;
+    if (widget.email.trim().isEmpty) {
+      _showSnack('No email address is attached to this account.');
+      return;
+    }
+    if (action == null) {
+      _showInfo(
+        title: 'Reset password',
+        message:
+            'Connect this action from goal_digger_root.dart so Settings can send password reset instructions.',
+      );
+      return;
+    }
+
+    final sent = await action();
+    if (!mounted) return;
+    _showSnack(
+      sent
+          ? 'If this email uses password login, reset instructions were sent.'
+          : 'Could not send password reset instructions.',
+    );
+  }
+
+  Future<void> _confirmDeleteAccount() async {
+    final action = widget.onDeleteAccount;
+    if (action == null) {
+      _showInfo(
+        title: 'Delete account',
+        message:
+            'Connect this action from goal_digger_root.dart so Settings can delete the Firebase Auth account.',
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: Icon(Icons.warning_amber_rounded, color: gdError),
+        title: const Text('Delete account?'),
+        content: const Text(
+          'This removes the Firebase Auth account from this project. This action may require a fresh login.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: gdError),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    final deleted = await action();
+    if (!mounted) return;
+    if (deleted) {
+      _showSnack('Account deleted.');
+      Navigator.pop(context);
+    } else {
+      _showSnack('Could not delete account.');
+    }
+  }
+
+  void _showInfo({required String title, required String message}) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
 
   Future<void> _pickTime({
     required BuildContext context,
@@ -150,6 +298,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 14),
             const _AppearanceCard(),
+            const SizedBox(height: 14),
+            _AccountSecuritySettingsCard(
+              email: widget.email,
+              isGuest: widget.isGuest,
+              emailVerified: widget.emailVerified,
+              signedInWith: widget.signedInWith,
+              providerIds: widget.providerIds,
+              onSendEmailVerification: _sendVerificationEmail,
+              onRefreshEmailVerification: _refreshVerification,
+              onSendPasswordReset: _sendPasswordReset,
+              onUnavailable: _showInfo,
+            ),
             const SizedBox(height: 14),
             AppCard(
               child: Column(
@@ -444,78 +604,272 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 14),
-            AppCard(
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: gdPrimarySoft,
-                      child: Icon(Icons.palette_rounded, color: gdPrimary),
-                    ),
-                    title: Text(
-                      'Appearance',
-                      style: TextStyle(
-                        color: gdInk,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    subtitle: Text(
-                      'Readable colors and calm contrast enabled.',
-                      style: TextStyle(
-                        color: gdMuted,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: gdPrimarySoft,
-                      child: Icon(Icons.notifications_active_rounded, color: gdPrimary),
-                    ),
-                    title: Text(
-                      'Notifications',
-                      style: TextStyle(
-                        color: gdInk,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    subtitle: Text(
-                      'Focus, routine, friend, and streak controls.',
-                      style: TextStyle(
-                        color: gdMuted,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: gdErrorSoft,
-                      child: Icon(Icons.logout_rounded, color: gdError),
-                    ),
-                    title: Text(
-                      'Sign out',
-                      style: TextStyle(
-                        color: gdError,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    subtitle: Text(
-                      'Return to onboarding and stop syncing this session.',
-                      style: TextStyle(
-                        color: gdMuted,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    onTap: onSignOut,
-                  ),
-                ],
-              ),
+            _DangerZoneSettingsCard(
+              isGuest: widget.isGuest,
+              onSignOut: onSignOut,
+              onDeleteAccount:
+                  widget.isGuest ? null : _confirmDeleteAccount,
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+
+class _AccountSecuritySettingsCard extends StatelessWidget {
+  const _AccountSecuritySettingsCard({
+    required this.email,
+    required this.isGuest,
+    required this.emailVerified,
+    required this.signedInWith,
+    required this.providerIds,
+    required this.onSendEmailVerification,
+    required this.onRefreshEmailVerification,
+    required this.onSendPasswordReset,
+    required this.onUnavailable,
+  });
+
+  final String email;
+  final bool isGuest;
+  final bool emailVerified;
+  final String signedInWith;
+  final List<String> providerIds;
+  final VoidCallback onSendEmailVerification;
+  final VoidCallback onRefreshEmailVerification;
+  final VoidCallback onSendPasswordReset;
+  final void Function({required String title, required String message})
+      onUnavailable;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: Column(
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(18, 18, 18, 8),
+            child: _SettingsSectionHeader(
+              icon: Icons.shield_rounded,
+              title: 'Account & security',
+              subtitle: 'Manage login methods and account recovery.',
+            ),
+          ),
+          const Divider(height: 1),
+          _SettingsActionTile(
+            icon: emailVerified ? Icons.verified_rounded : Icons.mark_email_read,
+            title: emailVerified ? 'Email verified' : 'Verify email',
+            subtitle: isGuest
+                ? 'Guest accounts do not have an email to verify.'
+                : email.trim().isEmpty
+                    ? 'No email is attached to this account.'
+                    : 'Use this to confirm ownership of $email.',
+            actionLabel: emailVerified ? 'Refresh' : 'Send',
+            onTap: isGuest || email.trim().isEmpty
+                ? null
+                : emailVerified
+                    ? onRefreshEmailVerification
+                    : onSendEmailVerification,
+          ),
+          const Divider(height: 1),
+          _SettingsActionTile(
+            icon: Icons.password_rounded,
+            title: 'Reset password',
+            subtitle: 'Password reset only applies to Goal Digger email login.',
+            actionLabel: 'Send',
+            onTap: isGuest || email.trim().isEmpty ? null : onSendPasswordReset,
+          ),
+          const Divider(height: 1),
+          _SettingsActionTile(
+            icon: Icons.hub_rounded,
+            title: 'Linked providers',
+            subtitle: _providerSummary,
+            actionLabel: 'View',
+            onTap: () => onUnavailable(
+              title: 'Linked providers',
+              message:
+                  'Current login: $signedInWith. Future provider linking can let one account use both Google and email/password after a re-auth flow is added.',
+            ),
+          ),
+          const Divider(height: 1),
+          _SettingsActionTile(
+            icon: Icons.alternate_email_rounded,
+            title: 'Change email',
+            subtitle: 'Changing email requires recent login verification.',
+            actionLabel: 'Later',
+            onTap: () => onUnavailable(
+              title: 'Change email',
+              message:
+                  'This is a good production feature, but it needs a re-authentication flow first so account changes stay secure.',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String get _providerSummary {
+    if (isGuest) return 'Guest or anonymous preview account.';
+    if (providerIds.isEmpty) return 'No provider data available.';
+    return providerIds
+        .map((id) => id == 'google.com'
+            ? 'Google'
+            : id == 'password'
+                ? 'Email/password'
+                : id)
+        .join(', ');
+  }
+}
+
+class _DangerZoneSettingsCard extends StatelessWidget {
+  const _DangerZoneSettingsCard({
+    required this.isGuest,
+    required this.onSignOut,
+    required this.onDeleteAccount,
+  });
+
+  final bool isGuest;
+  final VoidCallback onSignOut;
+  final VoidCallback? onDeleteAccount;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      color: gdErrorSoft,
+      child: Column(
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(18, 18, 18, 8),
+            child: _SettingsSectionHeader(
+              icon: Icons.warning_amber_rounded,
+              title: 'Danger zone',
+              subtitle: 'Session and account removal actions.',
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: CircleAvatar(
+              backgroundColor: gdSurface,
+              child: Icon(Icons.logout_rounded, color: gdError),
+            ),
+            title: Text(
+              'Sign out',
+              style: TextStyle(color: gdError, fontWeight: FontWeight.w900),
+            ),
+            subtitle: Text(
+              'Return to onboarding and stop syncing this session.',
+              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+            ),
+            onTap: onSignOut,
+          ),
+          const Divider(height: 1),
+          ListTile(
+            enabled: !isGuest && onDeleteAccount != null,
+            leading: CircleAvatar(
+              backgroundColor: gdSurface,
+              child: Icon(Icons.delete_forever_rounded, color: gdError),
+            ),
+            title: Text(
+              'Delete account',
+              style: TextStyle(color: gdError, fontWeight: FontWeight.w900),
+            ),
+            subtitle: Text(
+              isGuest
+                  ? 'Guest preview accounts can simply sign out.'
+                  : 'Permanently delete the Firebase Auth account.',
+              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+            ),
+            onTap: isGuest ? null : onDeleteAccount,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsSectionHeader extends StatelessWidget {
+  const _SettingsSectionHeader({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          backgroundColor: gdPrimarySoft,
+          child: Icon(icon, color: gdPrimary),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: gdInk,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: gdMuted,
+                  fontWeight: FontWeight.w700,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SettingsActionTile extends StatelessWidget {
+  const _SettingsActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.actionLabel,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String actionLabel;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      enabled: onTap != null,
+      leading: CircleAvatar(
+        backgroundColor: gdPrimarySoft,
+        child: Icon(icon, color: gdPrimary),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(color: gdInk, fontWeight: FontWeight.w900),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+      ),
+      trailing: TextButton(onPressed: onTap, child: Text(actionLabel)),
+      onTap: onTap,
     );
   }
 }
