@@ -766,9 +766,18 @@ class _CommunityPageState extends State<CommunityPage> {
         final currentUser = friendsData.currentUser;
         final friends = friendsData.friends;
         final leaderboard = <_LeaderboardEntry>[
-          _LeaderboardEntry('You', currentUser.streak, isYou: true),
+          _LeaderboardEntry(
+            'You',
+            currentUser.streak,
+            isYou: true,
+            profile: currentUser,
+          ),
           for (final friend in friends)
-            _LeaderboardEntry(friend.displayName, friend.streak),
+            _LeaderboardEntry(
+              friend.displayName,
+              friend.streak,
+              profile: friend,
+            ),
         ]..sort((a, b) => b.streak.compareTo(a.streak));
 
         final topThree = leaderboard.take(3).toList();
@@ -790,7 +799,16 @@ class _CommunityPageState extends State<CommunityPage> {
                 child: Column(
                   children: [
                     for (var i = 0; i < topThree.length; i++)
-                      _LeaderboardTile(rank: i + 1, entry: topThree[i]),
+                      _LeaderboardTile(
+                        rank: i + 1,
+                        entry: topThree[i],
+                        onTap: topThree[i].profile == null
+                            ? null
+                            : () => _openUserDetailsPage(
+                                  context,
+                                  topThree[i].profile!,
+                                ),
+                      ),
                     if (leaderboard.length > 3) ...[
                       const Divider(height: 22),
                       SizedBox(
@@ -1318,7 +1336,14 @@ class _CommunityPageState extends State<CommunityPage> {
                       )
                     else
                       for (var i = 0; i < topThree.length; i++)
-                        _CommunityLeaderboardTile(rank: i + 1, group: topThree[i]),
+                        _CommunityLeaderboardTile(
+                          rank: i + 1,
+                          group: topThree[i],
+                          onTap: () => _openCommunityDetailsPage(
+                            context,
+                            topThree[i],
+                          ),
+                        ),
                     if (leaderboard.length > 3) ...[
                       const Divider(height: 22),
                       SizedBox(
@@ -1439,7 +1464,10 @@ class _CommunityPageState extends State<CommunityPage> {
   ) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _CommunityLeaderboardPage(leaderboard: leaderboard),
+        builder: (_) => _CommunityLeaderboardPage(
+          leaderboard: leaderboard,
+          onCommunityTap: (group) => _openCommunityDetailsPage(context, group),
+        ),
       ),
     );
   }
@@ -1487,7 +1515,11 @@ class _CommunityPageState extends State<CommunityPage> {
       BuildContext context, List<_LeaderboardEntry> leaderboard) {
     Navigator.of(context).push(
       MaterialPageRoute(
-          builder: (_) => _LeaderboardPage(leaderboard: leaderboard)),
+        builder: (_) => _LeaderboardPage(
+          leaderboard: leaderboard,
+          onProfileTap: (profile) => _openUserDetailsPage(context, profile),
+        ),
+      ),
     );
   }
 
@@ -3904,9 +3936,13 @@ class _CommunityChatPageState extends State<_CommunityChatPage> {
 }
 
 class _CommunityLeaderboardPage extends StatelessWidget {
-  const _CommunityLeaderboardPage({required this.leaderboard});
+  const _CommunityLeaderboardPage({
+    required this.leaderboard,
+    required this.onCommunityTap,
+  });
 
   final List<_DbCommunity> leaderboard;
+  final ValueChanged<_DbCommunity> onCommunityTap;
 
   @override
   Widget build(BuildContext context) {
@@ -3923,7 +3959,10 @@ class _CommunityLeaderboardPage extends StatelessWidget {
                   children: [
                     for (var i = 0; i < leaderboard.length; i++)
                       _CommunityLeaderboardTile(
-                          rank: i + 1, group: leaderboard[i]),
+                        rank: i + 1,
+                        group: leaderboard[i],
+                        onTap: () => onCommunityTap(leaderboard[i]),
+                      ),
                   ],
                 ),
               ),
@@ -3936,34 +3975,59 @@ class _CommunityLeaderboardPage extends StatelessWidget {
 }
 
 class _CommunityLeaderboardTile extends StatelessWidget {
-  const _CommunityLeaderboardTile({required this.rank, required this.group});
+  const _CommunityLeaderboardTile({
+    required this.rank,
+    required this.group,
+    this.onTap,
+  });
 
   final int rank;
   final _DbCommunity group;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
+      onTap: onTap,
       leading: CircleAvatar(
         backgroundColor: rank == 1 ? gdAccentSoft : gdPrimarySoft,
         child:
             Text('#$rank', style: const TextStyle(fontWeight: FontWeight.w900)),
       ),
-      title:
-          Text(group.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+      title: Text(
+        group.name,
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          decoration: onTap == null ? null : TextDecoration.underline,
+          decorationColor: gdInk,
+        ),
+      ),
       subtitle: Text(
         '${group.members} members · ${group.tag}',
         style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
       ),
-      trailing: Chip(label: Text(group.joined ? 'Joined' : '${group.similarity}% fit')),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Chip(label: Text(group.joined ? 'Joined' : '${group.similarity}% fit')),
+          if (onTap != null) ...[
+            const SizedBox(width: 6),
+            Icon(Icons.chevron_right_rounded, color: gdMuted),
+          ],
+        ],
+      ),
     );
   }
 }
 
 class _LeaderboardPage extends StatelessWidget {
-  const _LeaderboardPage({required this.leaderboard});
+  const _LeaderboardPage({
+    required this.leaderboard,
+    required this.onProfileTap,
+  });
 
   final List<_LeaderboardEntry> leaderboard;
+  final ValueChanged<_FriendProfile> onProfileTap;
 
   @override
   Widget build(BuildContext context) {
@@ -3979,7 +4043,13 @@ class _LeaderboardPage extends StatelessWidget {
                 child: Column(
                   children: [
                     for (var i = 0; i < leaderboard.length; i++)
-                      _LeaderboardTile(rank: i + 1, entry: leaderboard[i]),
+                      _LeaderboardTile(
+                        rank: i + 1,
+                        entry: leaderboard[i],
+                        onTap: leaderboard[i].profile == null
+                            ? null
+                            : () => onProfileTap(leaderboard[i].profile!),
+                      ),
                   ],
                 ),
               ),
@@ -3992,14 +4062,20 @@ class _LeaderboardPage extends StatelessWidget {
 }
 
 class _LeaderboardTile extends StatelessWidget {
-  const _LeaderboardTile({required this.rank, required this.entry});
+  const _LeaderboardTile({
+    required this.rank,
+    required this.entry,
+    this.onTap,
+  });
 
   final int rank;
   final _LeaderboardEntry entry;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
+      onTap: onTap,
       leading: CircleAvatar(
         backgroundColor: rank == 1 ? gdAccentSoft : gdPrimarySoft,
         child:
@@ -4008,10 +4084,22 @@ class _LeaderboardTile extends StatelessWidget {
       title: Text(
         entry.name,
         style: TextStyle(
-            fontWeight: FontWeight.w900,
-            color: entry.isYou ? gdPrimaryDark : gdInk),
+          fontWeight: FontWeight.w900,
+          color: entry.isYou ? gdPrimaryDark : gdInk,
+          decoration: onTap == null ? null : TextDecoration.underline,
+          decorationColor: entry.isYou ? gdPrimaryDark : gdInk,
+        ),
       ),
-      trailing: Chip(label: Text('${entry.streak} day streak')),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Chip(label: Text('${entry.streak} day streak')),
+          if (onTap != null) ...[
+            const SizedBox(width: 6),
+            Icon(Icons.chevron_right_rounded, color: gdMuted),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -4578,11 +4666,17 @@ class _PublicProfile {
 }
 
 class _LeaderboardEntry {
-  const _LeaderboardEntry(this.name, this.streak, {this.isYou = false});
+  const _LeaderboardEntry(
+    this.name,
+    this.streak, {
+    this.isYou = false,
+    this.profile,
+  });
 
   final String name;
   final int streak;
   final bool isYou;
+  final _FriendProfile? profile;
 }
 
 class _SegmentButton extends StatelessWidget {
