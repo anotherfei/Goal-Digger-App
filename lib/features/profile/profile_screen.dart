@@ -219,8 +219,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final completedGoals = goals
         .where((goal) => goal.tasks.isNotEmpty && goal.progress >= 1)
         .length;
-    final joinedCommunities =
-        communities.where((community) => community.joined).length;
     final progress = tasks.isEmpty ? 0.0 : completedTasks / tasks.length;
 
     return Scaffold(
@@ -302,43 +300,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       completedTasks: completedTasks,
                       focusMinutes: focusMinutes,
                       friends: friends.length,
-                    ),
-                    const SizedBox(height: 14),
-                    _AccountSecuritySection(
-                      email: email,
-                      isGuest: isGuest,
-                      emailVerified: emailVerified,
-                      signedInWith: signedInWith,
-                      providerIds: providerIds,
-                      onSendEmailVerification: () =>
-                          _sendVerificationEmail(context),
-                      onRefreshEmailVerification: () =>
-                          _refreshVerification(context),
-                      onSendPasswordReset: () => _sendPasswordReset(context),
-                      onUnavailable: (title, message) =>
-                          _showInfo(context, title: title, message: message),
-                    ),
-                    const SizedBox(height: 14),
-                    _SocialPrivacySection(
-                      friends: friends.length,
-                      joinedCommunities: joinedCommunities,
-                      totalCommunities: communities.length,
-                      friendProgressSharing: friendProgressSharing,
-                      onFriendProgressSharingChanged: _setFriendProgressSharing,
-                    ),
-                    const SizedBox(height: 14),
-                    _PreferencesSection(
-                      routines: routines.length,
-                      goalReminders: goalReminders,
-                      onGoalRemindersChanged: _setGoalReminders,
-                      onUnavailable: (title, message) =>
-                          _showInfo(context, title: title, message: message),
-                    ),
-                    const SizedBox(height: 14),
-                    _DangerZoneSection(
-                      isGuest: isGuest,
-                      onSignOut: onSignOut,
-                      onDeleteAccount: () => _confirmDeleteAccount(context),
                     ),
                   ],
                 ),
