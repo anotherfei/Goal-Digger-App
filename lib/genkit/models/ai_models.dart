@@ -292,6 +292,9 @@ class AgentPlannerResponse {
     this.goalRejectionReason,
     this.goalRefinementPrompt,
     this.strategy,
+    this.positiveGoal = true,
+    this.suggestedDeadlineDays,
+    this.deadlineSuggestionReason,
     this.milestones = const [],
     this.milestoneNote,
     this.milestoneNeedsConfirmation = false,
@@ -322,6 +325,23 @@ class AgentPlannerResponse {
 
   /// One-line description of the planning approach the agent chose.
   final String? strategy;
+
+  /// Positive goal filtering (§9.1): false when the goal was rejected for
+  /// negative/destructive framing. [goalRejectionReason] explains why and
+  /// [goalRefinementPrompt] asks the user to re-input the goal positively.
+  final bool positiveGoal;
+
+  /// When the agent judged the chosen deadline unrealistic for an ordinary
+  /// person, the day count (from today) it recommends instead; null when the
+  /// deadline is fine or the goal was rejected.
+  final int? suggestedDeadlineDays;
+
+  /// The agent's reasoning behind [suggestedDeadlineDays].
+  final String? deadlineSuggestionReason;
+
+  /// True when the agent proposed a deadline change for the user to accept
+  /// or decline.
+  bool get hasDeadlineSuggestion => suggestedDeadlineDays != null;
 
   /// Ready-to-use milestone titles produced by the createMilestones tool.
   final List<String> milestones;
@@ -362,6 +382,11 @@ class AgentPlannerResponse {
 
   factory AgentPlannerResponse.fromJson(Map<String, dynamic> json) {
     final plan = _asStrMap(json['plan']);
+    // Wire format: deadlineSuggestion: { suggestedDays: int, reason: string } | null
+    final deadline = json['deadlineSuggestion'] is Map<dynamic, dynamic>
+        ? _asStrMap(json['deadlineSuggestion'])
+        : const <String, dynamic>{};
+    final suggestedDays = (deadline['suggestedDays'] as num?)?.round();
     return AgentPlannerResponse(
       plan: plan,
       reflections: (json['reflections'] as List<dynamic>? ?? [])
@@ -375,6 +400,10 @@ class AgentPlannerResponse {
       goalRejectionReason: json['goalRejectionReason']?.toString(),
       goalRefinementPrompt: json['goalRefinementPrompt']?.toString(),
       strategy: (json['strategy'] ?? plan['strategy'])?.toString(),
+      positiveGoal: json['positiveGoal'] as bool? ?? true,
+      suggestedDeadlineDays:
+          suggestedDays != null && suggestedDays >= 1 ? suggestedDays : null,
+      deadlineSuggestionReason: deadline['reason']?.toString(),
       milestones: (json['milestones'] as List<dynamic>? ?? [])
           .map((e) => e.toString())
           .where((s) => s.trim().isNotEmpty)
@@ -388,4 +417,234 @@ class AgentPlannerResponse {
       degraded: json['degraded'] as bool? ?? false,
     );
   }
+}
+
+// ── Task Modification Agent (§6.3) ───────────────────────────────────────────
+
+class TaskModificationRequest {
+  const TaskModificationRequest({
+    required this.goal,
+    required this.request,
+    required this.currentTasks,
+    this.context = const {},
+    this.force = false,
+  });
+
+  final String goal;
+  final String request;
+  final List<GeneratedTask> currentTasks;
+  final Map<String, dynamic> context;
+
+  /// True when the user already answered "yes" to a confirmation question.
+  final bool force;
+
+  Map<String, dynamic> toJson() => {
+        'goal': goal,
+        'request': request,
+        'currentTasks': currentTasks
+            .map((t) => {
+                  'title': t.title,
+                  'durationMinutes': t.durationMinutes,
+                  'load': t.load,
+                  'dayOffset': t.dayOffset,
+                })
+            .toList(),
+        'context': context,
+        'force': force,
+      };
+}
+
+class TaskModificationResponse {
+  const TaskModificationResponse({
+    required this.status,
+    required this.tasks,
+    required this.explanation,
+    this.question,
+    this.degraded = false,
+  });
+
+  /// 'applied' | 'clarify' | 'confirm' | 'rejected'
+  final String status;
+
+  /// The full revised plan when [status] == 'applied'; otherwise the
+  /// unchanged current plan echoed back.
+  final List<GeneratedTask> tasks;
+
+  /// What the agent did or why it declined — always user-readable.
+  final String explanation;
+
+  /// Clarifying or yes/no confirmation question, when status asks one.
+  final String? question;
+
+  final bool degraded;
+
+  bool get applied => status == 'applied';
+  bool get needsConfirmation => status == 'confirm';
+  bool get needsClarification => status == 'clarify';
+
+  factory TaskModificationResponse.fromJson(Map<String, dynamic> json) =>
+      TaskModificationResponse(
+        status: json['status'] as String? ?? 'rejected',
+        tasks: (json['tasks'] as List<dynamic>? ?? [])
+            .whereType<Map<dynamic, dynamic>>()
+            .map((t) => GeneratedTask.fromJson(
+                t.map((k, v) => MapEntry(k.toString(), v))))
+            .toList(),
+        explanation: json['explanation'] as String? ?? '',
+        question: json['question']?.toString(),
+        degraded: json['degraded'] as bool? ?? false,
+      );
+}
+
+// ── Task Reassignment Agent (§6.4) ───────────────────────────────────────────
+
+class ReassignableTaskInfo {
+  const ReassignableTaskInfo({
+    required this.id,
+    required this.goalId,
+    required this.title,
+    required this.durationMinutes,
+    required this.load,
+    required this.dayOffset,
+    required this.done,
+  });
+
+  final String id;
+  final String goalId;
+  final String title;
+  final int durationMinutes;
+  final String load;
+  final int dayOffset; // days from today (0 = today)
+  final bool done;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'goalId': goalId,
+        'title': title,
+        'durationMinutes': durationMinutes,
+        'load': load,
+        'dayOffset': dayOffset,
+        'done': done,
+      };
+}
+
+class ReassignGoalInfo {
+  const ReassignGoalInfo({
+    required this.id,
+    required this.title,
+    required this.importance,
+    required this.deadlineDays,
+  });
+
+  final String id;
+  final String title;
+  final int importance; // 1–5
+  final int deadlineDays; // days from today until deadline
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'importance': importance,
+        'deadlineDays': deadlineDays,
+      };
+}
+
+class RoutineInfo {
+  const RoutineInfo({
+    required this.title,
+    required this.startsAt,
+    required this.repeat,
+  });
+
+  final String title;
+  final String startsAt; // ISO timestamp or HH:mm
+  final String repeat;
+
+  Map<String, dynamic> toJson() => {
+        'title': title,
+        'startsAt': startsAt,
+        'repeat': repeat,
+      };
+}
+
+class TaskReassignmentRequest {
+  const TaskReassignmentRequest({
+    required this.trigger,
+    required this.tasks,
+    required this.goals,
+    this.mood,
+    this.routines = const [],
+    this.context = const {},
+  });
+
+  /// 'moodChanged' | 'routineAdded' | 'deadlineApproaching' |
+  /// 'priorityChanged' | 'manual'
+  final String trigger;
+  final List<ReassignableTaskInfo> tasks;
+  final List<ReassignGoalInfo> goals;
+  final String? mood;
+  final List<RoutineInfo> routines;
+  final Map<String, dynamic> context;
+
+  Map<String, dynamic> toJson() => {
+        'trigger': trigger,
+        'tasks': tasks.map((t) => t.toJson()).toList(),
+        'goals': goals.map((g) => g.toJson()).toList(),
+        if (mood != null) 'mood': mood,
+        'routines': routines.map((r) => r.toJson()).toList(),
+        'context': context,
+      };
+}
+
+class ReassignedTaskChange {
+  const ReassignedTaskChange({
+    required this.taskId,
+    required this.goalId,
+    required this.fromDayOffset,
+    required this.toDayOffset,
+    required this.reason,
+  });
+
+  final String taskId;
+  final String goalId;
+  final int fromDayOffset;
+  final int toDayOffset;
+  final String reason;
+
+  factory ReassignedTaskChange.fromJson(Map<String, dynamic> json) =>
+      ReassignedTaskChange(
+        taskId: json['taskId']?.toString() ?? '',
+        goalId: json['goalId']?.toString() ?? '',
+        fromDayOffset: (json['fromDayOffset'] as num?)?.toInt() ?? 0,
+        toDayOffset: (json['toDayOffset'] as num?)?.toInt() ?? 0,
+        reason: json['reason'] as String? ?? '',
+      );
+}
+
+class TaskReassignmentResponse {
+  const TaskReassignmentResponse({
+    required this.changed,
+    required this.changes,
+    required this.explanation,
+    this.degraded = false,
+  });
+
+  final bool changed;
+  final List<ReassignedTaskChange> changes;
+
+  /// Why tasks were (or were not) moved — always user-readable.
+  final String explanation;
+  final bool degraded;
+
+  factory TaskReassignmentResponse.fromJson(Map<String, dynamic> json) =>
+      TaskReassignmentResponse(
+        changed: json['changed'] as bool? ?? false,
+        changes: (json['changes'] as List<dynamic>? ?? [])
+            .whereType<Map<dynamic, dynamic>>()
+            .map((c) => ReassignedTaskChange.fromJson(
+                c.map((k, v) => MapEntry(k.toString(), v))))
+            .toList(),
+        explanation: json['explanation'] as String? ?? '',
+        degraded: json['degraded'] as bool? ?? false,
+      );
 }

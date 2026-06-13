@@ -241,14 +241,17 @@ Create exactly ${target} clear, ordered milestones for this goal: "${goal}".
 ${durationLine}
 ${requestLine}
 
+First, think through what real work this goal actually requires — the concrete activities, in a sensible order — and only then write the milestones.
+
 Rules:
 - Produce EXACTLY ${target} milestones — no more, no fewer.
 - Spread them evenly across the ${
         durationDays !== null ? `${durationDays}-day` : "overall"
       } window so each is a realistic chunk of progress.
-- Each milestone must describe a VISIBLE, CONCRETE outcome (not a vague activity).
+- Every milestone must be a DOABLE ACTION: specific work the user can sit down and complete by themselves (research, write, build, record, practice, publish, …). A reader must be able to answer "what exactly do I do?" from the milestone text alone.
+- NEVER write outcome targets or metrics that depend on other people or luck — no "reach N subscribers/followers/views/sales", no "get X by day Y", no "achieve" or "hit" a number. Describe the WORK that drives the outcome instead (e.g. for a YouTube goal: "Set up the channel name, banner, and description", "Script and record the first video", "Publish two videos and share them in three relevant communities").
 - Start each with an action verb. Use plain language. Do NOT number them.
-- The final milestone should represent the goal being fully done.
+- The final milestone should finish or ship the goal's actual work — still phrased as an action, not a metric.
 
 Respond ONLY with valid JSON: { "milestones": ["...", "..."] }`.trim();
 
@@ -257,10 +260,12 @@ Respond ONLY with valid JSON: { "milestones": ["...", "..."] }`.trim();
         prompt,
         config: {
           temperature: 0.5,
-          // Scale the budget with how many milestones we asked for.
-          maxOutputTokens: Math.min(4096, 400 + target * 50),
+          // Thinking budget so the model reasons about what work the goal
+          // really needs before writing (counts toward maxOutputTokens on
+          // Gemini 2.5, so the cap leaves room for both).
+          maxOutputTokens: Math.min(8192, 1600 + target * 60),
           responseMimeType: "application/json",
-          thinkingConfig: { thinkingBudget: 0 },
+          thinkingConfig: { thinkingBudget: 1024 },
         },
       });
 

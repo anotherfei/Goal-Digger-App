@@ -515,7 +515,8 @@ class _CommunityPageState extends State<CommunityPage> {
     if (uid.isEmpty) return false;
     if (uid.contains(RegExp(r'\s'))) return false;
     if (uid.startsWith('@')) return false;
-    return uid.length >= 6;
+    if (uid.length < 20 || uid.length > 128) return false;
+    return RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(uid);
   }
 
   List<List<T>> _chunks<T>(List<T> values, int size) {
@@ -590,7 +591,6 @@ class _CommunityPageState extends State<CommunityPage> {
         ),
      );
 
-    widget.onAddFriend(displayName);
     _showSnack('$displayName added to your friends.');
   }
 
@@ -606,7 +606,6 @@ class _CommunityPageState extends State<CommunityPage> {
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
-    widget.onDeleteFriend(friend.displayName);
     _showSnack('${friend.displayName} removed.');
   }
 
@@ -772,9 +771,18 @@ class _CommunityPageState extends State<CommunityPage> {
         final currentUser = friendsData.currentUser;
         final friends = friendsData.friends;
         final leaderboard = <_LeaderboardEntry>[
-          _LeaderboardEntry('You', currentUser.streak, isYou: true),
+          _LeaderboardEntry(
+            'You',
+            currentUser.streak,
+            isYou: true,
+            profile: currentUser,
+          ),
           for (final friend in friends)
-            _LeaderboardEntry(friend.displayName, friend.streak),
+            _LeaderboardEntry(
+              friend.displayName,
+              friend.streak,
+              profile: friend,
+            ),
         ]..sort((a, b) => b.streak.compareTo(a.streak));
 
         final topThree = leaderboard.take(3).toList();
@@ -796,7 +804,16 @@ class _CommunityPageState extends State<CommunityPage> {
                 child: Column(
                   children: [
                     for (var i = 0; i < topThree.length; i++)
-                      _LeaderboardTile(rank: i + 1, entry: topThree[i]),
+                      _LeaderboardTile(
+                        rank: i + 1,
+                        entry: topThree[i],
+                        onTap: topThree[i].profile == null
+                            ? null
+                            : () => _openUserDetailsPage(
+                                  context,
+                                  topThree[i].profile!,
+                                ),
+                      ),
                     if (leaderboard.length > 3) ...[
                       const Divider(height: 22),
                       SizedBox(
@@ -986,52 +1003,59 @@ class _CommunityPageState extends State<CommunityPage> {
   }
 
   Future<void> _showJoinCodeDialog() async {
-    final controller = TextEditingController();
     final code = await showDialog<String>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Join with code'),
-          content: TextField(
-            controller: controller,
-            textCapitalization: TextCapitalization.characters,
-            decoration: const InputDecoration(
-              labelText: 'Community code',
-              hintText: 'Example: ABC123',
-            ),
-            onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
-              child: const Text('Join'),
-            ),
-          ],
-        );
-      },
+      builder: (_) => const _JoinCommunityCodeDialog(),
     );
-    controller.dispose();
+
+    if (!mounted) return;
 
     final cleanedCode = code?.trim().toUpperCase();
     if (cleanedCode == null || cleanedCode.isEmpty) return;
 
+    await _joinCommunityByCode(cleanedCode);
+  }
+
+  Future<void> _joinCommunityByCode(String cleanedCode) async {
+    final user = _user;
+    if (user == null) {
+      _showSnack('Sign in before joining a community.');
+      return;
+    }
+
+    if (user.isAnonymous && !kDebugAllowGuestSocialAccess) {
+      _showSnack('Use a full account before joining communities.');
+      return;
+    }
+
     try {
-      final snapshot = await _communitiesCollection
+      var snapshot = await _communitiesCollection
           .where('joinCode', isEqualTo: cleanedCode)
           .limit(1)
           .get();
+
+      if (snapshot.docs.isEmpty) {
+        snapshot = await _communitiesCollection
+            .where('code', isEqualTo: cleanedCode)
+            .limit(1)
+            .get();
+      }
+
+      if (snapshot.docs.isEmpty) {
+        final lowerCode = cleanedCode.toLowerCase();
+        snapshot = await _communitiesCollection
+            .where('joinCode', isEqualTo: lowerCode)
+            .limit(1)
+            .get();
+      }
+
+      if (!mounted) return;
 
       if (snapshot.docs.isEmpty) {
         _showSnack('No community found for code $cleanedCode.');
         return;
       }
 
-      final user = _user;
-      if (user == null) return;
       await _joinCommunity(
         _DbCommunity.fromDoc(snapshot.docs.first, currentUid: user.uid),
       );
@@ -1317,7 +1341,14 @@ class _CommunityPageState extends State<CommunityPage> {
                       )
                     else
                       for (var i = 0; i < topThree.length; i++)
-                        _CommunityLeaderboardTile(rank: i + 1, group: topThree[i]),
+                        _CommunityLeaderboardTile(
+                          rank: i + 1,
+                          group: topThree[i],
+                          onTap: () => _openCommunityDetailsPage(
+                            context,
+                            topThree[i],
+                          ),
+                        ),
                     if (leaderboard.length > 3) ...[
                       const Divider(height: 22),
                       SizedBox(
@@ -1359,7 +1390,7 @@ class _CommunityPageState extends State<CommunityPage> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: () => _openFindCommunitiesPage(context, groups),
+                      onPressed: () => _openFindCommunitiesPage(context),
                       icon: const Icon(Icons.travel_explore_rounded),
                       label: const Text('Find communities'),
                     ),
@@ -1397,14 +1428,18 @@ class _CommunityPageState extends State<CommunityPage> {
     );
   }
 
-  void _openFindCommunitiesPage(
-    BuildContext context,
-    List<_DbCommunity> communities,
-  ) {
+  void _openFindCommunitiesPage(BuildContext context) {
+    final user = _user;
+    if (user == null) {
+      _showSnack('Sign in before finding communities.');
+      return;
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _FindCommunitiesPage(
-          communities: communities,
+          communitiesCollection: _communitiesCollection,
+          currentUid: user.uid,
           onJoin: (group) => unawaited(_joinCommunity(group)),
         ),
       ),
@@ -1422,7 +1457,7 @@ class _CommunityPageState extends State<CommunityPage> {
           onChat: (group) => _openCommunityChatPage(context, group),
           onDetails: (group) => _openCommunityDetailsPage(context, group),
           onDelete: (group) => unawaited(_deleteOrLeaveCommunity(group)),
-          onFindCommunities: () => _openFindCommunitiesPage(context, communities),
+          onFindCommunities: () => _openFindCommunitiesPage(context),
         ),
       ),
     );
@@ -1434,7 +1469,10 @@ class _CommunityPageState extends State<CommunityPage> {
   ) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _CommunityLeaderboardPage(leaderboard: leaderboard),
+        builder: (_) => _CommunityLeaderboardPage(
+          leaderboard: leaderboard,
+          onCommunityTap: (group) => _openCommunityDetailsPage(context, group),
+        ),
       ),
     );
   }
@@ -1482,7 +1520,11 @@ class _CommunityPageState extends State<CommunityPage> {
       BuildContext context, List<_LeaderboardEntry> leaderboard) {
     Navigator.of(context).push(
       MaterialPageRoute(
-          builder: (_) => _LeaderboardPage(leaderboard: leaderboard)),
+        builder: (_) => _LeaderboardPage(
+          leaderboard: leaderboard,
+          onProfileTap: (profile) => _openUserDetailsPage(context, profile),
+        ),
+      ),
     );
   }
 
@@ -1571,6 +1613,58 @@ class _CommunityPageState extends State<CommunityPage> {
           onDelete: (latestGroup) => unawaited(_deleteOrLeaveCommunity(latestGroup)),
         ),
       ),
+    );
+  }
+}
+
+class _JoinCommunityCodeDialog extends StatefulWidget {
+  const _JoinCommunityCodeDialog();
+
+  @override
+  State<_JoinCommunityCodeDialog> createState() =>
+      _JoinCommunityCodeDialogState();
+}
+
+class _JoinCommunityCodeDialogState extends State<_JoinCommunityCodeDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final code = _controller.text.trim();
+    FocusScope.of(context).unfocus();
+    Navigator.of(context).pop(code);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Join with code'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        textCapitalization: TextCapitalization.characters,
+        textInputAction: TextInputAction.done,
+        decoration: const InputDecoration(
+          labelText: 'Community code',
+          hintText: 'Example: ABC123',
+        ),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Join'),
+        ),
+      ],
     );
   }
 }
@@ -1932,11 +2026,13 @@ class _AllCommunitiesPageState extends State<_AllCommunitiesPage> {
 
 class _FindCommunitiesPage extends StatefulWidget {
   const _FindCommunitiesPage({
-    required this.communities,
+    required this.communitiesCollection,
+    required this.currentUid,
     required this.onJoin,
   });
 
-  final List<_DbCommunity> communities;
+  final CollectionReference<Map<String, dynamic>> communitiesCollection;
+  final String currentUid;
   final ValueChanged<_DbCommunity> onJoin;
 
   @override
@@ -1945,6 +2041,7 @@ class _FindCommunitiesPage extends StatefulWidget {
 
 class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
   final TextEditingController _searchController = TextEditingController();
+  final Set<String> _joiningCommunityIds = <String>{};
   String _query = '';
 
   @override
@@ -1953,20 +2050,42 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Stream<List<_DbCommunity>> _communitiesStream() {
+    return widget.communitiesCollection.limit(100).snapshots().map((snapshot) {
+      final communities = snapshot.docs
+          .map((doc) => _DbCommunity.fromDoc(doc, currentUid: widget.currentUid))
+          .toList();
+
+      communities.sort((a, b) {
+        if (a.joined != b.joined) return a.joined ? 1 : -1;
+        return b.similarity.compareTo(a.similarity);
+      });
+
+      return communities;
+    });
+  }
+
+  List<_DbCommunity> _filterCommunities(List<_DbCommunity> communities) {
     final q = _query.trim().toLowerCase();
-    final suggestions = [...widget.communities]
-      ..sort((a, b) => b.similarity.compareTo(a.similarity));
-    final filtered = suggestions.where((group) {
-      if (group.joined) return false;
+
+    return communities.where((group) {
+      if (group.joined || _joiningCommunityIds.contains(group.id)) return false;
       if (q.isEmpty) return true;
       return group.name.toLowerCase().contains(q) ||
           group.tag.toLowerCase().contains(q) ||
           group.description.toLowerCase().contains(q) ||
           group.joinCode.toLowerCase().contains(q);
     }).toList();
+  }
 
+  void _join(_DbCommunity group) {
+    if (_joiningCommunityIds.contains(group.id)) return;
+    setState(() => _joiningCommunityIds.add(group.id));
+    widget.onJoin(group);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Find communities')),
       body: PageScaffold(
@@ -1988,7 +2107,7 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'These are documents from Firestore communities, not dummy data.',
+                      'These are live documents from Firestore communities.',
                       style: TextStyle(
                           color: gdMuted, fontWeight: FontWeight.w700),
                     ),
@@ -2009,23 +2128,54 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
             const SizedBox(height: 16),
             SectionTitle(title: 'Community suggestions'),
             const SizedBox(height: 10),
-            if (filtered.isEmpty)
-              const HelpfulErrorBox(
-                title: 'No suggestions found',
-                message:
-                    'Create a community from the Social page or try another keyword.',
-                actionLabel: 'OK',
-                showAction: false,
-              )
-            else
-              for (final group in filtered)
-                _DbCommunityMatchCard(
-                  group: group,
-                  onJoin: () {
-                    widget.onJoin(group);
-                    setState(() {});
-                  },
-                ),
+            StreamBuilder<List<_DbCommunity>>(
+              stream: _communitiesStream(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    snapshot.data == null) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
+                }
+
+                if (snapshot.hasError) {
+                  return HelpfulErrorBox(
+                    title: 'Community suggestions failed to load',
+                    message:
+                        'Check Firestore rules for communities reads. Details: ${snapshot.error}',
+                    actionLabel: 'OK',
+                    showAction: false,
+                  );
+                }
+
+                final communities = snapshot.data ?? const <_DbCommunity>[];
+                final filtered = _filterCommunities(communities);
+                final joinedCount = communities.where((group) => group.joined).length;
+
+                if (filtered.isEmpty) {
+                  return HelpfulErrorBox(
+                    title: 'No suggestions found',
+                    message:
+                        'Loaded ${communities.length} communities from Firestore. $joinedCount are detected as joined. If you expected another result, check that the other community document is inside the communities collection and that its members array does not contain this UID: ${widget.currentUid}.',
+                    actionLabel: 'OK',
+                    showAction: false,
+                  );
+                }
+
+                return Column(
+                  children: [
+                    for (final group in filtered)
+                      _DbCommunityMatchCard(
+                        group: group,
+                        onJoin: () => _join(group),
+                      ),
+                  ],
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -2685,12 +2835,25 @@ class _DirectChatPageState extends State<_DirectChatPage> {
                     ),
                     const SizedBox(width: 8),
                     IconButton.filled(
+                      style: IconButton.styleFrom(
+                        backgroundColor: gdPrimary,
+                        foregroundColor: gdOnDark,
+                        disabledBackgroundColor:
+                            gdPrimary.withValues(alpha: 0.45),
+                        disabledForegroundColor:
+                            gdOnDark.withValues(alpha: 0.75),
+                        fixedSize: const Size(54, 54),
+                      ),
                       onPressed: _sending ? null : () => unawaited(_send()),
                       icon: _sending
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 18,
                               height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2))
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: gdOnDark,
+                              ),
+                            )
                           : const Icon(Icons.send_rounded),
                     ),
                   ],
@@ -3185,7 +3348,10 @@ class _UserDetailPage extends StatelessWidget {
   FirebaseFirestore get _db => FirebaseFirestore.instance;
 
   Stream<DocumentSnapshot<Map<String, dynamic>>> _profileStream() {
-    return _db.collection('public_profiles').doc(initialProfile.uid).snapshots();
+    return _db
+        .collection('public_profiles')
+        .doc(initialProfile.uid)
+        .snapshots();
   }
 
   _FriendProfile _profileFromSnapshot(
@@ -3208,23 +3374,60 @@ class _UserDetailPage extends StatelessWidget {
     );
   }
 
-  String _shortId(String value) {
-    if (value.length <= 12) return value;
-    return '${value.substring(0, 8)}...${value.substring(value.length - 4)}';
+  String _profileTitle(_FriendProfile profile) {
+    if (profile.streak >= 30) return 'Goal Crusher';
+    if (profile.streak >= 14) return 'Sprint Builder';
+    if (profile.streak >= 7) return 'Focused Starter';
+    if (profile.streak > 0) return 'Momentum Maker';
+    return 'Goal Explorer';
   }
 
-  String _formatTimestamp(Timestamp? timestamp) {
-    if (timestamp == null) return 'Not saved yet';
-    final date = timestamp.toDate().toLocal();
-    String two(int value) => value.toString().padLeft(2, '0');
-    return '${date.year}-${two(date.month)}-${two(date.day)} '
-        '${two(date.hour)}:${two(date.minute)}';
+  int _nextStreakMilestone(int streak) {
+    for (final milestone in const [7, 14, 30, 60, 100]) {
+      if (streak < milestone) return milestone;
+    }
+    return ((streak ~/ 50) + 1) * 50;
+  }
+
+  Stream<List<_DbCommunity>> _sharedCommunitiesStream(String profileUid) {
+    final uid = currentUid;
+    if (uid == null || uid.trim().isEmpty) return Stream.value(const []);
+
+    return _db
+        .collection('communities')
+        .where('members', arrayContains: uid)
+        .limit(80)
+        .snapshots()
+        .map((snapshot) {
+      final communities = snapshot.docs
+          .map((doc) => _DbCommunity.fromDoc(doc, currentUid: uid))
+          .where((group) => group.membersList.contains(profileUid))
+          .toList();
+
+      communities.sort((a, b) {
+        final tagCompare = a.tag.toLowerCase().compareTo(b.tag.toLowerCase());
+        if (tagCompare != 0) return tagCompare;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+
+      return communities;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    GdColors.setBrightness(Theme.of(context).brightness);
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile info')),
+      backgroundColor: gdBackground,
+      appBar: AppBar(
+        centerTitle: true,
+        title: const Text('Profile'),
+        leading: IconButton(
+          tooltip: 'Back',
+          onPressed: () => Navigator.of(context).pop(),
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
+      ),
       body: PageScaffold(
         child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           stream: _profileStream(),
@@ -3248,158 +3451,53 @@ class _UserDetailPage extends StatelessWidget {
             }
 
             final doc = snapshot.data;
-            final data = doc?.data() ?? const <String, dynamic>{};
             final profile = _profileFromSnapshot(doc);
             final isMe = currentUid != null && currentUid == profile.uid;
-            final createdAt = data['createdAt'];
-            final updatedAt = data['updatedAt'];
             final hasPublicProfile = doc?.exists ?? false;
             final canShowActions = !isMe &&
                 (onChat != null ||
                     (!profile.isFriend && onAdd != null) ||
                     (profile.isFriend && onDelete != null));
+            final nextMilestone = _nextStreakMilestone(profile.streak);
 
             return ListView(
-              padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 36),
               children: [
-                AppCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(22),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 980),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _Avatar(
-                          photoUrl: profile.photoUrl,
-                          label: profile.displayName,
-                          radius: 44,
+                        _CommunityProfileHeader(
+                          profile: profile,
+                          title: _profileTitle(profile),
+                          isMe: isMe,
+                          hasPublicProfile: hasPublicProfile,
+                          canShowActions: canShowActions,
+                          onChat: onChat,
+                          onAdd: onAdd,
+                          onDelete: onDelete,
                         ),
                         const SizedBox(height: 14),
-                        Text(
-                          profile.displayName,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w900,
-                            color: gdInk,
-                          ),
+                        _CommunityProgressSection(
+                          profile: profile,
+                          isMe: isMe,
+                          hasPublicProfile: hasPublicProfile,
+                          nextMilestone: nextMilestone,
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          profile.username,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: gdMuted,
-                            fontWeight: FontWeight.w800,
-                          ),
+                        const SizedBox(height: 14),
+                        _CommunityAchievementsSection(
+                          profile: profile,
+                          isMe: isMe,
+                          hasPublicProfile: hasPublicProfile,
                         ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          alignment: WrapAlignment.center,
-                          children: [
-                            if (isMe) const Chip(label: Text('You')),
-                            if (profile.isFriend)
-                              const Chip(label: Text('Friend')),
-                            if (profile.isChatOnly)
-                              const Chip(label: Text('Chat request')),
-                            if (!hasPublicProfile)
-                              const Chip(label: Text('Fallback profile')),
-                          ],
-                        ),
-                        if (canShowActions) ...[
-                          const SizedBox(height: 18),
-                          Row(
-                            children: [
-                              if (onChat != null) ...[
-                                Expanded(
-                                  child: FilledButton.icon(
-                                    onPressed: () => onChat!(profile),
-                                    icon: const Icon(Icons.chat_bubble_rounded),
-                                    label: const Text('Message'),
-                                  ),
-                                ),
-                              ],
-                              if (!profile.isFriend && onAdd != null) ...[
-                                if (onChat != null) const SizedBox(width: 10),
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: () => onAdd!(profile),
-                                    icon: const Icon(Icons.person_add_alt_1_rounded),
-                                    label: const Text('Add friend'),
-                                  ),
-                                ),
-                              ],
-                              if (profile.isFriend && onDelete != null) ...[
-                                if (onChat != null) const SizedBox(width: 10),
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: () => onDelete!(profile),
-                                    icon: const Icon(Icons.delete_outline_rounded),
-                                    label: const Text('Remove'),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                AppCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        _CommunityInfoRow(
-                          icon: Icons.badge_rounded,
-                          label: 'User UID',
-                          value: _shortId(profile.uid),
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.alternate_email_rounded,
-                          label: 'Username',
-                          value: profile.username,
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.local_fire_department_rounded,
-                          label: 'Streak',
-                          value: '${profile.streak} day streak',
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.verified_user_rounded,
-                          label: 'Profile source',
-                          value: hasPublicProfile
-                              ? 'public_profiles/${profile.uid}'
-                              : 'Fallback from chat/member data',
-                        ),
-                        if (profile.lastMessageText.isNotEmpty) ...[
-                          const Divider(height: 20),
-                          _CommunityInfoRow(
-                            icon: Icons.chat_bubble_rounded,
-                            label: 'Last chat',
-                            value: profile.lastMessageText,
-                          ),
-                        ],
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.calendar_month_rounded,
-                          label: 'Created',
-                          value: _formatTimestamp(
-                            createdAt is Timestamp ? createdAt : null,
-                          ),
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.update_rounded,
-                          label: 'Updated',
-                          value: _formatTimestamp(
-                            updatedAt is Timestamp ? updatedAt : null,
-                          ),
+                        const SizedBox(height: 14),
+                        _SharedCommunitiesSection(
+                          isMe: isMe,
+                          profileName: profile.displayName,
+                          communitiesStream:
+                              _sharedCommunitiesStream(profile.uid),
                         ),
                       ],
                     ),
@@ -3409,6 +3507,789 @@ class _UserDetailPage extends StatelessWidget {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+class _CommunityProfileHeader extends StatelessWidget {
+  const _CommunityProfileHeader({
+    required this.profile,
+    required this.title,
+    required this.isMe,
+    required this.hasPublicProfile,
+    required this.canShowActions,
+    required this.onChat,
+    required this.onAdd,
+    required this.onDelete,
+  });
+
+  final _FriendProfile profile;
+  final String title;
+  final bool isMe;
+  final bool hasPublicProfile;
+  final bool canShowActions;
+  final ValueChanged<_FriendProfile>? onChat;
+  final ValueChanged<_FriendProfile>? onAdd;
+  final ValueChanged<_FriendProfile>? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _Avatar(
+                  photoUrl: profile.photoUrl,
+                  label: profile.displayName,
+                  radius: 40,
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(profile.displayName, style: GdText.headlineMedium),
+                      const SizedBox(height: 6),
+                      Text(
+                        profile.username,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: gdMuted,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (isMe)
+                            _CommunityStatusChip(
+                              icon: Icons.person_rounded,
+                              label: 'You',
+                              color: gdPrimary,
+                            ),
+                          if (profile.isFriend)
+                            _CommunityStatusChip(
+                              icon: Icons.group_rounded,
+                              label: 'Friend',
+                              color: gdPrimary,
+                            ),
+                          if (profile.isChatOnly)
+                            _CommunityStatusChip(
+                              icon: Icons.chat_bubble_rounded,
+                              label: 'Chat request',
+                              color: gdInfo,
+                            ),
+                          _CommunityStatusChip(
+                            icon: hasPublicProfile
+                                ? Icons.verified_rounded
+                                : Icons.info_outline_rounded,
+                            label: hasPublicProfile
+                                ? 'Public profile'
+                                : 'Limited profile',
+                            color: hasPublicProfile ? gdSuccess : gdWarning,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: gdPrimarySoft,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: gdBorder),
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: gdSurface,
+                    child: Icon(
+                      Icons.workspace_premium_rounded,
+                      color: gdPrimary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: GdText.titleMedium),
+                        const SizedBox(height: 3),
+                        Text(
+                          _subtitle,
+                          style: TextStyle(
+                            color: gdMuted,
+                            fontWeight: FontWeight.w700,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (canShowActions) ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  if (onChat != null) ...[
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => onChat!(profile),
+                        icon: const Icon(Icons.chat_bubble_rounded),
+                        label: const Text('Message'),
+                      ),
+                    ),
+                  ],
+                  if (!profile.isFriend && onAdd != null) ...[
+                    if (onChat != null) const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => onAdd!(profile),
+                        icon: const Icon(Icons.person_add_alt_1_rounded),
+                        label: const Text('Add friend'),
+                      ),
+                    ),
+                  ],
+                  if (profile.isFriend && onDelete != null) ...[
+                    if (onChat != null) const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => onDelete!(profile),
+                        icon: const Icon(Icons.person_remove_rounded),
+                        label: const Text('Remove'),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String get _subtitle {
+    if (isMe) return 'This is your public community profile.';
+    if (profile.isFriend) return 'You are connected in the community.';
+    if (profile.isChatOnly) return 'You have an active chat with this member.';
+    return 'View their public momentum and connect when you are ready.';
+  }
+}
+
+class _CommunityProgressSection extends StatelessWidget {
+  const _CommunityProgressSection({
+    required this.profile,
+    required this.isMe,
+    required this.hasPublicProfile,
+    required this.nextMilestone,
+  });
+
+  final _FriendProfile profile;
+  final bool isMe;
+  final bool hasPublicProfile;
+  final int nextMilestone;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = (profile.streak / nextMilestone).clamp(0.0, 1.0);
+
+    return AppCard(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _CommunitySectionHeader(
+              icon: Icons.insights_rounded,
+              title: 'Progress',
+              subtitle:
+                  'A quick read on ${isMe ? 'your' : 'their'} current momentum.',
+            ),
+            const SizedBox(height: 16),
+            LinearProgressIndicator(
+              value: progress,
+              minHeight: 10,
+              backgroundColor: gdPrimarySoft,
+              color: gdPrimary,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              profile.streak >= nextMilestone
+                  ? '${profile.streak} day streak'
+                  : '${profile.streak}/$nextMilestone days to the next milestone',
+              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                _CommunityMetricTile(
+                  icon: Icons.local_fire_department_rounded,
+                  label: 'Streak',
+                  value: '${profile.streak} days',
+                ),
+                _CommunityMetricTile(
+                  icon: Icons.group_rounded,
+                  label: 'Connection',
+                  value: isMe
+                      ? 'You'
+                      : profile.isFriend
+                          ? 'Friend'
+                          : 'Member',
+                ),
+                _CommunityMetricTile(
+                  icon: Icons.chat_bubble_rounded,
+                  label: 'Chat',
+                  value: profile.hasUnread
+                      ? 'Unread'
+                      : profile.hasChat
+                          ? 'Active'
+                          : 'None',
+                ),
+                _CommunityMetricTile(
+                  icon: Icons.verified_user_rounded,
+                  label: 'Profile',
+                  value: hasPublicProfile ? 'Public' : 'Limited',
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CommunityAchievementsSection extends StatelessWidget {
+  const _CommunityAchievementsSection({
+    required this.profile,
+    required this.isMe,
+    required this.hasPublicProfile,
+  });
+
+  final _FriendProfile profile;
+  final bool isMe;
+  final bool hasPublicProfile;
+
+  @override
+  Widget build(BuildContext context) {
+    final achievements = [
+      _CommunityAchievementData(
+        icon: Icons.local_fire_department_rounded,
+        title: _streakTitle,
+        subtitle: _streakSubtitle,
+        color: gdAccent,
+      ),
+      _CommunityAchievementData(
+        icon: Icons.handshake_rounded,
+        title: isMe
+            ? 'Community host'
+            : profile.isFriend
+                ? 'Accountability friend'
+                : 'Community member',
+        subtitle: isMe
+            ? 'Showing up in social spaces.'
+            : profile.isFriend
+                ? 'Connected with you.'
+                : 'Open to connect.',
+        color: gdPrimary,
+      ),
+      _CommunityAchievementData(
+        icon: Icons.chat_bubble_rounded,
+        title: profile.hasChat ? 'Chat active' : 'Conversation ready',
+        subtitle: profile.hasUnread
+            ? 'You have a new message.'
+            : profile.hasChat
+                ? 'Recent accountability chat.'
+                : 'Start with a quick check-in.',
+        color: gdInfo,
+      ),
+      _CommunityAchievementData(
+        icon: hasPublicProfile
+            ? Icons.verified_rounded
+            : Icons.info_outline_rounded,
+        title: hasPublicProfile ? 'Public profile' : 'Limited profile',
+        subtitle: hasPublicProfile
+            ? 'Visible in friend search.'
+            : 'Using available chat details.',
+        color: hasPublicProfile ? gdSuccess : gdWarning,
+      ),
+    ];
+
+    return AppCard(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _CommunitySectionHeader(
+              icon: Icons.emoji_events_rounded,
+              title: 'Achievements',
+              subtitle: 'Badges from momentum and community activity.',
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final achievement in achievements)
+                  _CommunityAchievementTile(data: achievement),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String get _streakTitle {
+    if (profile.streak >= 30) return '30-day fire';
+    if (profile.streak >= 14) return 'Two-week run';
+    if (profile.streak >= 7) return 'Week streak';
+    if (profile.streak > 0) return 'Streak starter';
+    return 'Fresh start';
+  }
+
+  String get _streakSubtitle {
+    if (profile.streak > 0) return '${profile.streak} days in motion.';
+    return 'Ready for the first streak.';
+  }
+}
+
+class _SharedCommunitiesSection extends StatelessWidget {
+  const _SharedCommunitiesSection({
+    required this.isMe,
+    required this.profileName,
+    required this.communitiesStream,
+  });
+
+  final bool isMe;
+  final String profileName;
+  final Stream<List<_DbCommunity>> communitiesStream;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: StreamBuilder<List<_DbCommunity>>(
+          stream: communitiesStream,
+          builder: (context, snapshot) {
+            final communities = snapshot.data ?? const <_DbCommunity>[];
+            final tags = _interestTags(communities);
+            final visibleCommunities = communities.take(3).toList();
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _CommunitySectionHeader(
+                  icon: Icons.diversity_3_rounded,
+                  title: isMe ? 'Communities' : 'Shared communities',
+                  subtitle: isMe
+                      ? 'Groups and interests on your profile.'
+                      : 'Mutual groups and interests you have in common.',
+                ),
+                const SizedBox(height: 16),
+                if (snapshot.hasError)
+                  HelpfulErrorBox(
+                    title: 'Shared communities unavailable',
+                    message:
+                        'Could not load mutual communities right now. Details: ${snapshot.error}',
+                    actionLabel: 'OK',
+                    showAction: false,
+                  )
+                else if (snapshot.connectionState == ConnectionState.waiting &&
+                    snapshot.data == null)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: LinearProgressIndicator(),
+                  )
+                else if (communities.isEmpty)
+                  _CommunityEmptyInsight(
+                    icon: Icons.group_add_rounded,
+                    title: isMe
+                        ? 'No communities yet'
+                        : 'No shared communities yet',
+                    message: isMe
+                        ? 'Join a community to show interests here.'
+                        : 'Join the same community as $profileName to build a shared accountability space.',
+                  )
+                else ...[
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final tag in tags)
+                        _CommunityInterestChip(label: tag),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  for (var i = 0; i < visibleCommunities.length; i++) ...[
+                    _SharedCommunityTile(community: visibleCommunities[i]),
+                    if (i != visibleCommunities.length - 1)
+                      const Divider(height: 18),
+                  ],
+                  if (communities.length > 3) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      '+${communities.length - 3} more shared communities',
+                      style: TextStyle(
+                        color: gdMuted,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ],
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  List<String> _interestTags(List<_DbCommunity> communities) {
+    final tags = <String>[];
+    final seen = <String>{};
+    for (final community in communities) {
+      final tag = community.tag.trim();
+      if (tag.isEmpty) continue;
+      if (seen.add(tag.toLowerCase())) tags.add(tag);
+    }
+    return tags.take(6).toList();
+  }
+}
+
+class _CommunityAchievementData {
+  const _CommunityAchievementData({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+}
+
+class _CommunityAchievementTile extends StatelessWidget {
+  const _CommunityAchievementTile({required this.data});
+
+  final _CommunityAchievementData data;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 148,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: gdCardLight,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: gdBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 17,
+            backgroundColor: data.color.withValues(alpha: 0.12),
+            child: Icon(data.icon, color: data.color, size: 19),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            data.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: gdInk,
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            data.subtitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: gdMuted,
+              fontSize: 12,
+              height: 1.25,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommunityInterestChip extends StatelessWidget {
+  const _CommunityInterestChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: gdPrimarySoft,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: gdBorder),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: gdPrimary,
+          fontWeight: FontWeight.w900,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+}
+
+class _SharedCommunityTile extends StatelessWidget {
+  const _SharedCommunityTile({required this.community});
+
+  final _DbCommunity community;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          radius: 20,
+          backgroundColor: gdPrimarySoft,
+          child: Icon(Icons.groups_rounded, color: gdPrimary, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                community.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: gdInk,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                '${community.tag} - ${community.members} members',
+                style: TextStyle(
+                  color: gdMuted,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CommunityEmptyInsight extends StatelessWidget {
+  const _CommunityEmptyInsight({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: gdCardLight,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: gdBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            backgroundColor: gdPrimarySoft,
+            child: Icon(icon, color: gdPrimary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: GdText.titleMedium),
+                const SizedBox(height: 4),
+                Text(
+                  message,
+                  style: TextStyle(
+                    color: gdMuted,
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommunitySectionHeader extends StatelessWidget {
+  const _CommunitySectionHeader({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          backgroundColor: gdPrimarySoft,
+          child: Icon(icon, color: gdPrimary),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: GdText.titleLarge),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: gdMuted,
+                  fontWeight: FontWeight.w700,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CommunityStatusChip extends StatelessWidget {
+  const _CommunityStatusChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: gdInk,
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommunityMetricTile extends StatelessWidget {
+  const _CommunityMetricTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 132,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: gdCardLight,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: gdBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: gdPrimary),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: gdInk,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          Text(
+            label,
+            style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+          ),
+        ],
       ),
     );
   }
@@ -3781,13 +4662,25 @@ class _CommunityChatPageState extends State<_CommunityChatPage> {
                     ),
                     const SizedBox(width: 8),
                     IconButton.filled(
+                      style: IconButton.styleFrom(
+                        backgroundColor: gdPrimary,
+                        foregroundColor: gdOnDark,
+                        disabledBackgroundColor:
+                            gdPrimary.withValues(alpha: 0.45),
+                        disabledForegroundColor:
+                            gdOnDark.withValues(alpha: 0.75),
+                        fixedSize: const Size(54, 54),
+                      ),
                       onPressed:
                           !_isMember || _sending ? null : () => unawaited(_send()),
                       icon: _sending
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 18,
                               height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: gdOnDark,
+                              ),
                             )
                           : const Icon(Icons.send_rounded),
                     ),
@@ -3803,9 +4696,13 @@ class _CommunityChatPageState extends State<_CommunityChatPage> {
 }
 
 class _CommunityLeaderboardPage extends StatelessWidget {
-  const _CommunityLeaderboardPage({required this.leaderboard});
+  const _CommunityLeaderboardPage({
+    required this.leaderboard,
+    required this.onCommunityTap,
+  });
 
   final List<_DbCommunity> leaderboard;
+  final ValueChanged<_DbCommunity> onCommunityTap;
 
   @override
   Widget build(BuildContext context) {
@@ -3822,7 +4719,10 @@ class _CommunityLeaderboardPage extends StatelessWidget {
                   children: [
                     for (var i = 0; i < leaderboard.length; i++)
                       _CommunityLeaderboardTile(
-                          rank: i + 1, group: leaderboard[i]),
+                        rank: i + 1,
+                        group: leaderboard[i],
+                        onTap: () => onCommunityTap(leaderboard[i]),
+                      ),
                   ],
                 ),
               ),
@@ -3835,34 +4735,59 @@ class _CommunityLeaderboardPage extends StatelessWidget {
 }
 
 class _CommunityLeaderboardTile extends StatelessWidget {
-  const _CommunityLeaderboardTile({required this.rank, required this.group});
+  const _CommunityLeaderboardTile({
+    required this.rank,
+    required this.group,
+    this.onTap,
+  });
 
   final int rank;
   final _DbCommunity group;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
+      onTap: onTap,
       leading: CircleAvatar(
         backgroundColor: rank == 1 ? gdAccentSoft : gdPrimarySoft,
         child:
             Text('#$rank', style: const TextStyle(fontWeight: FontWeight.w900)),
       ),
-      title:
-          Text(group.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+      title: Text(
+        group.name,
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          decoration: onTap == null ? null : TextDecoration.underline,
+          decorationColor: gdInk,
+        ),
+      ),
       subtitle: Text(
         '${group.members} members · ${group.tag}',
         style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
       ),
-      trailing: Chip(label: Text(group.joined ? 'Joined' : '${group.similarity}% fit')),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Chip(label: Text(group.joined ? 'Joined' : '${group.similarity}% fit')),
+          if (onTap != null) ...[
+            const SizedBox(width: 6),
+            Icon(Icons.chevron_right_rounded, color: gdMuted),
+          ],
+        ],
+      ),
     );
   }
 }
 
 class _LeaderboardPage extends StatelessWidget {
-  const _LeaderboardPage({required this.leaderboard});
+  const _LeaderboardPage({
+    required this.leaderboard,
+    required this.onProfileTap,
+  });
 
   final List<_LeaderboardEntry> leaderboard;
+  final ValueChanged<_FriendProfile> onProfileTap;
 
   @override
   Widget build(BuildContext context) {
@@ -3878,7 +4803,13 @@ class _LeaderboardPage extends StatelessWidget {
                 child: Column(
                   children: [
                     for (var i = 0; i < leaderboard.length; i++)
-                      _LeaderboardTile(rank: i + 1, entry: leaderboard[i]),
+                      _LeaderboardTile(
+                        rank: i + 1,
+                        entry: leaderboard[i],
+                        onTap: leaderboard[i].profile == null
+                            ? null
+                            : () => onProfileTap(leaderboard[i].profile!),
+                      ),
                   ],
                 ),
               ),
@@ -3891,14 +4822,20 @@ class _LeaderboardPage extends StatelessWidget {
 }
 
 class _LeaderboardTile extends StatelessWidget {
-  const _LeaderboardTile({required this.rank, required this.entry});
+  const _LeaderboardTile({
+    required this.rank,
+    required this.entry,
+    this.onTap,
+  });
 
   final int rank;
   final _LeaderboardEntry entry;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
+      onTap: onTap,
       leading: CircleAvatar(
         backgroundColor: rank == 1 ? gdAccentSoft : gdPrimarySoft,
         child:
@@ -3907,10 +4844,22 @@ class _LeaderboardTile extends StatelessWidget {
       title: Text(
         entry.name,
         style: TextStyle(
-            fontWeight: FontWeight.w900,
-            color: entry.isYou ? gdPrimaryDark : gdInk),
+          fontWeight: FontWeight.w900,
+          color: entry.isYou ? gdPrimaryDark : gdInk,
+          decoration: onTap == null ? null : TextDecoration.underline,
+          decorationColor: entry.isYou ? gdPrimaryDark : gdInk,
+        ),
       ),
-      trailing: Chip(label: Text('${entry.streak} day streak')),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Chip(label: Text('${entry.streak} day streak')),
+          if (onTap != null) ...[
+            const SizedBox(width: 6),
+            Icon(Icons.chevron_right_rounded, color: gdMuted),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -4477,11 +5426,17 @@ class _PublicProfile {
 }
 
 class _LeaderboardEntry {
-  const _LeaderboardEntry(this.name, this.streak, {this.isYou = false});
+  const _LeaderboardEntry(
+    this.name,
+    this.streak, {
+    this.isYou = false,
+    this.profile,
+  });
 
   final String name;
   final int streak;
   final bool isYou;
+  final _FriendProfile? profile;
 }
 
 class _SegmentButton extends StatelessWidget {

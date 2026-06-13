@@ -61,6 +61,7 @@ Deadline: ${input.deadlineDays} days from now
 
 Rules for each task:
 - title: clear action phrase, max 10 words, starts with a verb
+- Every task must be DOABLE work fully under the user's control — never an outcome target like "reach N subscribers/views/sales" or "get X result". Describe the work that produces the outcome (e.g. "Record and edit the first video", not "Reach 20 subscribers").
 - durationMinutes: 10–60 (realistic, not aspirational)
 - load: "light" (≤15 min, easy), "focus" (16–35 min, needs concentration), "stretch" (>35 min, demanding)
 - dayOffset: which day to schedule it (0 = today, max = deadlineDays - 1)
@@ -80,9 +81,9 @@ Respond ONLY with valid JSON:
           prompt,
           config: {
             temperature: 0.5,
-            maxOutputTokens: 2048,
+            maxOutputTokens: 3072,
             responseMimeType: "application/json",
-            thinkingConfig: { thinkingBudget: 0 },
+            thinkingConfig: { thinkingBudget: 512 },
           },
         });
 

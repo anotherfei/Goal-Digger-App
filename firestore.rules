@@ -186,7 +186,11 @@ service cloud.firestore {
 
     match /chats/{chatId} {
       allow create: if validDirectChatCreate();
-      allow read: if isChatMember(chatId);
+      // Membership is checked against the chat doc's own fields (not via
+      // get()) so list queries like `where('members', arrayContains: uid)`
+      // can be proven by the rules engine; get()-based rules always fail
+      // for queries with PERMISSION_DENIED.
+      allow read: if isSignedIn() && request.auth.uid in resource.data.members;
       allow update: if isChatMember(chatId)
         && request.resource.data.members == resource.data.members
         && request.resource.data.type == resource.data.type;

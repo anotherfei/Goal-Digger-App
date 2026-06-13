@@ -135,6 +135,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
   bool _moodAdvisorAvailable = true;
   int _moodAdviceRequestSerial = 0;
 
+  // Task Reassignment Agent (§6.4) — fires when mood/routines change.
+  bool _reassignAgentAvailable = true;
+  int _reassignRequestSerial = 0;
+  // Blocking loader shown while the reassignment agent runs. Ref-counted so
+  // overlapping requests share one dialog; the route reference lets us remove
+  // exactly our loader even if other dialogs were opened meanwhile.
+  int _reassignLoaderDepth = 0;
+  DialogRoute<void>? _reassignLoaderRoute;
+
   String _selectedMood = 'Okay';
   int _petHappiness = 62;
   int _coins = 140;
@@ -301,6 +310,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     if (_activeUid == uid) return;
     _activeUid = uid;
     _moodAdvisorAvailable = true;
+    _reassignAgentAvailable = true;
     _activateSync(uid);
     unawaited(_ensureUserProfile(authState));
   }
@@ -381,6 +391,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     _moodAdviceTimer?.cancel();
     _moodAdviceRequestSerial++;
     _moodAdvisorAvailable = true;
+    _reassignRequestSerial++;
+    _reassignAgentAvailable = true;
     _notificationPermissionRequest = null;
     _disposeSync();
     setState(() {
@@ -1308,9 +1320,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       if (reason != null && reason.isNotEmpty) reason,
       if (prompt != null && prompt.isNotEmpty) prompt,
     ];
-    return parts.isEmpty
-        ? "I can't generate todos for this goal as written. Please redefine it as a clear, constructive, achievable outcome."
-        : parts.join('\n\n');
+    if (parts.isEmpty) {
+      // §9.1: a failed positive-goal check gets a positivity-specific ask.
+      return plan.positiveGoal
+          ? "I can't generate todos for this goal as written. Please redefine it as a clear, constructive, achievable outcome."
+          : 'This goal is framed around something negative to avoid rather than a positive outcome to reach. Please re-enter it as a positive outcome you want to achieve.';
+    }
+    return parts.join('\n\n');
   }
 
   void _createGoalWithProgress() {
@@ -1400,9 +1416,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
   Future<void> _runGoalBreakdownDialog(
       String title, TextEditingController chatController) async {
     final ai = context.read<GenkitService>();
-    final deadlineDays =
+    // Mutable: the agent can propose a different deadline and, if the user
+    // agrees, the dialog re-plans against the adjusted horizon.
+    var deadlineDays =
         max(1, dateOnly(_newGoalDeadline).difference(today).inDays);
     var currentTitle = title;
+    // Set while the agent's deadline suggestion awaits a yes/no answer.
+    int? pendingDeadlineDays;
     var draftSpecs = <_DraftTaskSpec>[];
     var aiAvailable = false;
     var fromAgent = false;
@@ -1418,12 +1438,29 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     const guardUnavailableReply =
         "I can't verify this goal right now, so I won't generate todos for it.\n\nPlease try again, or rewrite it as a clear, constructive, achievable real-world outcome.";
 
+    // Minutes already booked by existing (incomplete) tasks for each day
+    // between today and the deadline (capped at 30 entries). Lets the agent
+    // judge a deadline as unrealistic when the runway is already full.
+    List<int> existingDailyMinutes() {
+      final horizon = min(deadlineDays, 30);
+      final minutes = List<int>.filled(horizon, 0);
+      for (final task in _allTasks) {
+        if (task.done) continue;
+        final offset = dateOnly(task.scheduledDate).difference(today).inDays;
+        if (offset >= 0 && offset < horizon) {
+          minutes[offset] += task.durationMinutes;
+        }
+      }
+      return minutes;
+    }
+
     Map<String, dynamic> agentContext(
         {String? specialRequest, bool force = false}) {
       return {
         'category': _newGoalCategory,
         'priority': _newGoalPriority,
         'deadlineDays': deadlineDays,
+        'existingDailyMinutes': existingDailyMinutes(),
         'completedToday': _todayCompleted,
         'totalToday': _todayTasks.length,
         'mood': _selectedMood,
@@ -1482,6 +1519,35 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       agentScheduleNote = plan.schedule['scheduleNote']?.toString();
     }
 
+    // The agent flagged the chosen deadline as unrealistic: remember the
+    // proposal and build the reasoning + yes/no question for the chat. The
+    // deadline is only changed if the user agrees; "no" keeps it as chosen.
+    String? captureDeadlineSuggestion(AgentPlannerResponse plan) {
+      final suggested = plan.suggestedDeadlineDays;
+      if (suggested == null || suggested == deadlineDays) return null;
+      pendingDeadlineDays = suggested;
+      final reason = plan.deadlineSuggestionReason?.trim();
+      final suggestedDate = shortDate(addDays(today, suggested));
+      final buffer = StringBuffer('⏳ ');
+      buffer.write((reason == null || reason.isEmpty)
+          ? 'Your deadline of ${shortDate(_newGoalDeadline)} looks unrealistic for this goal given a normal schedule.'
+          : reason);
+      buffer.write(
+          '\n\nWould you like me to move the deadline to $suggestedDate ($suggested days from today)? (yes / no)');
+      return buffer.toString();
+    }
+
+    // Snapshot of the current draft in the wire format the modification
+    // agent expects.
+    List<GeneratedTask> draftTasksPayload() => draftSpecs
+        .map((spec) => GeneratedTask(
+              title: spec.title,
+              durationMinutes: spec.durationMinutes,
+              load: spec.load.name,
+              dayOffset: spec.dayOffset,
+            ))
+        .toList();
+
     // Block the UI with a non-dismissible loader while the agent generates the
     // first plan, so the user can't tap other things mid-generation.
     var loaderOpen = false;
@@ -1498,6 +1564,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
 
     // Step 1: Run the planning agent. Its first backend step is goal_guard.ts;
     // without that AI guard result, this dialog must not create tasks.
+    String? deadlineQuestion;
     try {
       final agentPlan = await requestAgentPlan(currentTitle);
       if (!agentPlan.goalGuardEvaluated) {
@@ -1510,6 +1577,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
         draftSpecs = [];
       } else {
         captureAgentMetadata(agentPlan);
+        deadlineQuestion = captureDeadlineSuggestion(agentPlan);
         if (agentPlan.milestones.isNotEmpty) {
           agentSpecs = _draftSpecsFromTitles(agentPlan.milestones).toList();
         }
@@ -1565,8 +1633,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       if (note != null && note.isNotEmpty) intro.write('\n📅 $note');
       final rec = agentRecommendation?.trim();
       if (rec != null && rec.isNotEmpty) intro.write('\n👉 $rec');
-      intro.write(
-          '\n\nYou can ask me to make the plan easier, more detailed, or reorder it before scheduling.');
+      if (deadlineQuestion != null) {
+        intro.write('\n\n$deadlineQuestion');
+      } else {
+        intro.write(
+            '\n\nYou can ask me to make the plan easier, more detailed, or reorder it before scheduling.');
+      }
     }
 
     final firstMessage = <String, dynamic>{
@@ -1601,6 +1673,71 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
               final request = chatController.text.trim();
               if (request.isEmpty || isAiThinking) return;
 
+              // Deadline suggestion (agree → adjust + re-plan, decline →
+              // keep the chosen deadline). Answered before any other pending
+              // question because it is always asked first.
+              final suggestedDeadline = pendingDeadlineDays;
+              if (!awaitingGoalRefinement && suggestedDeadline != null) {
+                if (_isNegativeReply(request)) {
+                  setLocalState(() {
+                    messages.add({'role': 'user', 'text': request});
+                    messages.add({
+                      'role': 'assistant',
+                      'text':
+                          "No problem — I'll keep your deadline at ${shortDate(_newGoalDeadline)} and the plan will stay within it.",
+                      'tasks': _draftPreviewLabels(draftSpecs),
+                    });
+                    chatController.clear();
+                    pendingDeadlineDays = null;
+                  });
+                  return;
+                }
+                if (_isAffirmativeReply(request)) {
+                  final newDeadline = addDays(today, suggestedDeadline);
+                  setLocalState(() {
+                    isAiThinking = true;
+                    messages.add({'role': 'user', 'text': request});
+                    chatController.clear();
+                    pendingDeadlineDays = null;
+                  });
+                  deadlineDays = suggestedDeadline;
+                  if (mounted) {
+                    // The goal is created with _newGoalDeadline, so the
+                    // agreed adjustment must land on the parent state too.
+                    setState(() => _newGoalDeadline = newDeadline);
+                  }
+                  var replanNote =
+                      'Done — I moved the deadline to ${shortDate(newDeadline)} and re-planned the milestones across the new timeline.';
+                  try {
+                    final replan = await requestAgentPlan(currentTitle);
+                    if (replan.goalGuardEvaluated &&
+                        !replan.goalRejected &&
+                        replan.milestones.isNotEmpty) {
+                      captureAgentMetadata(replan);
+                      draftSpecs =
+                          _draftSpecsFromTitles(replan.milestones).toList();
+                    }
+                  } catch (e) {
+                    debugPrint('Replan after deadline change failed: $e');
+                    replanNote =
+                        'Done — I moved the deadline to ${shortDate(newDeadline)}. The current plan is kept; you can still ask me to adjust it.';
+                  }
+                  if (!dialogContext.mounted) return;
+                  setLocalState(() {
+                    messages.add({
+                      'role': 'assistant',
+                      'text': replanNote,
+                      'tasks': _draftPreviewLabels(draftSpecs),
+                    });
+                    isAiThinking = false;
+                  });
+                  return;
+                }
+                // Neither yes nor no — drop the question and treat the text
+                // as a regular plan request.
+                pendingDeadlineDays = null;
+              }
+
               final pending = pendingForceRequest;
 
               // User declined the "are you sure?" question — keep current plan.
@@ -1634,6 +1771,63 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                 messages.add({'role': 'user', 'text': request});
                 chatController.clear();
               });
+
+              // Plan adjustments go through the Task Modification Agent
+              // (§6.3): it sees the CURRENT draft plus the request, so edits
+              // are incremental and earlier adjustments are preserved. It
+              // applies, clarifies, asks for confirmation, or rejects with a
+              // personalised explanation (§9.2–§9.4). Goal refinements (after
+              // a rejection) still go through the Planning Agent below.
+              if (!wasAwaitingGoalRefinement) {
+                try {
+                  final modification = await ai.agentModify.modify(
+                    TaskModificationRequest(
+                      goal: currentTitle,
+                      request: effectiveRequest,
+                      currentTasks: draftTasksPayload(),
+                      context: agentContext(),
+                      force: useForce,
+                    ),
+                  );
+
+                  if (!dialogContext.mounted) return;
+                  setLocalState(() {
+                    if (modification.applied &&
+                        modification.tasks.isNotEmpty) {
+                      draftSpecs =
+                          _draftSpecsFromGeneratedTasks(modification.tasks)
+                              .toList();
+                    }
+                    // §9.4: remember the request only while the agent is
+                    // waiting on a yes/no answer to its risk question.
+                    pendingForceRequest = modification.needsConfirmation
+                        ? effectiveRequest
+                        : null;
+                    final replyParts = [
+                      modification.explanation.trim(),
+                      modification.question?.trim() ?? '',
+                    ].where((part) => part.isNotEmpty);
+                    messages.add({
+                      'role': 'assistant',
+                      'text': replyParts.isEmpty
+                          ? 'I reviewed your request against the current plan.'
+                          : replyParts.join('\n\n'),
+                      // Show the plan unless the agent is mid-question.
+                      if (modification.applied ||
+                          modification.status == 'rejected')
+                        'tasks': _draftPreviewLabels(draftSpecs),
+                    });
+                    isAiThinking = false;
+                  });
+                  return;
+                } on GenkitFlowException catch (e) {
+                  // Modification agent unreachable (e.g. not deployed yet) —
+                  // fall back to a full replan with the request attached.
+                  debugPrint('agentModify unavailable, replanning: $e');
+                } catch (e) {
+                  debugPrint('agentModify failed, replanning: $e');
+                }
+              }
 
               try {
                 final refinedPlan = await requestAgentPlan(
@@ -1682,13 +1876,18 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                 // Prefer the agent's feasibility note (e.g. "…Are you sure you
                 // still want all 30? (yes / no)"); otherwise confirm the count.
                 final note = refinedPlan.milestoneNote?.trim();
-                final replyText = (note != null && note.isNotEmpty)
+                var replyText = (note != null && note.isNotEmpty)
                     ? note
                     : (wasAwaitingGoalRefinement
                         ? 'That goal is clear enough to plan. I broke "$currentTitle" into ${draftSpecs.length} milestones.'
                         : refinedTitles.isNotEmpty
                             ? 'Updated the plan to ${refinedTitles.length} milestones.'
                             : 'I refined the plan based on your request.');
+                final refinedDeadlineQuestion =
+                    captureDeadlineSuggestion(refinedPlan);
+                if (refinedDeadlineQuestion != null) {
+                  replyText = '$replyText\n\n$refinedDeadlineQuestion';
+                }
 
                 if (!dialogContext.mounted) return;
                 setLocalState(() {
@@ -2475,10 +2674,12 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
     setState(() => _selectedMood = value);
     unawaited(_persistMood(value));
 
-    if (!_moodAdvisorAvailable) return;
     _moodAdviceTimer?.cancel();
     _moodAdviceTimer = Timer(const Duration(milliseconds: 450), () {
-      unawaited(_requestMoodAdvice(value));
+      if (_moodAdvisorAvailable) unawaited(_requestMoodAdvice(value));
+      // §8: a mood change is a context change — let the Task Reassignment
+      // Agent decide whether today's schedule still fits the user's capacity.
+      unawaited(_requestTaskReassignment('moodChanged'));
     });
   }
 
@@ -2512,6 +2713,147 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
       }
       debugPrint('Mood advisor unavailable: $e');
     }
+  }
+
+  // Show/hide the "agent is working" loader. Ref-counted: the dialog opens on
+  // the first in-flight request and closes when the last one finishes.
+  void _showReassignmentLoader() {
+    if (!mounted) return;
+    _reassignLoaderDepth++;
+    if (_reassignLoaderRoute != null) return;
+    final route = DialogRoute<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _buildGeneratingLoader('AI is adjusting your schedule…'),
+    );
+    _reassignLoaderRoute = route;
+    unawaited(Navigator.of(context, rootNavigator: true).push(route));
+  }
+
+  void _hideReassignmentLoader() {
+    if (_reassignLoaderDepth > 0) _reassignLoaderDepth--;
+    if (_reassignLoaderDepth > 0) return;
+    final route = _reassignLoaderRoute;
+    _reassignLoaderRoute = null;
+    if (route != null && mounted && route.isActive) {
+      Navigator.of(context, rootNavigator: true).removeRoute(route);
+    }
+  }
+
+  /// Task Reassignment Agent (§6.4): asks the backend whether the current
+  /// schedule should adapt to a context change (mood shift, new routine, …).
+  /// The agent enforces the deadline rule, human-capability limits, and
+  /// importance weighting server-side; we only apply the validated changes.
+  Future<void> _requestTaskReassignment(String trigger) async {
+    if (!_reassignAgentAvailable) return;
+
+    final pendingTasks = _allTasks.where((task) => !task.done).toList();
+    if (pendingTasks.isEmpty) return;
+
+    final requestSerial = ++_reassignRequestSerial;
+
+    final taskInfos = pendingTasks
+        .map((task) => ReassignableTaskInfo(
+              id: task.id.toString(),
+              goalId: task.goalId.toString(),
+              title: task.title,
+              durationMinutes: task.durationMinutes,
+              load: task.load.name,
+              dayOffset:
+                  max(0, dateOnly(task.scheduledDate).difference(today).inDays),
+              done: task.done,
+            ))
+        .toList();
+
+    final goalInfos = _goals
+        .map((goal) => ReassignGoalInfo(
+              id: goal.id.toString(),
+              title: goal.title,
+              importance: goal.importance,
+              deadlineDays:
+                  max(0, dateOnly(goal.deadline).difference(today).inDays),
+            ))
+        .toList();
+
+    final routineInfos = _routines
+        .map((routine) => RoutineInfo(
+              title: routine.title,
+              startsAt: routine.startsAt.toIso8601String(),
+              repeat: routine.repeat.label,
+            ))
+        .toList();
+
+    _showReassignmentLoader();
+    try {
+      final result = await context.read<GenkitService>().agentReassign.reassign(
+            TaskReassignmentRequest(
+              trigger: trigger,
+              tasks: taskInfos,
+              goals: goalInfos,
+              mood: _selectedMood,
+              routines: routineInfos,
+              context: {
+                'completedToday': _todayCompleted,
+                'totalToday': _todayTasks.length,
+                'streak': _streak,
+              },
+            ),
+          );
+      // A newer reassignment request superseded this one — drop it.
+      if (!mounted || requestSerial != _reassignRequestSerial) return;
+      if (!result.changed) {
+        // Still tell the user the agent ran and decided to keep the plan.
+        _showMessage('AI checked your schedule: ${result.explanation}');
+        return;
+      }
+      _applyReassignment(result);
+    } catch (e) {
+      if (e.toString().contains('not-found')) {
+        _reassignAgentAvailable = false;
+      }
+      debugPrint('Task reassignment unavailable: $e');
+    } finally {
+      _hideReassignmentLoader();
+    }
+  }
+
+  void _applyReassignment(TaskReassignmentResponse result) {
+    final moved = <MicroTask>[];
+    setState(() {
+      for (final change in result.changes) {
+        for (final goal in _goals) {
+          if (goal.id.toString() != change.goalId) continue;
+          for (final task in goal.tasks) {
+            if (task.id.toString() != change.taskId) continue;
+            task.scheduledDate = addDays(today, change.toDayOffset);
+            moved.add(task);
+          }
+        }
+      }
+    });
+    if (moved.isEmpty) return;
+
+    final sync = _sync;
+    if (sync != null) {
+      for (final task in moved) {
+        unawaited(
+          sync.upsertTask(task.goalId.toString(), task).catchError((Object e) {
+            debugPrint('Reassigned task sync failed: $e');
+          }),
+        );
+      }
+    }
+    _queueNotificationScheduleSync();
+
+    // §6.4: always explain WHY the schedule changed.
+    _addInAppNotification(
+      title: 'AI rescheduled ${moved.length} task(s)',
+      body: result.explanation,
+      type: AppNotificationType.taskReminder,
+      important: false,
+      sourceId: 'agent-reassignment',
+    );
+    _showMessage('AI adjusted your schedule: ${result.explanation}');
   }
 
   void _handleFocusExitAttempt({bool showWarningImmediately = false}) {
@@ -3053,6 +3395,9 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
     }
     _queueNotificationScheduleSync();
     _showMessage('Routine added.');
+    // §8: a new fixed commitment may collide with scheduled tasks — let the
+    // Task Reassignment Agent rebalance around it.
+    unawaited(_requestTaskReassignment('routineAdded'));
   }
 
   void _deleteRoutine(RoutineItem routine) {

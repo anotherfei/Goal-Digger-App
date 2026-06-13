@@ -103,6 +103,46 @@ class AgentPlannerFlow {
   }
 }
 
+// ── Task Modification Agent (§6.3) ───────────────────────────────────────────
+
+class AgentModifyFlow {
+  const AgentModifyFlow(this._client);
+  final GenkitClient _client;
+
+  Future<TaskModificationResponse> modify(
+      TaskModificationRequest request) async {
+    final response = await _client.callFlow(
+      GenkitConfig.fnAgentModify,
+      request.toJson(),
+    );
+    if (!response.isSuccess) {
+      throw GenkitFlowException(
+          flow: 'agentModify', message: response.error ?? 'Unknown error');
+    }
+    return TaskModificationResponse.fromJson(response.result!);
+  }
+}
+
+// ── Task Reassignment Agent (§6.4) ───────────────────────────────────────────
+
+class AgentReassignFlow {
+  const AgentReassignFlow(this._client);
+  final GenkitClient _client;
+
+  Future<TaskReassignmentResponse> reassign(
+      TaskReassignmentRequest request) async {
+    final response = await _client.callFlow(
+      GenkitConfig.fnAgentReassign,
+      request.toJson(),
+    );
+    if (!response.isSuccess) {
+      throw GenkitFlowException(
+          flow: 'agentReassign', message: response.error ?? 'Unknown error');
+    }
+    return TaskReassignmentResponse.fromJson(response.result!);
+  }
+}
+
 // ── Shared exception ──────────────────────────────────────────────────────────
 
 class GenkitFlowException implements Exception {
