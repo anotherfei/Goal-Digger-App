@@ -563,33 +563,44 @@ class _CommunityPageState extends State<CommunityPage> {
 
     await _ensurePublicProfile();
 
-    await _usersCollection.doc(user.uid).set({
-      'friends': FieldValue.arrayUnion([friendUid]),
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    try {
+      await _usersCollection.doc(user.uid).set({
+        'friends': FieldValue.arrayUnion([friendUid]),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } on FirebaseException catch (error) {
+      _showSnack('Could not add friend: ${error.message ?? error.code}');
+      return;
+    }
 
+    // Best-effort: notifying the other user must never fail (or appear to fail)
+    // the friend add itself. A blocked notification write under Firestore rules
+    // should be logged, not thrown past this point.
     final actorName = _cleanDisplayName(user.displayName, user.email);
-
-    await _notificationRepository.addSocialNotification(
+    try {
+      await _notificationRepository.addSocialNotification(
         recipientUid: friendUid,
         actorUid: user.uid,
         notification: AppNotification(
-            id: _uuid.v4(),
-            title: 'New friend',
-            body: '$actorName added you as a friend.',
-            type: AppNotificationType.friend,
-            delivery: NotificationDelivery.inApp,
-            createdAt: DateTime.now(),
-            important: false,
-            sourceId: user.uid,
-            payload: {
-                'actorUid': user.uid,
-                'actorName': actorName,
-                'route': 'friends',
-                'friendUid': user.uid,
-            },
+          id: _uuid.v4(),
+          title: 'New friend',
+          body: '$actorName added you as a friend.',
+          type: AppNotificationType.friend,
+          delivery: NotificationDelivery.inApp,
+          createdAt: DateTime.now(),
+          important: false,
+          sourceId: user.uid,
+          payload: {
+            'actorUid': user.uid,
+            'actorName': actorName,
+            'route': 'friends',
+            'friendUid': user.uid,
+          },
         ),
-     );
+      );
+    } catch (error) {
+      debugPrint('Friend notification failed: $error');
+    }
 
     _showSnack('$displayName added to your friends.');
   }
@@ -2037,15 +2048,15 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
   final TextEditingController _searchController = TextEditingController();
   final Set<String> _joiningCommunityIds = <String>{};
   String _query = '';
+  late final Stream<List<_DbCommunity>> _communitiesStream;
 
   @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  Stream<List<_DbCommunity>> _communitiesStream() {
-    return widget.communitiesCollection.limit(100).snapshots().map((snapshot) {
+  void initState() {
+    super.initState();
+    // Subscribe once; the search query filters the cached snapshot in the
+    // builder (see _filterCommunities) so typing does not rebuild the stream.
+    _communitiesStream =
+        widget.communitiesCollection.limit(100).snapshots().map((snapshot) {
       final communities = snapshot.docs
           .map((doc) => _DbCommunity.fromDoc(doc, currentUid: widget.currentUid))
           .toList();
@@ -2057,6 +2068,12 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
 
       return communities;
     });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   List<_DbCommunity> _filterCommunities(List<_DbCommunity> communities) {
@@ -2123,7 +2140,7 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
             SectionTitle(title: 'Community suggestions'),
             const SizedBox(height: 10),
             StreamBuilder<List<_DbCommunity>>(
-              stream: _communitiesStream(),
+              stream: _communitiesStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting &&
                     snapshot.data == null) {
@@ -2200,6 +2217,24 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
   bool _adding = false;
+  late final Stream<List<_PublicProfile>> _profileStream;
+
+  @override
+  void initState() {
+    super.initState();
+    // Subscribe to Firestore once. Filtering by the search query happens in the
+    // builder (see _visibleProfiles) so typing does not recreate the stream,
+    // which would flash a spinner over the results on every keystroke.
+    _profileStream = widget.publicProfiles.limit(80).snapshots().map((snapshot) {
+      final profiles = snapshot.docs
+          .map((doc) => _PublicProfile.fromUserDoc(doc))
+          .where((profile) => profile.uid != widget.currentUid)
+          .toList();
+
+      profiles.sort((a, b) => a.displayName.compareTo(b.displayName));
+      return profiles;
+    });
+  }
 
   @override
   void dispose() {
@@ -2207,20 +2242,12 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
     super.dispose();
   }
 
-  Stream<List<_PublicProfile>> _profileStream() {
+  List<_PublicProfile> _visibleProfiles(List<_PublicProfile> profiles) {
     final q = _query.trim().toLowerCase().replaceAll('@', '');
-
-    return widget.publicProfiles.limit(80).snapshots().map((snapshot) {
-      final profiles = snapshot.docs
-          .map((doc) => _PublicProfile.fromUserDoc(doc))
-          .where((profile) => profile.uid != widget.currentUid)
-          .where((profile) => !widget.currentFriendUids.contains(profile.uid))
-          .where((profile) => profile.matchesQuery(q))
-          .toList();
-
-      profiles.sort((a, b) => a.displayName.compareTo(b.displayName));
-      return profiles;
-    });
+    return profiles
+        .where((profile) => !widget.currentFriendUids.contains(profile.uid))
+        .where((profile) => profile.matchesQuery(q))
+        .toList();
   }
 
   Future<void> _add(_PublicProfile profile) async {
@@ -2326,7 +2353,7 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
             ),
             const SizedBox(height: 16),
             StreamBuilder<List<_PublicProfile>>(
-              stream: _profileStream(),
+              stream: _profileStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
@@ -2345,7 +2372,7 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                   );
                 }
 
-                final profiles = snapshot.data ?? [];
+                final profiles = _visibleProfiles(snapshot.data ?? const []);
                 if (profiles.isEmpty) {
                   return const HelpfulErrorBox(
                     title: 'No profiles found',
@@ -2601,32 +2628,41 @@ class _DirectChatPageState extends State<_DirectChatPage> {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      final senderName = _cleanDisplayName(user.displayName, user.email);
-    final preview = text.length > 120 ? '${text.substring(0, 117)}...' : text;
-
-    await _notificationRepository.addSocialNotification(
-    recipientUid: widget.friend.uid,
-    actorUid: user.uid,
-    notification: AppNotification(
-        id: _uuid.v4(),
-        title: senderName,
-        body: preview,
-        type: AppNotificationType.chat,
-        delivery: NotificationDelivery.inApp,
-        createdAt: DateTime.now(),
-        important: false,
-        sourceId: chatRef.id,
-        payload: {
-        'actorUid': user.uid,
-        'actorName': senderName,
-        'route': 'chat',
-        'chatId': chatRef.id,
-        'senderUid': user.uid,
-        },
-    ),
-    );
-
+      // Message is persisted — clear the input now so a later failure (e.g. a
+      // blocked notification write) can never cause the same text to send twice.
       _controller.clear();
+
+      // Best-effort chat notification: a failure here must not surface as a
+      // "Message failed" error, because the message itself already sent.
+      try {
+        final senderName = _cleanDisplayName(user.displayName, user.email);
+        final preview =
+            text.length > 120 ? '${text.substring(0, 117)}...' : text;
+
+        await _notificationRepository.addSocialNotification(
+          recipientUid: widget.friend.uid,
+          actorUid: user.uid,
+          notification: AppNotification(
+            id: _uuid.v4(),
+            title: senderName,
+            body: preview,
+            type: AppNotificationType.chat,
+            delivery: NotificationDelivery.inApp,
+            createdAt: DateTime.now(),
+            important: false,
+            sourceId: chatRef.id,
+            payload: {
+              'actorUid': user.uid,
+              'actorName': senderName,
+              'route': 'chat',
+              'chatId': chatRef.id,
+              'senderUid': user.uid,
+            },
+          ),
+        );
+      } catch (error) {
+        debugPrint('Chat notification failed: $error');
+      }
     } on FirebaseException catch (error) {
       _snack('Message failed: ${error.message ?? error.code}');
     } catch (error) {

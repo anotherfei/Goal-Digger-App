@@ -267,16 +267,68 @@ class AuthService {
     }
   }
 
-  Future<void> deleteCurrentUser() async {
+  Future<void> deleteCurrentUser({String? password}) async {
     try {
       final user = currentUser;
       if (user == null) {
         throw const AuthException('No signed-in account to delete.');
       }
-      await user.delete();
+      try {
+        await user.delete();
+      } on FirebaseAuthException catch (e) {
+        // Deleting an account is a sensitive operation: Firebase rejects it
+        // with 'requires-recent-login' once the sign-in has aged out. Re-auth
+        // with a fresh credential and retry once.
+        if (e.code != 'requires-recent-login') rethrow;
+        await _reauthenticateForDeletion(user, password: password);
+        await user.delete();
+      }
     } on FirebaseAuthException catch (e) {
       throw AuthException(_firebaseAuthMessage(e));
     }
+  }
+
+  Future<void> _reauthenticateForDeletion(
+    User user, {
+    String? password,
+  }) async {
+    final providerIds =
+        user.providerData.map((provider) => provider.providerId).toSet();
+
+    if (providerIds.contains('google.com')) {
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        throw const AuthException('Re-authentication was cancelled.');
+      }
+      final googleAuth = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      await user.reauthenticateWithCredential(credential);
+      return;
+    }
+
+    if (providerIds.contains('password')) {
+      final email = user.email;
+      if (email == null || email.isEmpty) {
+        throw const AuthException(
+          'Sign out, sign back in, then delete the account again.',
+        );
+      }
+      if (password == null || password.isEmpty) {
+        // The caller must collect the password and retry.
+        throw const ReauthPasswordRequiredException();
+      }
+      final credential =
+          EmailAuthProvider.credential(email: email, password: password);
+      await user.reauthenticateWithCredential(credential);
+      return;
+    }
+
+    throw const AuthException(
+      'Sign out, sign back in, then delete the account again.',
+    );
   }
 
   /// Creates an anonymous account so the user can start immediately and
@@ -308,6 +360,14 @@ class AuthException implements Exception {
   final String message;
   @override
   String toString() => 'AuthException: $message';
+}
+
+/// Thrown when deleting an email/password account requires the user to
+/// re-enter their password (Firebase 'requires-recent-login'). The caller
+/// should collect the password and retry the delete.
+class ReauthPasswordRequiredException extends AuthException {
+  const ReauthPasswordRequiredException()
+      : super('Re-enter your password to confirm account deletion.');
 }
 
 String _firebaseAuthMessage(FirebaseAuthException e) {
