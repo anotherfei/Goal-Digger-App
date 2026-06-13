@@ -41,7 +41,7 @@ class CompanionPage extends StatefulWidget {
 
 class _CompanionPageState extends State<CompanionPage>
     with SingleTickerProviderStateMixin {
-  static const String _modelPath = 'assets/models/goal_spirit_companion.glb';
+  static const String _modelPath = 'assets/models/lumi_companion_base.glb';
 
   late final AnimationController _floatController;
   late final Animation<double> _floatOffset;
@@ -333,7 +333,7 @@ class _CompanionModelStage extends StatelessWidget {
                 child: ModelViewer(
                   backgroundColor: Colors.transparent,
                   src: modelPath,
-                  alt: 'A 3D goal spirit companion for Goal Digger',
+                  alt: 'A 3D Lumi companion for Goal Digger',
                   autoRotate: true,
                   cameraControls: true,
                   disableZoom: true,
