@@ -37,7 +37,6 @@ flutter:
 
   assets:
     - assets/lumi/
-    - assets/auri/
   fonts:
     - family: PlusJakartaSans
       fonts:
