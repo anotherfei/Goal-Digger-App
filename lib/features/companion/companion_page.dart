@@ -10,7 +10,7 @@ class CompanionPage extends StatefulWidget {
     super.key,
     required this.coins,
     required this.happiness,
-    required this.streak,
+    required this.lumiTier,
     required this.pet,
     required this.accessory,
     required this.onFeed,
@@ -20,7 +20,7 @@ class CompanionPage extends StatefulWidget {
 
   final int coins;
   final int happiness;
-  final int streak;
+  final LumiStreakTier lumiTier;
   final PetSkin pet;
   final String accessory;
   final VoidCallback onFeed;
@@ -90,7 +90,7 @@ class _CompanionPageState extends State<CompanionPage> {
                                 border: Border.all(color: gdBorder),
                               ),
                               child: LumiCompanionSprite(
-                                streak: widget.streak,
+                                tier: widget.lumiTier,
                                 size: 178,
                                 onTap: widget.onPetInteract,
                               ),
@@ -359,7 +359,7 @@ class _FloatingWallet extends StatelessWidget {
                 ),
               ),
               Text(
-                '${coins} coins',
+                '$coins coins',
                 style: TextStyle(
                   color: gdInk,
                   fontSize: 13,

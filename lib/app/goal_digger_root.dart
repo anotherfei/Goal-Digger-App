@@ -13,6 +13,7 @@ import '../data/seed_data.dart';
 import '../features/calendar/calendar_page.dart';
 import '../features/community/community_page.dart';
 import '../features/companion/companion_page.dart';
+import '../features/companion/lumi_sprite.dart';
 import '../features/focus/widgets/focus_widgets.dart';
 import '../features/notifications/models/notification_models.dart';
 import '../features/notifications/notification_inbox_page.dart';
@@ -105,6 +106,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   StreamSubscription<List<RoutineItem>>? _routinesSub;
   StreamSubscription<List<AppNotification>>? _notificationsSub;
   String? _activeUid;
+  bool _goalsSyncedFromFirebase = false;
   Set<String> _joinedCommunityIds = {};
   List<RoutineItem> _routines = [];
   List<AppNotification> _notifications = [];
@@ -145,7 +147,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   String _selectedMood = 'Okay';
   int _petHappiness = 62;
   int _coins = 140;
-  int _streak = 7;
+  int _streak = 0;
   bool _goalReminders = true;
   bool _friendProgressSharing = true;
   List<String> _friends = ['Maya Chen', 'Leo Tan', 'Ari Putra'];
@@ -348,6 +350,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _notificationsSub = null;
     _sync?.dispose();
     _sync = null;
+    _goalsSyncedFromFirebase = false;
   }
 
   void _resetForSignedOutState() {
@@ -399,11 +402,16 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _disposeSync();
     final sync = AppSyncService(uid: uid);
     _sync = sync;
+    _goalsSyncedFromFirebase = false;
 
     _goalsSub = sync.goalsStream.listen(
       (goals) {
         if (!mounted) return;
-        setState(() => _goals = goals);
+        setState(() {
+          _goals = goals;
+          _goalsSyncedFromFirebase = true;
+        });
+        _syncStreakFromCompletedTasks();
         _queueNotificationScheduleSync();
         _ensureImportantDeadlineNotifications();
       },
@@ -447,6 +455,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               : 'Firebase';
         });
         _queueNotificationScheduleSync();
+        _syncStreakFromCompletedTasks();
       },
       onError: (Object error) => debugPrint('Profile sync error: $error'),
     );
@@ -515,7 +524,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       // the authoritative local total, which already has all increments/
       // decrements from task toggles and pet interactions applied.
       await sync.setCoins(_coins);
-      await sync.updateStreak(_streak);
       await sync.updateMood(_selectedMood);
       await sync.updatePetState(
           _petHappiness, _activePetSkin, _activeAccessory);
@@ -682,6 +690,44 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   double get _todayProgress =>
       _todayTasks.isEmpty ? 0 : _todayCompleted / _todayTasks.length;
+
+  int get _calculatedCurrentStreak {
+    final completedDays = _allTasks
+        .where((task) => task.done)
+        .map((task) => dateOnly(task.scheduledDate))
+        .where((day) => !day.isAfter(today))
+        .map(dateKey)
+        .toSet();
+
+    if (completedDays.isEmpty) return 0;
+
+    var day =
+        completedDays.contains(dateKey(today)) ? today : addDays(today, -1);
+    if (!completedDays.contains(dateKey(day))) return 0;
+
+    var streak = 0;
+    while (completedDays.contains(dateKey(day))) {
+      streak++;
+      day = addDays(day, -1);
+    }
+
+    return streak;
+  }
+
+  void _syncStreakFromCompletedTasks() {
+    if (_sync != null && !_goalsSyncedFromFirebase) return;
+
+    final nextStreak = _calculatedCurrentStreak;
+    if (nextStreak == _streak) return;
+
+    setState(() => _streak = nextStreak);
+
+    final sync = _sync;
+    if (sync == null) return;
+    unawaited(sync.updateStreak(nextStreak).catchError((Object e) {
+      debugPrint('Streak sync failed: $e');
+    }));
+  }
 
   int get _remainingMinutes => _todayTasks
       .where((task) => !task.done)
@@ -2371,6 +2417,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       );
     }
     unawaited(_persistTaskToggle(goal, task));
+    _syncStreakFromCompletedTasks();
     unawaited(_persistProfileStats());
     _queueNotificationScheduleSync();
   }
@@ -2391,52 +2438,52 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   void _deleteGoal(GoalProject goal) {
-  setState(() => _goals.removeWhere((item) => item.id == goal.id));
+    setState(() => _goals.removeWhere((item) => item.id == goal.id));
 
-  unawaited(_deleteGoalEverywhere(goal));
+    unawaited(_deleteGoalEverywhere(goal));
+    _syncStreakFromCompletedTasks();
 
-  _queueNotificationScheduleSync();
-  _showMessage('Removed ${goal.title}.');
-}
+    _queueNotificationScheduleSync();
+    _showMessage('Removed ${goal.title}.');
+  }
 
-Future<void> _deleteGoalEverywhere(GoalProject goal) async {
-  final user = context.read<AuthService>().currentUser;
+  Future<void> _deleteGoalEverywhere(GoalProject goal) async {
+    final user = context.read<AuthService>().currentUser;
 
-  if (user != null && !user.isAnonymous) {
-    try {
-      final deletedEvents = await context
-          .read<GoogleCalendarService>()
-          .deleteTaskEventsForGoal(goal);
+    if (user != null && !user.isAnonymous) {
+      try {
+        final deletedEvents = await context
+            .read<GoogleCalendarService>()
+            .deleteTaskEventsForGoal(goal);
 
-      debugPrint(
-        'Deleted $deletedEvents Google Calendar events for goal ${goal.title}.',
-      );
-    } catch (e) {
-      debugPrint('Google Calendar goal cleanup failed: $e');
-
-      if (mounted) {
-        _showMessage(
-          'Goal removed, but Google Calendar cleanup failed.',
+        debugPrint(
+          'Deleted $deletedEvents Google Calendar events for goal ${goal.title}.',
         );
+      } catch (e) {
+        debugPrint('Google Calendar goal cleanup failed: $e');
+
+        if (mounted) {
+          _showMessage(
+            'Goal removed, but Google Calendar cleanup failed.',
+          );
+        }
+      }
+    }
+
+    final sync = _sync;
+
+    if (sync != null) {
+      try {
+        await sync.deleteGoal(goal.id.toString());
+      } catch (e) {
+        debugPrint('Delete goal sync failed: $e');
+
+        if (mounted) {
+          _showMessage('Goal removed locally, but Firebase delete failed.');
+        }
       }
     }
   }
-
-  final sync = _sync;
-
-  if (sync != null) {
-    try {
-      await sync.deleteGoal(goal.id.toString());
-    } catch (e) {
-      debugPrint('Delete goal sync failed: $e');
-
-      if (mounted) {
-        _showMessage('Goal removed locally, but Firebase delete failed.');
-      }
-    }
-  }
-}
-
 
   void _addCommunity() {
     final title = _communityController.text.trim();
@@ -2811,6 +2858,7 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
         );
       }
     }
+    _syncStreakFromCompletedTasks();
     _queueNotificationScheduleSync();
 
     // §6.4: always explain WHY the schedule changed.
@@ -3434,7 +3482,7 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
       CompanionPage(
         coins: _coins,
         happiness: _petHappiness,
-        streak: _streak,
+        lumiTier: lumiStreakTierFor(_streak),
         pet: _activePetSkin,
         accessory: _activeAccessory,
         onFeed: _feedPet,
