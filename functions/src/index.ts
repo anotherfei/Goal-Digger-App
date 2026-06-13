@@ -21,6 +21,11 @@ import { defineMoodAdvisorFlow }   from "./flows/moodAdvisorFlow";
 import { defineFocusInsightFlow }  from "./flows/focusInsightFlow";
 import { getAI, defaultModel }     from "./ai";
 import { runAgent }                from "./agent/runtime";
+import {
+  NotificationCandidate,
+  notificationContextFromProfile,
+  triageNotification,
+} from "./notifications/notificationTriage";
 
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { logger } from "firebase-functions";
@@ -162,7 +167,7 @@ Reply conversationally (1–3 sentences). Be warm and specific.`.trim();
 
 export const sendNotificationPush = onDocumentCreated(
   {
-    region: "asia-east1",
+    ...fnOptions,
     document: "users/{uid}/notifications/{notificationId}",
   },
   async (event) => {
@@ -172,20 +177,57 @@ export const sendNotificationPush = onDocumentCreated(
     if (!snapshot) return;
 
     const data = snapshot.data();
-    const title = String(data.title ?? "Goal Digger");
-    const body = String(data.body ?? "");
-    const type = String(data.type ?? "");
-    const sourceId = String(data.sourceId ?? "");
-    const isChestRewardPush =
-      type === "reward" &&
-      (sourceId.startsWith("pet_chest") ||
-        title.toLowerCase().includes("chest reward"));
+    const rawPayload = data.payload;
+    const payload =
+      rawPayload !== null &&
+      typeof rawPayload === "object" &&
+      !Array.isArray(rawPayload)
+        ? (rawPayload as Record<string, unknown>)
+        : {};
+    const candidate: NotificationCandidate = {
+      title: String(data.title ?? "Goal Digger"),
+      body: String(data.body ?? ""),
+      type: String(data.type ?? ""),
+      delivery: String(data.delivery ?? "inApp"),
+      sourceId: String(data.sourceId ?? ""),
+      important: data.important === true,
+      payload,
+    };
 
-    if (isChestRewardPush) {
-      logger.info("Skipping push for in-app-only chest reward", {
-        uid,
-        notificationId,
-      });
+    const userRef = admin.firestore().collection("users").doc(uid);
+    const profileSnapshot = await userRef.get();
+    const decision = await triageNotification(
+      candidate,
+      notificationContextFromProfile(profileSnapshot.data())
+    );
+
+    await snapshot.ref.set(
+      {
+        important: decision.important,
+        aiTriage: {
+          important: decision.important,
+          shouldPush: decision.shouldPush,
+          score: decision.score,
+          reason: decision.reason,
+          source: decision.source,
+          model: decision.source === "ai" ? defaultModel : null,
+          decidedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+      },
+      { merge: true }
+    );
+
+    logger.info("Notification triage completed", {
+      uid,
+      notificationId,
+      important: decision.important,
+      shouldPush: decision.shouldPush,
+      score: decision.score,
+      source: decision.source,
+      reason: decision.reason,
+    });
+
+    if (!decision.shouldPush) {
       return;
     }
 
@@ -208,17 +250,28 @@ export const sendNotificationPush = onDocumentCreated(
     await admin.messaging().sendEachForMulticast({
       tokens,
       notification: {
-        title,
-        body,
+        title: candidate.title,
+        body: candidate.body,
+      },
+      android: {
+        priority: decision.important ? "high" : "normal",
+        notification: {
+          channelId: decision.important
+            ? "goal_digger_important"
+            : "goal_digger_standard_v2",
+        },
       },
       data: {
         notificationId,
-        type,
-        sourceId,
+        type: candidate.type,
+        sourceId: candidate.sourceId,
+        important: String(decision.important),
+        importanceScore: String(decision.score),
+        triageSource: decision.source,
         actorUid: String(data.actorUid ?? ""),
-        route: String(data.payload?.route ?? ""),
-        chatId: String(data.payload?.chatId ?? ""),
-        friendUid: String(data.payload?.friendUid ?? ""),
+        route: String(payload.route ?? ""),
+        chatId: String(payload.chatId ?? ""),
+        friendUid: String(payload.friendUid ?? ""),
       },
     });
   }

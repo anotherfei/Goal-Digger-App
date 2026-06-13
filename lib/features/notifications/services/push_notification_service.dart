@@ -89,6 +89,7 @@ class PushNotificationService {
   Future<void> _showForegroundNotification(RemoteMessage message) async {
     final title = message.notification?.title ?? message.data['title'];
     final body = message.notification?.body ?? message.data['body'];
+    final important = message.data['important'] == 'true';
 
     if (title == null || body == null) return;
 
@@ -96,7 +97,7 @@ class PushNotificationService {
       id: DateTime.now().millisecondsSinceEpoch.remainder(1000000000),
       title: title.toString(),
       body: body.toString(),
-      important: true,
+      important: important,
       payload: jsonEncode(message.data),
     );
   }

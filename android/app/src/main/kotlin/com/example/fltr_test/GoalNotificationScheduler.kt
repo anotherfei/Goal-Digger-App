@@ -66,7 +66,7 @@ data class GoalNotificationRequest(
 
 object GoalNotificationScheduler {
     private const val ACTION_SHOW = "com.example.fltr_test.GOAL_NOTIFICATION_SHOW"
-    private const val CHANNEL_REMINDERS = "goal_digger_reminders"
+    private const val CHANNEL_REMINDERS = "goal_digger_standard_v2"
     private const val CHANNEL_IMPORTANT = "goal_digger_important"
     private const val PREFS_NAME = "goal_digger_notifications"
     private const val PREFS_SCHEDULED = "scheduled"
@@ -79,11 +79,11 @@ object GoalNotificationScheduler {
 
         val reminders = NotificationChannel(
             CHANNEL_REMINDERS,
-            "Goal Digger reminders",
-            NotificationManager.IMPORTANCE_HIGH
+            "Goal Digger updates",
+            NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
-            description = "Daily plans, task reminders, routines, streaks, deadlines, and focus sessions."
-            enableVibration(true)
+            description = "Standard Goal Digger updates selected by notification triage."
+            enableVibration(false)
         }
 
         val important = NotificationChannel(

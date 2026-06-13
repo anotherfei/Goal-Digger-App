@@ -1169,6 +1169,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
         type: AppNotificationType.important,
         important: true,
         sourceId: goal.id.toString(),
+        payload: const {'suppressPush': true},
       );
       if (_notificationSettings.systemNotificationsEnabled &&
           _notificationSettings.deadlineWarningsEnabled &&

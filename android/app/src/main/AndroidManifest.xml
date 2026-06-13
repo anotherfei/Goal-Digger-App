@@ -8,8 +8,8 @@
         android:icon="@mipmap/ic_launcher">
 
         <meta-data
-        android:name="com.google.firebase.messaging.default_notification_channel_id"
-        android:value="goal_digger_notifications" />
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="goal_digger_standard_v2" />
 
         <activity
             android:name=".MainActivity"
