@@ -7,20 +7,25 @@ import '../../../core/theme/gd_design.dart';
 import '../../../core/utils/date_helpers.dart';
 import '../../../models/models.dart';
 import '../../../shared/widgets/shared_widgets.dart';
+import '../services/focus_app_blocking_service.dart';
 
 class FocusSessionConfig {
   const FocusSessionConfig({
     required this.task,
     required this.durationMinutes,
+    this.blockedPackages = const [],
   });
 
   final MicroTask? task;
   final int durationMinutes;
+  final List<String> blockedPackages;
 
   String get title => task?.title ?? 'Custom focus session';
 
   String get focusSummary =>
       task == null ? 'Custom focus timer' : 'Goal task focus';
+
+  bool get blocksApps => blockedPackages.isNotEmpty;
 }
 
 class FocusSetupSheet extends StatefulWidget {
@@ -37,18 +42,26 @@ class FocusSetupSheet extends StatefulWidget {
   State<FocusSetupSheet> createState() => _FocusSetupSheetState();
 }
 
-class _FocusSetupSheetState extends State<FocusSetupSheet> {
+class _FocusSetupSheetState extends State<FocusSetupSheet>
+    with WidgetsBindingObserver {
   static const List<int> _durationPresets = [15, 25, 45, 60];
 
   final TextEditingController _customDurationController = TextEditingController(text: '30');
+  final FocusAppBlockingService _appBlocking = FocusAppBlockingService();
 
   MicroTask? _selectedTask;
   int _selectedDuration = 25;
   bool _useCustomDuration = false;
+  bool _blockApps = false;
+  bool _accessibilityEnabled = false;
+  bool _loadingApps = false;
+  List<FocusBlockedApp> _availableApps = const [];
+  Set<String> _selectedBlockedPackages = {};
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final openTasks = _allOpenTasks();
     final todayTasks = openTasks
         .where((task) => dateOnly(task.scheduledDate) == dateOnly(widget.today))
@@ -59,12 +72,21 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
             ? null
             : openTasks.first;
     _selectedDuration = _selectedTask?.durationMinutes ?? 25;
+    unawaited(_refreshAppBlockingStatus());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _customDurationController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _blockApps) {
+      unawaited(_refreshAppBlockingStatus(loadAppsWhenEnabled: true));
+    }
   }
 
   int? get _durationMinutes {
@@ -99,7 +121,77 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
     });
   }
 
-  void _startFocus() {
+  Future<void> _refreshAppBlockingStatus({
+    bool loadAppsWhenEnabled = false,
+  }) async {
+    if (!_appBlocking.isSupported) return;
+    final enabled = await _appBlocking.isAccessibilityServiceEnabled();
+    if (!mounted) return;
+    setState(() => _accessibilityEnabled = enabled);
+    if (enabled &&
+        loadAppsWhenEnabled &&
+        _availableApps.isEmpty &&
+        !_loadingApps) {
+      await _loadAvailableApps();
+    }
+  }
+
+  Future<void> _loadAvailableApps() async {
+    if (_loadingApps) return;
+    setState(() => _loadingApps = true);
+    final apps = await _appBlocking.getLaunchableApps();
+    if (!mounted) return;
+    setState(() {
+      _availableApps = apps;
+      _loadingApps = false;
+      final availablePackages = apps.map((app) => app.packageName).toSet();
+      _selectedBlockedPackages =
+          _selectedBlockedPackages.intersection(availablePackages);
+    });
+  }
+
+  Future<void> _toggleAppBlocking(bool enabled) async {
+    setState(() => _blockApps = enabled);
+    if (!enabled || !_appBlocking.isSupported) return;
+
+    await _refreshAppBlockingStatus(loadAppsWhenEnabled: true);
+    if (!mounted || _accessibilityEnabled) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Enable Goal Digger App Block, then return to choose apps.',
+        ),
+      ),
+    );
+    await _appBlocking.openAccessibilitySettings();
+  }
+
+  Future<void> _chooseBlockedApps() async {
+    if (!_accessibilityEnabled) {
+      await _appBlocking.openAccessibilitySettings();
+      return;
+    }
+    if (_availableApps.isEmpty) await _loadAvailableApps();
+    if (!mounted || _availableApps.isEmpty) return;
+
+    final selected = await showModalBottomSheet<Set<String>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: gdSurface,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.88,
+        child: _BlockedAppPicker(
+          apps: _availableApps,
+          initiallySelected: _selectedBlockedPackages,
+        ),
+      ),
+    );
+    if (!mounted || selected == null) return;
+    setState(() => _selectedBlockedPackages = selected);
+  }
+
+  Future<void> _startFocus() async {
     final duration = _durationMinutes;
     if (duration == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -111,10 +203,46 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
       return;
     }
 
+    if (_blockApps) {
+      if (!_appBlocking.isSupported) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('App blocking is currently available on Android.'),
+          ),
+        );
+        return;
+      }
+      final enabled = await _appBlocking.isAccessibilityServiceEnabled();
+      if (!mounted) return;
+      setState(() => _accessibilityEnabled = enabled);
+      if (!enabled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Enable Goal Digger App Block before starting this session.',
+            ),
+          ),
+        );
+        await _appBlocking.openAccessibilitySettings();
+        return;
+      }
+      if (_selectedBlockedPackages.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Choose at least one app to block.'),
+          ),
+        );
+        return;
+      }
+    }
+
     Navigator.of(context).pop(
       FocusSessionConfig(
         task: _selectedTask,
         durationMinutes: duration,
+        blockedPackages: _blockApps
+            ? _selectedBlockedPackages.toList(growable: false)
+            : const [],
       ),
     );
   }
@@ -153,7 +281,7 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
                       Text('Focus mode', style: GdText.headlineMedium),
                       const SizedBox(height: 4),
                       Text(
-                        'Choose a task, set a timer, and stay in Goal Digger.',
+                        'Choose a task, set a timer, and block distractions.',
                         style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
                       ),
                     ],
@@ -275,6 +403,101 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
                 ),
               ),
             ),
+            const SizedBox(height: 18),
+            Text('3. Block distracting apps', style: GdText.titleMedium),
+            const SizedBox(height: 10),
+            AppCard(
+              color: gdCardLight,
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      value: _blockApps,
+                      onChanged: (value) => unawaited(
+                        _toggleAppBlocking(value),
+                      ),
+                      secondary: const Icon(Icons.app_blocking_rounded),
+                      title: const Text(
+                        'Block selected apps',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      subtitle: Text(
+                        _appBlocking.isSupported
+                            ? 'Uses Android Accessibility with your explicit permission.'
+                            : 'Available on Android devices.',
+                        style: TextStyle(
+                          color: gdMuted,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    if (_blockApps) ...[
+                      const SizedBox(height: 8),
+                      if (!_appBlocking.isSupported)
+                        Text(
+                          'This device does not support Goal Digger app blocking.',
+                          style: TextStyle(
+                            color: gdMuted,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        )
+                      else if (!_accessibilityEnabled)
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.tonalIcon(
+                            onPressed: _appBlocking.openAccessibilitySettings,
+                            icon: const Icon(Icons.settings_accessibility),
+                            label: const Text('Enable in Android settings'),
+                          ),
+                        )
+                      else ...[
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed:
+                                _loadingApps ? null : _chooseBlockedApps,
+                            icon: _loadingApps
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.checklist_rounded),
+                            label: Text(
+                              _selectedBlockedPackages.isEmpty
+                                  ? 'Choose apps to block'
+                                  : '${_selectedBlockedPackages.length} app(s) selected',
+                            ),
+                          ),
+                        ),
+                        if (_selectedBlockedPackages.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            _availableApps
+                                .where(
+                                  (app) => _selectedBlockedPackages
+                                      .contains(app.packageName),
+                                )
+                                .map((app) => app.label)
+                                .join(', '),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: gdMuted,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ],
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -287,6 +510,153 @@ class _FocusSetupSheetState extends State<FocusSetupSheet> {
           ],
         ),
       ),
+      ),
+    );
+  }
+}
+
+class _BlockedAppPicker extends StatefulWidget {
+  const _BlockedAppPicker({
+    required this.apps,
+    required this.initiallySelected,
+  });
+
+  final List<FocusBlockedApp> apps;
+  final Set<String> initiallySelected;
+
+  @override
+  State<_BlockedAppPicker> createState() => _BlockedAppPickerState();
+}
+
+class _BlockedAppPickerState extends State<_BlockedAppPicker> {
+  late final Set<String> _selected = {...widget.initiallySelected};
+  String _query = '';
+
+  List<FocusBlockedApp> get _filteredApps {
+    final query = _query.trim().toLowerCase();
+    if (query.isEmpty) return widget.apps;
+    return widget.apps
+        .where(
+          (app) =>
+              app.label.toLowerCase().contains(query) ||
+              app.packageName.toLowerCase().contains(query),
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final apps = _filteredApps;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text('Choose blocked apps', style: GdText.titleLarge),
+                ),
+                IconButton(
+                  tooltip: 'Close',
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              autofocus: true,
+              onChanged: (value) => setState(() => _query = value),
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search_rounded),
+                hintText: 'Search installed apps',
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Text(
+                  '${_selected.length} selected',
+                  style: TextStyle(
+                    color: gdMuted,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: _selected.isEmpty
+                      ? null
+                      : () => setState(_selected.clear),
+                  child: const Text('Clear all'),
+                ),
+              ],
+            ),
+            Expanded(
+              child: apps.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No matching apps found.',
+                        style: TextStyle(
+                          color: gdMuted,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: apps.length,
+                      itemBuilder: (context, index) {
+                        final app = apps[index];
+                        final selected =
+                            _selected.contains(app.packageName);
+                        return CheckboxListTile(
+                          value: selected,
+                          onChanged: (checked) {
+                            setState(() {
+                              if (checked == true) {
+                                _selected.add(app.packageName);
+                              } else {
+                                _selected.remove(app.packageName);
+                              }
+                            });
+                          },
+                          secondary: CircleAvatar(
+                            backgroundColor: gdPrimarySoft,
+                            child: Icon(
+                              Icons.apps_rounded,
+                              color: gdPrimary,
+                              size: 20,
+                            ),
+                          ),
+                          title: Text(
+                            app.label,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          subtitle: Text(
+                            app.packageName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => Navigator.of(context).pop(
+                  Set<String>.unmodifiable(_selected),
+                ),
+                icon: const Icon(Icons.check_rounded),
+                label: const Text('Use selected apps'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -467,7 +837,9 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
                                 Row(children: [Icon(Icons.center_focus_strong_rounded, size: 20), SizedBox(width: 8), Text('Stay in focus', style: TextStyle(fontWeight: FontWeight.w900, color: gdInk))]),
                                 const SizedBox(height: 10),
                                 Text(
-                                  'Leaving Goal Digger during a running session will ask you to stay focused. Leaving again resets the timer.',
+                                  widget.config.blocksApps
+                                      ? '${widget.config.blockedPackages.length} selected app(s) stay blocked while this timer runs.'
+                                      : 'The timer keeps running accurately when Goal Digger is in the background.',
                                   style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
                                 ),
                               ],

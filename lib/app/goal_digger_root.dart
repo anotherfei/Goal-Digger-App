@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:ui' show ImageFilter;
 
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/material.dart';
@@ -14,6 +13,7 @@ import '../data/seed_data.dart';
 import '../features/calendar/calendar_page.dart';
 import '../features/community/community_page.dart';
 import '../features/companion/companion_page.dart';
+import '../features/focus/services/focus_app_blocking_service.dart';
 import '../features/focus/widgets/focus_widgets.dart';
 import '../features/notifications/models/notification_models.dart';
 import '../features/notifications/notification_inbox_page.dart';
@@ -162,13 +162,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
 
   FocusSessionConfig? _activeFocusConfig;
   int _focusRemainingSeconds = 0;
+  DateTime? _focusEndsAt;
   bool _focusPaused = false;
   bool _focusCompletionHandled = false;
-  bool _focusExitWarningPending = false;
-  bool _focusExitWarningAcknowledged = false;
-  bool _focusExitWarningVisible = false;
   bool _focusDialogOpen = false;
   Timer? _focusTimer;
+  final FocusAppBlockingService _focusAppBlocking =
+      FocusAppBlockingService();
   final Set<String> _sentDeadlineSystemNoticeIds = {};
   int? _highlightedGoalId;
 
@@ -270,27 +270,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    if (!_hasActiveFocus || _focusComplete) return;
-    if (_notificationPermissionRequest != null) return;
-
-    if (state == AppLifecycleState.resumed) {
-      if (_focusExitWarningPending && !_focusExitWarningVisible) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          unawaited(_showFocusExitWarning());
-        });
-      }
-      return;
-    }
-
-    if (state == AppLifecycleState.inactive) {
-      _handleFocusExitAttempt(showWarningImmediately: true);
-      return;
-    }
-
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.hidden ||
-        state == AppLifecycleState.detached) {
-      _handleFocusExitAttempt();
+    if (state == AppLifecycleState.resumed && _activeFocusConfig != null) {
+      _refreshFocusCountdown();
     }
   }
 
@@ -411,14 +392,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       _friends = ['Maya Chen', 'Leo Tan', 'Ari Putra'];
       _activeFocusConfig = null;
       _focusRemainingSeconds = 0;
+      _focusEndsAt = null;
       _focusPaused = false;
       _focusCompletionHandled = false;
-      _focusExitWarningPending = false;
-      _focusExitWarningAcknowledged = false;
-      _focusExitWarningVisible = false;
       _highlightedGoalId = null;
     });
     unawaited(_androidNotifications.cancelAll());
+    unawaited(_focusAppBlocking.stopBlocking());
   }
 
   Future<void> _ensureUserProfile(AuthState authState) async {
@@ -2672,7 +2652,7 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
       builder: (context) => FocusSetupSheet(goals: _goals, today: today),
     );
     if (!mounted || config == null) return;
-    _startFocusSession(config);
+    await _startFocusSession(config);
   }
 
   void _handleMoodChanged(String value) {
@@ -2863,226 +2843,69 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
     _showMessage('AI adjusted your schedule: ${result.explanation}');
   }
 
-  void _handleFocusExitAttempt({bool showWarningImmediately = false}) {
-    if (!_hasActiveFocus || _focusComplete) return;
-
-    if (_focusExitWarningAcknowledged) {
-      _resetFocusSession(closeFocusDialog: true, closeWarningDialog: true);
-      return;
-    }
-
-    if (_focusExitWarningVisible) return;
-
-    if (!_focusExitWarningPending || !_focusPaused) {
-      setState(() {
-        _focusExitWarningPending = true;
-        _focusPaused = true;
-      });
-      _queueNotificationScheduleSync();
-    }
-
-    if (showWarningImmediately) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        unawaited(_showFocusExitWarning());
-      });
-    }
-  }
-
-  Future<void> _showFocusExitWarning() async {
-    if (!mounted ||
-        !_hasActiveFocus ||
-        _focusComplete ||
-        _focusExitWarningVisible) {
-      return;
-    }
-
-    _focusExitWarningVisible = true;
-    _focusExitWarningPending = false;
-    final leave = await showGeneralDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      barrierColor: Colors.black.withValues(alpha: 0.72),
-      transitionDuration: const Duration(milliseconds: 220),
-      pageBuilder: (context, animation, secondaryAnimation) {
-        return PopScope(
-          canPop: false,
-          child: Material(
-            color: Colors.transparent,
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: SafeArea(
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(22),
-                    child: AppCard(
-                      color: gdSurface.withValues(alpha: 0.96),
-                      child: Padding(
-                        padding: const EdgeInsets.all(22),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                CircleAvatar(
-                                  backgroundColor: gdPrimarySoft,
-                                  child: Icon(
-                                    Icons.center_focus_strong_rounded,
-                                    color: gdPrimary,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    'Stay focused',
-                                    style: GdText.headlineMedium,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 14),
-                            Text(
-                              'Leaving Goal Digger will stop this focus session and reset the timer.',
-                              style: TextStyle(
-                                color: gdInk,
-                                fontWeight: FontWeight.w900,
-                                height: 1.35,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Keep the app open to continue. If you leave again, this session will be reset with no progress changes.',
-                              style: TextStyle(
-                                color: gdMuted,
-                                fontWeight: FontWeight.w700,
-                                height: 1.4,
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: () =>
-                                        Navigator.of(context).pop(true),
-                                    icon: const Icon(Icons.logout_rounded),
-                                    label: const Text('Leave anyway'),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: FilledButton.icon(
-                                    onPressed: () =>
-                                        Navigator.of(context).pop(false),
-                                    icon: const Icon(
-                                      Icons.track_changes_rounded,
-                                    ),
-                                    label: const Text('Keep focusing'),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        final curved =
-            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-        return FadeTransition(opacity: curved, child: child);
-      },
-    );
-
-    _focusExitWarningVisible = false;
-    if (!mounted || !_hasActiveFocus || _focusComplete) return;
-
-    if (leave == true) {
-      _resetFocusSession(
-        closeFocusDialog: true,
-        message: 'Focus session reset.',
-      );
-      return;
-    }
-
-    setState(() {
-      _focusPaused = false;
-      _focusExitWarningAcknowledged = true;
-      _focusExitWarningPending = false;
-    });
-    _queueNotificationScheduleSync();
-    if (!_focusDialogOpen) _openActiveFocusDialog();
-  }
-
-  void _resetFocusSession({
-    bool closeFocusDialog = false,
-    bool closeWarningDialog = false,
-    String? message,
-  }) {
-    final shouldCloseFocusDialog = closeFocusDialog && _focusDialogOpen;
-    final shouldCloseWarningDialog =
-        closeWarningDialog && _focusExitWarningVisible;
-
-    _focusTimer?.cancel();
-    setState(() {
-      _activeFocusConfig = null;
-      _focusRemainingSeconds = 0;
-      _focusPaused = false;
-      _focusCompletionHandled = false;
-      _focusExitWarningPending = false;
-      _focusExitWarningAcknowledged = false;
-      _focusExitWarningVisible = false;
-    });
-    _queueNotificationScheduleSync();
-    unawaited(
-      _dismissFocusRoutes(
-        closeFocusDialog: shouldCloseFocusDialog,
-        closeWarningDialog: shouldCloseWarningDialog,
-      ),
-    );
-    if (message != null) _showMessage(message);
-  }
-
   Future<void> _dismissFocusRoutes({
     required bool closeFocusDialog,
-    required bool closeWarningDialog,
   }) async {
     if (!mounted) return;
     final navigator = Navigator.of(context, rootNavigator: true);
-    if (closeWarningDialog) await navigator.maybePop();
     if (closeFocusDialog) await navigator.maybePop();
   }
 
-  void _startFocusSession(FocusSessionConfig config) {
+  Future<void> _startFocusSession(FocusSessionConfig config) async {
     _focusTimer?.cancel();
+    final endsAt =
+        DateTime.now().add(Duration(minutes: config.durationMinutes));
+
+    if (config.blocksApps) {
+      final blockingStarted = await _focusAppBlocking.startBlocking(
+        packages: config.blockedPackages,
+        endsAt: endsAt,
+      );
+      if (!mounted) return;
+      if (!blockingStarted) {
+        _showMessage(
+          'Enable Goal Digger App Block in Android Accessibility settings.',
+        );
+        await _focusAppBlocking.openAccessibilitySettings();
+        return;
+      }
+    } else {
+      await _focusAppBlocking.stopBlocking();
+      if (!mounted) return;
+    }
+
     setState(() {
       _activeFocusConfig = config;
       _focusRemainingSeconds = config.durationMinutes * 60;
+      _focusEndsAt = endsAt;
       _focusPaused = false;
       _focusCompletionHandled = false;
-      _focusExitWarningPending = false;
-      _focusExitWarningAcknowledged = false;
-      _focusExitWarningVisible = false;
       _highlightedGoalId = null;
     });
-    _focusTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) return;
-      if (_focusPaused) return;
-      setState(
-          () => _focusRemainingSeconds = max(0, _focusRemainingSeconds - 1));
-      if (_focusRemainingSeconds == 0) {
-        timer.cancel();
-        _handleFocusSessionCompleted();
-      }
-    });
+    _focusTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _refreshFocusCountdown(),
+    );
     _queueNotificationScheduleSync();
     _openActiveFocusDialog();
+  }
+
+  void _refreshFocusCountdown() {
+    if (!mounted || _activeFocusConfig == null || _focusPaused) return;
+    final endsAt = _focusEndsAt;
+    if (endsAt == null) return;
+
+    final remainingMilliseconds =
+        endsAt.difference(DateTime.now()).inMilliseconds;
+    final remainingSeconds =
+        max(0, (remainingMilliseconds + 999) ~/ 1000);
+    if (remainingSeconds != _focusRemainingSeconds) {
+      setState(() => _focusRemainingSeconds = remainingSeconds);
+    }
+    if (remainingSeconds == 0) {
+      _focusTimer?.cancel();
+      _handleFocusSessionCompleted();
+    }
   }
 
   void _handleFocusSessionCompleted() {
@@ -3092,6 +2915,7 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
     final shouldCloseFocusDialog = _focusDialogOpen;
     _focusCompletionHandled = true;
     _focusTimer?.cancel();
+    unawaited(_focusAppBlocking.stopBlocking());
     unawaited(SystemSound.play(SystemSoundType.alert));
     if (_notificationSettings.systemNotificationsEnabled &&
         _notificationSettings.focusNotificationsEnabled) {
@@ -3100,11 +2924,9 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
     setState(() {
       _activeFocusConfig = null;
       _focusRemainingSeconds = 0;
+      _focusEndsAt = null;
       _focusPaused = false;
       _focusCompletionHandled = false;
-      _focusExitWarningPending = false;
-      _focusExitWarningAcknowledged = false;
-      _focusExitWarningVisible = false;
       _selectedIndex = 0;
       _highlightedGoalId = targetGoalId;
     });
@@ -3112,7 +2934,6 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
     unawaited(
       _dismissFocusRoutes(
         closeFocusDialog: shouldCloseFocusDialog,
-        closeWarningDialog: false,
       ),
     );
     _showMessage(
@@ -3150,7 +2971,7 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
           config: config,
           remainingSecondsProvider: () => _focusRemainingSeconds,
           pausedProvider: () => _focusPaused,
-          onPauseToggle: _toggleFocusPause,
+          onPauseToggle: () => unawaited(_toggleFocusPause()),
           onMinimize: () => Navigator.of(context).pop(),
           onStop: _stopFocusSession,
         );
@@ -3169,8 +2990,41 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
     });
   }
 
-  void _toggleFocusPause() {
-    setState(() => _focusPaused = !_focusPaused);
+  Future<void> _toggleFocusPause() async {
+    final config = _activeFocusConfig;
+    if (config == null) return;
+
+    if (_focusPaused) {
+      final endsAt =
+          DateTime.now().add(Duration(seconds: _focusRemainingSeconds));
+      if (config.blocksApps) {
+        final blockingStarted = await _focusAppBlocking.startBlocking(
+          packages: config.blockedPackages,
+          endsAt: endsAt,
+        );
+        if (!mounted) return;
+        if (!blockingStarted) {
+          _showMessage(
+            'App blocking is disabled. Enable it before resuming focus.',
+          );
+          await _focusAppBlocking.openAccessibilitySettings();
+          return;
+        }
+      }
+      setState(() {
+        _focusPaused = false;
+        _focusEndsAt = endsAt;
+      });
+    } else {
+      _refreshFocusCountdown();
+      if (!mounted || _activeFocusConfig == null) return;
+      setState(() {
+        _focusPaused = true;
+        _focusEndsAt = null;
+      });
+      await _focusAppBlocking.stopBlocking();
+      if (!mounted) return;
+    }
     _queueNotificationScheduleSync();
   }
 
@@ -3182,15 +3036,14 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
       return;
     }
     _focusTimer?.cancel();
+    unawaited(_focusAppBlocking.stopBlocking());
 
     setState(() {
       _activeFocusConfig = null;
       _focusRemainingSeconds = 0;
+      _focusEndsAt = null;
       _focusPaused = false;
       _focusCompletionHandled = false;
-      _focusExitWarningPending = false;
-      _focusExitWarningAcknowledged = false;
-      _focusExitWarningVisible = false;
     });
     _queueNotificationScheduleSync();
     Navigator.of(context, rootNavigator: true).maybePop();

@@ -1,17 +1,21 @@
 package com.example.fltr_test
 
 import android.Manifest
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.view.accessibility.AccessibilityManager
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.MethodChannel
+import java.util.Locale
 
 class MainActivity : FlutterActivity() {
     private val notificationChannel = "goal_digger/notifications"
+    private val focusBlockingChannel = "goal_digger/focus_blocking"
     private val notificationPermissionRequest = 7301
     private var pendingPermissionResult: MethodChannel.Result? = null
 
@@ -82,6 +86,58 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            focusBlockingChannel
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isAccessibilityServiceEnabled" -> {
+                    result.success(isFocusBlockingServiceEnabled())
+                }
+
+                "openAccessibilitySettings" -> {
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    result.success(true)
+                }
+
+                "getLaunchableApps" -> result.success(launchableApps())
+
+                "startBlocking" -> {
+                    val packages = call.argument<List<*>>("packages")
+                        .orEmpty()
+                        .mapNotNull { it?.toString() }
+                        .toSet()
+                    val endsAtMillis =
+                        call.argument<Number>("endsAtMillis")?.toLong()
+
+                    if (endsAtMillis == null) {
+                        result.error(
+                            "bad_args",
+                            "The focus session end time was missing.",
+                            null
+                        )
+                    } else if (!isFocusBlockingServiceEnabled()) {
+                        result.success(false)
+                    } else {
+                        result.success(
+                            FocusBlockStore.start(this, packages, endsAtMillis)
+                        )
+                    }
+                }
+
+                "stopBlocking" -> {
+                    FocusBlockStore.stop(this)
+                    result.success(true)
+                }
+
+                "isBlockingActive" -> {
+                    result.success(FocusBlockStore.isActive(this))
+                }
+
+                else -> result.notImplemented()
+            }
+        }
     }
 
     override fun onRequestPermissionsResult(
@@ -137,5 +193,68 @@ class MainActivity : FlutterActivity() {
                 .setData(Uri.parse("package:$packageName"))
         }
         startActivity(intent)
+    }
+
+    private fun isFocusBlockingServiceEnabled(): Boolean {
+        val manager =
+            getSystemService(ACCESSIBILITY_SERVICE) as AccessibilityManager
+        return manager.getEnabledAccessibilityServiceList(
+            AccessibilityServiceInfo.FEEDBACK_ALL_MASK
+        ).any { service ->
+            val serviceInfo = service.resolveInfo.serviceInfo
+            serviceInfo.packageName == packageName &&
+                serviceInfo.name == FocusBlockAccessibilityService::class.java.name
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun launchableApps(): List<Map<String, String>> {
+        val launcherIntent = Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+        val homeIntent = Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_HOME)
+        val launcherPackage = packageManager
+            .resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)
+            ?.activityInfo
+            ?.packageName
+        val settingsPackage = packageManager
+            .resolveActivity(
+                Intent(Settings.ACTION_SETTINGS),
+                PackageManager.MATCH_DEFAULT_ONLY
+            )
+            ?.activityInfo
+            ?.packageName
+        val accessibilitySettingsPackage = packageManager
+            .resolveActivity(
+                Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
+                PackageManager.MATCH_DEFAULT_ONLY
+            )
+            ?.activityInfo
+            ?.packageName
+        val protectedPackages = listOfNotNull(
+            packageName,
+            launcherPackage,
+            settingsPackage,
+            accessibilitySettingsPackage,
+            "com.android.settings",
+            "com.android.systemui",
+            "com.google.android.permissioncontroller"
+        ).toSet()
+
+        return packageManager
+            .queryIntentActivities(launcherIntent, PackageManager.MATCH_ALL)
+            .asSequence()
+            .filterNot { it.activityInfo.packageName in protectedPackages }
+            .distinctBy { it.activityInfo.packageName }
+            .map { activity ->
+                mapOf(
+                    "packageName" to activity.activityInfo.packageName,
+                    "label" to activity.loadLabel(packageManager).toString()
+                )
+            }
+            .sortedBy { app ->
+                app["label"].orEmpty().lowercase(Locale.getDefault())
+            }
+            .toList()
     }
 }
