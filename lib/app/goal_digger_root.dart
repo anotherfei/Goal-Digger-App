@@ -3529,12 +3529,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       CompanionPage(
         coins: _coins,
         happiness: _petHappiness,
+        streak: _streak,
         pet: _activePetSkin,
         accessory: _activeAccessory,
         onFeed: _feedPet,
         onOpenChest: _openPetChest,
         onPetInteract: _interactWithPet,
-      ),
+),
     ];
 
     return ResponsiveGoalShell(
