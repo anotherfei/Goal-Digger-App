@@ -9,6 +9,7 @@ import '../../shared/widgets/shared_widgets.dart';
 
 class CalendarPage extends StatefulWidget {
   const CalendarPage({
+    super.key,
     required this.tasks,
     required this.routines,
     required this.goalForTask,
@@ -27,7 +28,8 @@ class CalendarPage extends StatefulWidget {
   final VoidCallback onCreateGoal;
   final ValueChanged<RoutineItem> onAddRoutine;
   final ValueChanged<RoutineItem> onDeleteRoutine;
-  final Future<void> Function(MicroTask task, GoalProject goal) onSyncTaskToGoogle;
+  final Future<void> Function(MicroTask task, GoalProject goal)
+      onSyncTaskToGoogle;
   final Future<void> Function() onSyncAllTasksToGoogle;
 
   @override
@@ -115,7 +117,9 @@ class _CalendarPageState extends State<CalendarPage> {
       for (var day = 1; day <= daysInMonth; day++)
         DateTime(_visibleMonth.year, _visibleMonth.month, day)
     ];
-    while (cells.length % 7 != 0) cells.add(null);
+    while (cells.length % 7 != 0) {
+      cells.add(null);
+    }
     return cells;
   }
 
@@ -217,9 +221,8 @@ class _CalendarPageState extends State<CalendarPage> {
               padding: const EdgeInsets.all(16),
               child: Row(children: [
                 CircleAvatar(
-                    backgroundColor: selectedTasks.isEmpty
-                        ? gdBorder
-                        : gdPrimarySoft,
+                    backgroundColor:
+                        selectedTasks.isEmpty ? gdBorder : gdPrimarySoft,
                     child: Icon(
                         selectedTasks.isEmpty
                             ? Icons.event_available_rounded
@@ -311,8 +314,9 @@ class _CalendarPageState extends State<CalendarPage> {
                           initialSelection: _routineRepeat,
                           label: const Text('Repeat'),
                           onSelected: (value) {
-                            if (value != null)
+                            if (value != null) {
                               setState(() => _routineRepeat = value);
+                            }
                           },
                           dropdownMenuEntries: [
                             for (final repeat in RoutineRepeat.values)
@@ -442,8 +446,7 @@ class RoutineTile extends StatelessWidget {
             style: const TextStyle(fontWeight: FontWeight.w900)),
         subtitle: Text(
             '${longDate(routine.startsAt)} · $time · ${routine.repeat.label}',
-            style:
-                TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+            style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
         trailing: onDelete == null
             ? null
             : IconButton(
@@ -477,7 +480,7 @@ class _WeekdayLabel extends StatelessWidget {
   }
 }
 
-class _CalendarDayCell extends StatelessWidget {
+class _CalendarDayCell extends StatefulWidget {
   const _CalendarDayCell({
     required this.date,
     required this.taskCount,
@@ -495,105 +498,102 @@ class _CalendarDayCell extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final hasTasks = taskCount > 0;
-    final allDone = hasTasks && completedCount == taskCount;
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        decoration: BoxDecoration(
-          color: selected
-              ? gdPrimary
-              : hasTasks
-                  ? gdPrimarySoft
-                  : gdCardLight,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: today
-                ? gdWarning
-                : selected
-                    ? gdPrimary
-                    : gdBorder,
-            width: today || selected ? 2 : 1,
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              '${date.day}',
-              style: TextStyle(
-                color: selected ? gdOnDark : gdInk,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 4),
-            if (hasTasks)
-              Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(
-                  color: selected
-                      ? gdOnDark
-                      : allDone
-                          ? gdPrimary
-                          : gdWarning,
-                  shape: BoxShape.circle,
-                ),
-              )
-            else
-              const SizedBox(height: 7),
-          ],
-        ),
-      ),
-    );
-  }
+  State<_CalendarDayCell> createState() => _CalendarDayCellState();
 }
 
-class _CalendarStatCard extends StatelessWidget {
-  const _CalendarStatCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
+class _CalendarDayCellState extends State<_CalendarDayCell> {
+  bool _hovered = false;
+  bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            CircleAvatar(
-              backgroundColor: gdPrimarySoft,
-              child: Icon(icon, color: gdPrimary),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                        color: gdMuted, fontWeight: FontWeight.w800),
-                  ),
-                  Text(
-                    value,
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w900),
-                  ),
-                ],
+    final hasTasks = widget.taskCount > 0;
+    final allDone = hasTasks && widget.completedCount == widget.taskCount;
+    final lift = _hovered || widget.selected;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() {
+        _hovered = false;
+        _pressed = false;
+      }),
+      child: AnimatedScale(
+        scale: _pressed
+            ? 0.94
+            : _hovered
+                ? 1.04
+                : 1,
+        duration: const Duration(milliseconds: 140),
+        curve: Curves.easeOutCubic,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: widget.onTap,
+          onTapDown: (_) => setState(() => _pressed = true),
+          onTapCancel: () => setState(() => _pressed = false),
+          onTapUp: (_) => setState(() => _pressed = false),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            decoration: BoxDecoration(
+              color: widget.selected
+                  ? gdPrimary
+                  : hasTasks
+                      ? gdPrimarySoft
+                      : _hovered
+                          ? gdSurface
+                          : gdCardLight,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: widget.today
+                    ? gdWarning
+                    : widget.selected
+                        ? gdPrimary
+                        : _hovered
+                            ? gdPrimary.withValues(alpha: 0.40)
+                            : gdBorder,
+                width: widget.today || widget.selected ? 2 : 1,
               ),
+              boxShadow: lift
+                  ? [
+                      BoxShadow(
+                        color: gdPrimary.withValues(
+                            alpha: widget.selected ? 0.18 : 0.10),
+                        blurRadius: widget.selected ? 18 : 12,
+                        offset: Offset(0, widget.selected ? 8 : 5),
+                      ),
+                    ]
+                  : null,
             ),
-          ],
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '${widget.date.day}',
+                  style: TextStyle(
+                    color: widget.selected ? gdOnDark : gdInk,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                if (hasTasks)
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: widget.selected
+                          ? gdOnDark
+                          : allDone
+                              ? gdPrimary
+                              : gdWarning,
+                      shape: BoxShape.circle,
+                    ),
+                  )
+                else
+                  const SizedBox(height: 7),
+              ],
+            ),
+          ),
         ),
       ),
     );

@@ -44,9 +44,6 @@ class _DraftTaskSpec {
   final int durationMinutes;
   final TaskLoad load;
   final int dayOffset;
-
-  String get previewLabel =>
-      '$title · $durationMinutes min · ${load.label} · Day ${dayOffset + 1}';
 }
 
 class _GoalPlanApprovalResult {
@@ -57,6 +54,794 @@ class _GoalPlanApprovalResult {
 
   final String title;
   final List<_DraftTaskSpec> tasks;
+}
+
+class _PlanPreviewSection extends StatelessWidget {
+  const _PlanPreviewSection({required this.tasks});
+
+  final List<_DraftTaskSpec> tasks;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+      decoration: BoxDecoration(
+        color: gdSurface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: gdBorder),
+        boxShadow: [
+          BoxShadow(
+            color: gdShadow.withValues(alpha: GdAlpha.faint),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: gdPrimarySoft,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child:
+                    Icon(Icons.view_agenda_rounded, size: 17, color: gdPrimary),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Plan Preview',
+                      style: TextStyle(
+                        color: gdInk,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${tasks.length} generated task${tasks.length == 1 ? '' : 's'}',
+                      style: TextStyle(
+                        color: gdMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          for (var i = 0; i < tasks.length; i++)
+            Padding(
+              padding: EdgeInsets.only(bottom: i == tasks.length - 1 ? 0 : 12),
+              child: _StaggeredTaskEntrance(
+                index: i,
+                child: _GeneratedTaskBlock(
+                  task: tasks[i],
+                  index: i,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StaggeredTaskEntrance extends StatefulWidget {
+  const _StaggeredTaskEntrance({
+    required this.index,
+    required this.child,
+  });
+
+  final int index;
+  final Widget child;
+
+  @override
+  State<_StaggeredTaskEntrance> createState() => _StaggeredTaskEntranceState();
+}
+
+class _StaggeredTaskEntranceState extends State<_StaggeredTaskEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  late final Animation<Offset> _offset;
+  Timer? _delay;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 240),
+    );
+    final curved = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
+    _opacity = Tween<double>(begin: 0, end: 1).animate(curved);
+    _offset = Tween<Offset>(
+      begin: const Offset(0, 0.08),
+      end: Offset.zero,
+    ).animate(curved);
+    _delay = Timer(Duration(milliseconds: min(widget.index * 70, 420)), () {
+      if (mounted) _controller.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _delay?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _opacity,
+      child: SlideTransition(
+        position: _offset,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class _GeneratedTaskBlock extends StatefulWidget {
+  const _GeneratedTaskBlock({
+    required this.task,
+    required this.index,
+  });
+
+  final _DraftTaskSpec task;
+  final int index;
+
+  @override
+  State<_GeneratedTaskBlock> createState() => _GeneratedTaskBlockState();
+}
+
+class _GeneratedTaskBlockState extends State<_GeneratedTaskBlock> {
+  bool _expanded = false;
+
+  _DraftTaskSpec get task => widget.task;
+
+  String get _whyText {
+    if (task.dayOffset == 0) {
+      return 'This gives the plan a clear first action and helps you build momentum today.';
+    }
+    switch (task.load) {
+      case TaskLoad.light:
+        return 'This keeps progress moving without adding too much load.';
+      case TaskLoad.focus:
+        return 'This is a focused study block that turns the goal into measurable progress.';
+      case TaskLoad.stretch:
+        return 'This is the deeper work that helps lock in the most important part of the plan.';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: _expanded ? gdCardLight : gdSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _expanded ? gdPrimary.withValues(alpha: 0.28) : gdBorder,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: gdPrimarySoft,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${widget.index + 1}',
+                        style: TextStyle(
+                          color: gdPrimary,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            task.title,
+                            maxLines: _expanded ? 4 : 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: gdInk,
+                              fontSize: 15,
+                              height: 1.22,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 7),
+                          Wrap(
+                            spacing: 7,
+                            runSpacing: 7,
+                            children: [
+                              _detailPill(
+                                icon: Icons.timer_rounded,
+                                label: '${task.durationMinutes} min',
+                              ),
+                              _detailPill(
+                                icon: task.load.icon,
+                                label: task.load.label,
+                              ),
+                              _detailPill(
+                                icon: Icons.event_rounded,
+                                label: 'Day ${task.dayOffset + 1}',
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    AnimatedRotation(
+                      turns: _expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOutCubic,
+                      child: Icon(Icons.keyboard_arrow_down_rounded,
+                          color: gdPrimary),
+                    ),
+                  ],
+                ),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 210),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: _expanded
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 14),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: gdSurface,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: gdBorder),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(Icons.lightbulb_rounded,
+                                    size: 17, color: gdPrimary),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _whyText,
+                                    style: TextStyle(
+                                      color: gdMuted,
+                                      fontSize: 13,
+                                      height: 1.45,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _detailPill({
+    required IconData icon,
+    required String label,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: gdPrimarySoft.withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: gdPrimary),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: gdMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiThinkingIndicator extends StatefulWidget {
+  const _AiThinkingIndicator();
+
+  @override
+  State<_AiThinkingIndicator> createState() => _AiThinkingIndicatorState();
+}
+
+class _AiThinkingIndicatorState extends State<_AiThinkingIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1050),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: gdCardLight,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: gdBorder),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.auto_awesome_rounded, size: 17, color: gdPrimary),
+            const SizedBox(width: 10),
+            Text(
+              'Thinking through the plan',
+              style: TextStyle(
+                color: gdMuted,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(width: 10),
+            AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) {
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(3, (index) {
+                    final pulse = (sin(
+                              (_controller.value * 2 * pi) + (index * 0.85),
+                            ) +
+                            1) /
+                        2;
+                    return Container(
+                      width: 6 + pulse * 2,
+                      height: 6 + pulse * 2,
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      decoration: BoxDecoration(
+                        color: gdPrimary.withValues(alpha: 0.28 + pulse * 0.45),
+                        shape: BoxShape.circle,
+                      ),
+                    );
+                  }),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SproutLoadingMark extends StatefulWidget {
+  const _SproutLoadingMark();
+
+  @override
+  State<_SproutLoadingMark> createState() => _SproutLoadingMarkState();
+}
+
+class _SproutLoadingMarkState extends State<_SproutLoadingMark>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1550),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 86,
+      height: 66,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          return CustomPaint(
+            painter: _SproutLoadingPainter(_controller.value),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SproutLoadingPainter extends CustomPainter {
+  const _SproutLoadingPainter(this.progress);
+
+  final double progress;
+
+  double _segment(double start, double end) {
+    return ((progress - start) / (end - start)).clamp(0.0, 1.0).toDouble();
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height * 0.68);
+    final drop = Curves.easeInCubic.transform(_segment(0.0, 0.32));
+    final grow = Curves.easeOutBack.transform(_segment(0.28, 0.74));
+    final settle = Curves.easeInCubic.transform(_segment(0.78, 1.0));
+    final sprout = (grow * (1 - settle)).clamp(0.0, 1.0).toDouble();
+    final seedAlpha = (1 - _segment(0.30, 0.56)).clamp(0.0, 1.0).toDouble();
+
+    final soilPaint = Paint()
+      ..color = gdPrimarySoft.withValues(alpha: 0.95)
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      Offset(center.dx - 30, center.dy + 4),
+      Offset(center.dx + 30, center.dy + 4),
+      soilPaint,
+    );
+
+    final soilDotPaint = Paint()
+      ..color = gdPrimary.withValues(alpha: 0.18)
+      ..style = PaintingStyle.fill;
+    for (final offset in [-22.0, -10.0, 12.0, 24.0]) {
+      canvas.drawCircle(
+          Offset(center.dx + offset, center.dy + 9), 2.2, soilDotPaint);
+    }
+
+    final seedY = size.height * 0.24 + (center.dy - size.height * 0.24) * drop;
+    final seedPaint = Paint()
+      ..color = gdStarGold.withValues(alpha: seedAlpha)
+      ..style = PaintingStyle.fill;
+    if (seedAlpha > 0) {
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(center.dx, seedY),
+          width: 13,
+          height: 10,
+        ),
+        seedPaint,
+      );
+    }
+
+    if (sprout <= 0) return;
+
+    final stemPaint = Paint()
+      ..color = gdSuccess.withValues(alpha: 0.92)
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round;
+    final stemTop = Offset(center.dx, center.dy - 28 * sprout);
+    canvas.drawLine(center, stemTop, stemPaint);
+
+    final leafPaint = Paint()
+      ..color = gdSuccess.withValues(alpha: 0.78 * sprout)
+      ..style = PaintingStyle.fill;
+    final leftLeaf = Path()
+      ..moveTo(stemTop.dx, stemTop.dy + 8)
+      ..quadraticBezierTo(stemTop.dx - 19 * sprout, stemTop.dy - 2,
+          stemTop.dx - 7 * sprout, stemTop.dy + 14 * sprout)
+      ..quadraticBezierTo(
+          stemTop.dx - 2, stemTop.dy + 12, stemTop.dx, stemTop.dy + 8);
+    final rightLeaf = Path()
+      ..moveTo(stemTop.dx, stemTop.dy + 4)
+      ..quadraticBezierTo(stemTop.dx + 20 * sprout, stemTop.dy - 8,
+          stemTop.dx + 8 * sprout, stemTop.dy + 10 * sprout)
+      ..quadraticBezierTo(
+          stemTop.dx + 2, stemTop.dy + 8, stemTop.dx, stemTop.dy + 4);
+    canvas.drawPath(leftLeaf, leafPaint);
+    canvas.drawPath(rightLeaf, leafPaint);
+
+    final shinePaint = Paint()
+      ..color = gdPrimary.withValues(alpha: 0.18 * sprout)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromCenter(center: center, width: 70, height: 48),
+      pi * 1.05,
+      pi * 0.9 * sprout,
+      false,
+      shinePaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _SproutLoadingPainter oldDelegate) {
+    return oldDelegate.progress != progress;
+  }
+}
+
+class _PlanCommitAnimation extends StatelessWidget {
+  const _PlanCommitAnimation({
+    required this.title,
+    required this.tasks,
+  });
+
+  final String title;
+  final List<_DraftTaskSpec> tasks;
+
+  @override
+  Widget build(BuildContext context) {
+    final previewTasks = tasks.take(4).toList();
+
+    return Center(
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 1350),
+        curve: Curves.easeOutCubic,
+        builder: (context, value, _) {
+          final titleT = (value / 0.28).clamp(0.0, 1.0).toDouble();
+          final sinkT = ((value - 0.70) / 0.30).clamp(0.0, 1.0).toDouble();
+
+          return Material(
+            color: Colors.transparent,
+            child: Container(
+              width: min(MediaQuery.of(context).size.width - 40, 440.0),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+              decoration: BoxDecoration(
+                color: gdSurface,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: gdBorder),
+                boxShadow: [
+                  BoxShadow(
+                    color: gdShadow.withValues(alpha: 0.18),
+                    blurRadius: 32,
+                    offset: const Offset(0, 18),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Opacity(
+                    opacity: titleT,
+                    child: Transform.translate(
+                      offset: Offset(0, (1 - titleT) * 10),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: gdPrimarySoft,
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                            child: Icon(Icons.auto_awesome_rounded,
+                                color: gdPrimary),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: gdInk,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  'Building your schedule',
+                                  style: TextStyle(
+                                    color: gdMuted,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Stack(
+                    alignment: Alignment.bottomCenter,
+                    children: [
+                      Column(
+                        children: [
+                          for (var i = 0; i < previewTasks.length; i++)
+                            _PlanCommitTaskRow(
+                              task: previewTasks[i],
+                              index: i,
+                              progress: value,
+                              sinkProgress: sinkT,
+                            ),
+                        ],
+                      ),
+                      IgnorePointer(
+                        child: Opacity(
+                          opacity: sinkT,
+                          child: Transform.scale(
+                            scale: 0.86 + sinkT * 0.14,
+                            child: Container(
+                              margin: const EdgeInsets.only(top: 16),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: gdPrimary,
+                                borderRadius: BorderRadius.circular(18),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: gdPrimary.withValues(alpha: 0.24),
+                                    blurRadius: 18,
+                                    offset: const Offset(0, 10),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: const [
+                                  Icon(Icons.calendar_month_rounded,
+                                      color: Colors.white, size: 20),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Scheduled',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _PlanCommitTaskRow extends StatelessWidget {
+  const _PlanCommitTaskRow({
+    required this.task,
+    required this.index,
+    required this.progress,
+    required this.sinkProgress,
+  });
+
+  final _DraftTaskSpec task;
+  final int index;
+  final double progress;
+  final double sinkProgress;
+
+  @override
+  Widget build(BuildContext context) {
+    final start = 0.18 + index * 0.10;
+    final appear = ((progress - start) / 0.22).clamp(0.0, 1.0).toDouble();
+    final opacity =
+        (appear * (1 - sinkProgress * 0.55)).clamp(0.0, 1.0).toDouble();
+
+    return Opacity(
+      opacity: opacity,
+      child: Transform.translate(
+        offset: Offset(0, (1 - appear) * 16 + sinkProgress * 24),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: gdCardLight,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: gdBorder),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: gdPrimarySoft,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${index + 1}',
+                  style: TextStyle(
+                    color: gdPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  task.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: gdInk,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.keyboard_arrow_down_rounded, color: gdMuted, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _SystemNotificationRequest {
@@ -178,7 +963,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     if (user == null || user.isAnonymous) {
       _showHelpfulError(
         title: 'Google sign-in required',
-        message: 'Please sign in with Google before syncing to Google Calendar.',
+        message:
+            'Please sign in with Google before syncing to Google Calendar.',
         actionLabel: 'OK',
         onAction: () {},
       );
@@ -199,40 +985,41 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   Future<void> _syncAllTasksToGoogleCalendar() async {
-  final user = context.read<AuthService>().currentUser;
+    final user = context.read<AuthService>().currentUser;
 
-  if (user == null || user.isAnonymous) {
-    _showHelpfulError(
-      title: 'Google sign-in required',
-      message: 'Please sign in with Google before syncing to Google Calendar.',
-      actionLabel: 'OK',
-      onAction: () {},
-    );
-    return;
+    if (user == null || user.isAnonymous) {
+      _showHelpfulError(
+        title: 'Google sign-in required',
+        message:
+            'Please sign in with Google before syncing to Google Calendar.',
+        actionLabel: 'OK',
+        onAction: () {},
+      );
+      return;
+    }
+
+    if (_allTasks.isEmpty) {
+      _showMessage('No tasks available to sync.');
+      return;
+    }
+
+    try {
+      final result = await context
+          .read<GoogleCalendarService>()
+          .syncAllTaskEvents(_allTasks, _goalForTask);
+
+      _showMessage(
+        'Calendar sync complete: ${result.created} created, ${result.skipped} already synced, ${result.failed} failed.',
+      );
+    } catch (e) {
+      _showHelpfulError(
+        title: 'Calendar sync failed',
+        message: '$e',
+        actionLabel: 'OK',
+        onAction: () {},
+      );
+    }
   }
-
-  if (_allTasks.isEmpty) {
-    _showMessage('No tasks available to sync.');
-    return;
-  }
-
-  try {
-    final result = await context
-        .read<GoogleCalendarService>()
-        .syncAllTaskEvents(_allTasks, _goalForTask);
-
-    _showMessage(
-      'Calendar sync complete: ${result.created} created, ${result.skipped} already synced, ${result.failed} failed.',
-    );
-  } catch (e) {
-    _showHelpfulError(
-      title: 'Calendar sync failed',
-      message: '$e',
-      actionLabel: 'OK',
-      onAction: () {},
-    );
-  }
-}
 
   @override
   void initState() {
@@ -444,7 +1231,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                   ? 'Google'
                   : providerId == 'password'
                       ? 'Email'
-              : 'Firebase';
+                      : 'Firebase';
         });
         _queueNotificationScheduleSync();
       },
@@ -1232,7 +2019,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Android notification permission is not enabled.'),
+          content:
+              const Text('Android notification permission is not enabled.'),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 8),
           action: SnackBarAction(
@@ -1244,7 +2032,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       return;
     }
     await _androidNotifications.showNow(
-      id: _stableNotificationId('test_${DateTime.now().millisecondsSinceEpoch}'),
+      id: _stableNotificationId(
+          'test_${DateTime.now().millisecondsSinceEpoch}'),
       title: 'Goal Digger test',
       body: 'Android notifications are ready.',
       important: true,
@@ -1324,38 +2113,76 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   // Centered, non-dismissible loading card shown while the AI generates a plan.
   Widget _buildGeneratingLoader(String label) {
+    final adjusting = label.toLowerCase().contains('adjust');
+    final title = adjusting ? 'Rebalancing your schedule' : 'Growing your plan';
+    final message = adjusting
+        ? 'Moving unfinished tasks into a calmer timeline.'
+        : 'Planting your goal into small, realistic steps.';
+
     return PopScope(
       canPop: false,
       child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 26),
-          decoration: BoxDecoration(
-            color: gdSurface,
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 38,
-                height: 38,
-                child: CircularProgressIndicator(strokeWidth: 3, color: gdPrimary),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                label,
-                style: TextStyle(
-                  color: gdInk,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 320),
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 22),
+            decoration: BoxDecoration(
+              color: gdSurface,
+              borderRadius: BorderRadius.circular(26),
+              border: Border.all(color: gdBorder),
+              boxShadow: [
+                BoxShadow(
+                  color: gdShadow.withValues(alpha: 0.16),
+                  blurRadius: 30,
+                  offset: const Offset(0, 16),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'This may take a few seconds…',
-                style: TextStyle(color: gdMuted, fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-            ],
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const _SproutLoadingMark(),
+                const SizedBox(height: 16),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: gdInk,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: gdMuted,
+                    fontSize: 13.5,
+                    height: 1.35,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: gdPrimarySoft.withValues(alpha: 0.64),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    'AI is checking timing and workload',
+                    style: TextStyle(
+                      color: gdPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1532,7 +2359,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         }
       }
     } catch (e) {
-      debugPrint('Agent planner unavailable before goal guard verification: $e');
+      debugPrint(
+          'Agent planner unavailable before goal guard verification: $e');
       awaitingGoalRefinement = true;
       guardReply = guardUnavailableReply;
       draftSpecs = [];
@@ -1595,7 +2423,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       'text': intro.toString(),
     };
     if (!awaitingGoalRefinement) {
-      firstMessage['tasks'] = _draftPreviewLabels(draftSpecs);
+      firstMessage['tasks'] = _draftPreviewTasks(draftSpecs);
     }
     final messages = <Map<String, dynamic>>[firstMessage];
 
@@ -1634,7 +2462,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                       'role': 'assistant',
                       'text':
                           "No problem — I'll keep your deadline at ${shortDate(_newGoalDeadline)} and the plan will stay within it.",
-                      'tasks': _draftPreviewLabels(draftSpecs),
+                      'tasks': _draftPreviewTasks(draftSpecs),
                     });
                     chatController.clear();
                     pendingDeadlineDays = null;
@@ -1676,7 +2504,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                     messages.add({
                       'role': 'assistant',
                       'text': replanNote,
-                      'tasks': _draftPreviewLabels(draftSpecs),
+                      'tasks': _draftPreviewTasks(draftSpecs),
                     });
                     isAiThinking = false;
                   });
@@ -1698,7 +2526,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                   messages.add({
                     'role': 'assistant',
                     'text': "Got it — I'll keep the plan as it is.",
-                    'tasks': _draftPreviewLabels(draftSpecs),
+                    'tasks': _draftPreviewTasks(draftSpecs),
                   });
                   chatController.clear();
                   pendingForceRequest = null;
@@ -1741,8 +2569,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
                   if (!dialogContext.mounted) return;
                   setLocalState(() {
-                    if (modification.applied &&
-                        modification.tasks.isNotEmpty) {
+                    if (modification.applied && modification.tasks.isNotEmpty) {
                       draftSpecs =
                           _draftSpecsFromGeneratedTasks(modification.tasks)
                               .toList();
@@ -1764,7 +2591,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                       // Show the plan unless the agent is mid-question.
                       if (modification.applied ||
                           modification.status == 'rejected')
-                        'tasks': _draftPreviewLabels(draftSpecs),
+                        'tasks': _draftPreviewTasks(draftSpecs),
                     });
                     isAiThinking = false;
                   });
@@ -1848,7 +2675,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                   messages.add({
                     'role': 'assistant',
                     'text': replyText,
-                    'tasks': _draftPreviewLabels(draftSpecs),
+                    'tasks': _draftPreviewTasks(draftSpecs),
                   });
                   isAiThinking = false;
                 });
@@ -1866,7 +2693,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                         ? "I can't verify this revised goal right now, so I won't generate todos for it. Please try again, or rewrite it as a clear, constructive, achievable goal."
                         : 'The AI planner is unavailable right now, so I cannot safely apply that change. The existing draft is unchanged.',
                     if (!wasAwaitingGoalRefinement)
-                      'tasks': _draftPreviewLabels(draftSpecs),
+                      'tasks': _draftPreviewTasks(draftSpecs),
                   });
                   isAiThinking = false;
                 });
@@ -1877,123 +2704,110 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               final isUser = message['role'] == 'user';
               final bubbleColor = isUser ? gdPrimary : gdCardLight;
               final textColor = isUser ? Colors.white : gdInk;
-              final tasks = (message['tasks'] as List?)?.cast<String>();
+              final tasks = (message['tasks'] as List?)
+                      ?.whereType<_DraftTaskSpec>()
+                      .toList() ??
+                  const <_DraftTaskSpec>[];
+              final width = MediaQuery.of(context).size.width;
+              final compact = width < 620;
+              final bubbleMaxWidth =
+                  compact ? min(width * 0.74, 360.0) : (isUser ? 520.0 : 560.0);
+              final planMaxWidth = compact ? min(width * 0.88, 430.0) : 620.0;
 
               return Align(
                 alignment:
                     isUser ? Alignment.centerRight : Alignment.centerLeft,
-                child: Container(
-                  constraints: const BoxConstraints(maxWidth: 680),
-                  margin: EdgeInsets.only(
-                      left: isUser ? 44 : 0, right: isUser ? 0 : 44),
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: bubbleColor,
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(26),
-                      topRight: const Radius.circular(26),
-                      bottomLeft: Radius.circular(isUser ? 26 : 8),
-                      bottomRight: Radius.circular(isUser ? 8 : 26),
-                    ),
-                    border: !isUser ? Border.all(color: gdBorder) : null,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (!isUser)
-                        Row(
+                child: Column(
+                  crossAxisAlignment: isUser
+                      ? CrossAxisAlignment.end
+                      : CrossAxisAlignment.start,
+                  children: [
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: bubbleMaxWidth),
+                      child: Container(
+                        margin: EdgeInsets.only(
+                          left: isUser ? (compact ? 54 : 70) : 0,
+                          right: isUser ? 0 : (compact ? 42 : 70),
+                        ),
+                        padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
+                        decoration: BoxDecoration(
+                          color: bubbleColor,
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(18),
+                            topRight: const Radius.circular(18),
+                            bottomLeft: Radius.circular(isUser ? 18 : 7),
+                            bottomRight: Radius.circular(isUser ? 7 : 18),
+                          ),
+                          border: !isUser ? Border.all(color: gdBorder) : null,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            CircleAvatar(
-                              radius: 15,
-                              backgroundColor: gdPrimarySoft,
-                              child: Icon(Icons.auto_awesome_rounded,
-                                  size: 16, color: gdPrimary),
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              'AI Assistant',
-                              style: TextStyle(
-                                  color: gdMuted, fontWeight: FontWeight.w900),
-                            ),
-                          ],
-                        ),
-                      if (!isUser) const SizedBox(height: 10),
-                      Text(
-                        message['text'] as String,
-                        style: TextStyle(
-                          color: textColor,
-                          fontSize: 15,
-                          height: 1.55,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      if (tasks != null && tasks.isNotEmpty) ...[
-                        const SizedBox(height: 14),
-                        for (var i = 0; i < tasks.length; i++)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  width: 26,
-                                  height: 26,
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    color: isUser
-                                        ? Colors.white.withValues(alpha: 0.14)
-                                        : gdSurface,
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                      color: isUser ? Colors.white24 : gdBorder,
-                                    ),
+                            if (!isUser)
+                              Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 14,
+                                    backgroundColor: gdPrimarySoft,
+                                    child: Icon(Icons.auto_awesome_rounded,
+                                        size: 15, color: gdPrimary),
                                   ),
-                                  child: Text(
-                                    '${i + 1}',
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'AI Assistant',
                                     style: TextStyle(
-                                      color: isUser ? Colors.white : gdPrimary,
+                                      color: gdMuted,
+                                      fontSize: 12.5,
                                       fontWeight: FontWeight.w900,
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(top: 3),
-                                    child: Text(
-                                      tasks[i],
-                                      style: TextStyle(
-                                        color: textColor,
-                                        fontSize: 15,
-                                        height: 1.45,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                                ],
+                              ),
+                            if (!isUser) const SizedBox(height: 12),
+                            Text(
+                              message['text'] as String,
+                              style: TextStyle(
+                                color: textColor,
+                                fontSize: isUser ? 14.5 : 14,
+                                height: isUser ? 1.48 : 1.68,
+                                fontWeight:
+                                    isUser ? FontWeight.w700 : FontWeight.w600,
+                              ),
                             ),
-                          ),
-                      ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (tasks.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: planMaxWidth),
+                        child: _PlanPreviewSection(tasks: tasks),
+                      ),
                     ],
-                  ),
+                  ],
                 ),
               );
             }
 
+            final dialogSize = MediaQuery.of(dialogContext).size;
+            final isCompactDialog = dialogSize.width < 620;
+
             return Dialog(
               backgroundColor: Colors.transparent,
-              insetPadding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
+              insetPadding: EdgeInsets.symmetric(
+                horizontal: isCompactDialog ? 10 : 18,
+                vertical: isCompactDialog ? 14 : 22,
+              ),
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxWidth: 880,
-                  maxHeight: MediaQuery.of(dialogContext).size.height * 0.86,
+                  maxWidth: 840,
+                  maxHeight: dialogSize.height * 0.88,
                 ),
                 child: Container(
                   decoration: BoxDecoration(
                     color: gdSurface,
-                    borderRadius: BorderRadius.circular(34),
+                    borderRadius: BorderRadius.circular(26),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: 0.12),
@@ -2003,7 +2817,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                     ],
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+                    padding: EdgeInsets.fromLTRB(
+                      isCompactDialog ? 18 : 24,
+                      20,
+                      isCompactDialog ? 18 : 24,
+                      22,
+                    ),
                     child: Column(
                       children: [
                         Row(
@@ -2026,7 +2845,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                     title,
                                     style: TextStyle(
                                       color: gdInk,
-                                      fontSize: 22,
+                                      fontSize: isCompactDialog ? 20 : 22,
+                                      height: 1.22,
                                       fontWeight: FontWeight.w900,
                                     ),
                                   ),
@@ -2036,13 +2856,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                             Container(
                               decoration: BoxDecoration(
                                 color: gdCardLight,
-                                borderRadius: BorderRadius.circular(999),
+                                borderRadius: BorderRadius.circular(16),
                               ),
                               child: IconButton(
                                 tooltip: 'Close',
                                 onPressed: () => closeGoalDialog(dialogContext),
-                                icon: Icon(Icons.close_rounded,
-                                    color: gdMuted),
+                                icon: Icon(Icons.close_rounded, color: gdMuted),
                               ),
                             ),
                           ],
@@ -2052,31 +2871,20 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                           child: Container(
                             decoration: BoxDecoration(
                               color: gdSurface,
-                              borderRadius: BorderRadius.circular(28),
+                              borderRadius: BorderRadius.circular(20),
                               border: Border.all(color: gdBorder),
                             ),
-                            padding: const EdgeInsets.all(16),
+                            padding: EdgeInsets.all(isCompactDialog ? 12 : 16),
                             child: ListView.separated(
                               itemCount:
                                   messages.length + (isAiThinking ? 1 : 0),
                               separatorBuilder: (_, __) =>
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: 18),
                               itemBuilder: (context, index) {
                                 if (index < messages.length) {
                                   return buildMessageBubble(messages[index]);
                                 }
-                                return const Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Chip(
-                                    avatar: SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2),
-                                    ),
-                                    label: Text('AI is thinking...'),
-                                  ),
-                                );
+                                return const _AiThinkingIndicator();
                               },
                             ),
                           ),
@@ -2102,13 +2910,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                                   filled: true,
                                   fillColor: gdCardLight,
                                   contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 18, vertical: 18),
+                                      horizontal: 16, vertical: 16),
                                   enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(24),
+                                    borderRadius: BorderRadius.circular(18),
                                     borderSide: BorderSide(color: gdBorder),
                                   ),
                                   focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(24),
+                                    borderRadius: BorderRadius.circular(18),
                                     borderSide: BorderSide(
                                         color: gdPrimary, width: 1.6),
                                   ),
@@ -2117,15 +2925,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                             ),
                             const SizedBox(width: 12),
                             SizedBox(
-                              height: 56,
+                              height: 54,
                               child: FilledButton(
                                 style: FilledButton.styleFrom(
                                   backgroundColor: gdPrimary,
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 24),
+                                      horizontal: 22),
                                   shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(24)),
+                                      borderRadius: BorderRadius.circular(18)),
                                 ),
                                 onPressed: isAiThinking ? null : sendMessage,
                                 child: const Text('Send'),
@@ -2141,9 +2949,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                               style: FilledButton.styleFrom(
                                 backgroundColor: const Color(0xFF10B981),
                                 foregroundColor: Colors.white,
-                                minimumSize: const Size.fromHeight(64),
+                                minimumSize: const Size.fromHeight(58),
                                 shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(24)),
+                                    borderRadius: BorderRadius.circular(18)),
                               ),
                               onPressed: isAiThinking || draftSpecs.isEmpty
                                   ? null
@@ -2171,10 +2979,46 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     );
 
     if (result != null && mounted) {
+      await _showPlanCommitAnimation(result.title, result.tasks);
       await Future<void>.delayed(const Duration(milliseconds: 120));
       if (!mounted) return;
       await _finishCreateGoal(result.title, approvedTaskSpecs: result.tasks);
     }
+  }
+
+  Future<void> _showPlanCommitAnimation(
+    String title,
+    List<_DraftTaskSpec> tasks,
+  ) async {
+    if (!mounted) return;
+    final animation = showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withValues(alpha: 0.18),
+      transitionDuration: const Duration(milliseconds: 180),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return _PlanCommitAnimation(title: title, tasks: tasks);
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.97, end: 1).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    if (mounted) {
+      Navigator.of(context, rootNavigator: true).maybePop();
+    }
+    await animation;
   }
 
   Future<void> _finishCreateGoal(String title,
@@ -2251,8 +3095,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     ];
   }
 
-  List<String> _draftPreviewLabels(List<_DraftTaskSpec> specs) {
-    return specs.map((task) => task.previewLabel).toList();
+  List<_DraftTaskSpec> _draftPreviewTasks(List<_DraftTaskSpec> specs) {
+    return List<_DraftTaskSpec>.from(specs);
   }
 
   List<_DraftTaskSpec> _draftSpecsFromGeneratedTasks(
@@ -2334,23 +3178,21 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   void _toggleTask(MicroTask task) {
+    if (task.done) {
+      _showMessage('Completed tasks are locked so rewards stay fair.');
+      return;
+    }
+
     final goal = _goalForTask(task);
     setState(() {
-      task.done = !task.done;
-      if (task.done) {
-        _coins += task.points;
-        _petHappiness = min(100, _petHappiness + 8);
-      } else {
-        _coins = max(0, _coins - task.points);
-        _petHappiness = max(0, _petHappiness - 8);
-      }
+      task.done = true;
+      _coins += task.points;
+      _petHappiness = min(100, _petHappiness + 8);
     });
-    if (task.done) {
-      _showCoinRewardPrompt(
-        task.points,
-        'for completing "${task.title}"',
-      );
-    }
+    _showCoinRewardPrompt(
+      task.points,
+      'for completing "${task.title}"',
+    );
     unawaited(_persistTaskToggle(goal, task));
     unawaited(_persistProfileStats());
     _queueNotificationScheduleSync();
@@ -2372,52 +3214,51 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   void _deleteGoal(GoalProject goal) {
-  setState(() => _goals.removeWhere((item) => item.id == goal.id));
+    setState(() => _goals.removeWhere((item) => item.id == goal.id));
 
-  unawaited(_deleteGoalEverywhere(goal));
+    unawaited(_deleteGoalEverywhere(goal));
 
-  _queueNotificationScheduleSync();
-  _showMessage('Removed ${goal.title}.');
-}
+    _queueNotificationScheduleSync();
+    _showMessage('Removed ${goal.title}.');
+  }
 
-Future<void> _deleteGoalEverywhere(GoalProject goal) async {
-  final user = context.read<AuthService>().currentUser;
+  Future<void> _deleteGoalEverywhere(GoalProject goal) async {
+    final user = context.read<AuthService>().currentUser;
 
-  if (user != null && !user.isAnonymous) {
-    try {
-      final deletedEvents = await context
-          .read<GoogleCalendarService>()
-          .deleteTaskEventsForGoal(goal);
+    if (user != null && !user.isAnonymous) {
+      try {
+        final deletedEvents = await context
+            .read<GoogleCalendarService>()
+            .deleteTaskEventsForGoal(goal);
 
-      debugPrint(
-        'Deleted $deletedEvents Google Calendar events for goal ${goal.title}.',
-      );
-    } catch (e) {
-      debugPrint('Google Calendar goal cleanup failed: $e');
-
-      if (mounted) {
-        _showMessage(
-          'Goal removed, but Google Calendar cleanup failed.',
+        debugPrint(
+          'Deleted $deletedEvents Google Calendar events for goal ${goal.title}.',
         );
+      } catch (e) {
+        debugPrint('Google Calendar goal cleanup failed: $e');
+
+        if (mounted) {
+          _showMessage(
+            'Goal removed, but Google Calendar cleanup failed.',
+          );
+        }
+      }
+    }
+
+    final sync = _sync;
+
+    if (sync != null) {
+      try {
+        await sync.deleteGoal(goal.id.toString());
+      } catch (e) {
+        debugPrint('Delete goal sync failed: $e');
+
+        if (mounted) {
+          _showMessage('Goal removed locally, but Firebase delete failed.');
+        }
       }
     }
   }
-
-  final sync = _sync;
-
-  if (sync != null) {
-    try {
-      await sync.deleteGoal(goal.id.toString());
-    } catch (e) {
-      debugPrint('Delete goal sync failed: $e');
-
-      if (mounted) {
-        _showMessage('Goal removed locally, but Firebase delete failed.');
-      }
-    }
-  }
-}
-
 
   void _addCommunity() {
     final title = _communityController.text.trim();
@@ -3195,8 +4036,8 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(goal.title,
-                  style: TextStyle(
-                      color: gdMuted, fontWeight: FontWeight.w800)),
+                  style:
+                      TextStyle(color: gdMuted, fontWeight: FontWeight.w800)),
               const SizedBox(height: 14),
               PrioritySelector(
                 value: draftPriority,
@@ -3348,7 +4189,8 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
       unreadNotifications:
           _notifications.where((notification) => notification.isUnread).length,
       importantUnreadNotifications: _notifications
-          .where((notification) => notification.important && notification.isUnread)
+          .where(
+              (notification) => notification.important && notification.isUnread)
           .length,
       hasActiveFocus: _hasActiveFocus || _focusComplete,
       focusLabel: _activeFocusConfig == null
