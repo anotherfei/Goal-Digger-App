@@ -13,6 +13,7 @@ import '../data/seed_data.dart';
 import '../features/calendar/calendar_page.dart';
 import '../features/community/community_page.dart';
 import '../features/companion/companion_page.dart';
+import '../features/companion/lumi_sprite.dart';
 import '../features/focus/widgets/focus_widgets.dart';
 import '../features/notifications/models/notification_models.dart';
 import '../features/notifications/notification_inbox_page.dart';
@@ -408,6 +409,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _disposeSync();
     final sync = AppSyncService(uid: uid);
     _sync = sync;
+    _goalsSyncedFromFirebase = false;
 
     _goalsSub = sync.goalsStream.listen(
       (goals) {
@@ -475,6 +477,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         }
         _restoreTodayStreakFromCompletedTask();
         _queueNotificationScheduleSync();
+        _syncStreakFromCompletedTasks();
       },
       onError: (Object error) => debugPrint('Profile sync error: $error'),
     );
@@ -720,6 +723,44 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   double get _todayProgress =>
       _todayTasks.isEmpty ? 0 : _todayCompleted / _todayTasks.length;
+
+  int get _calculatedCurrentStreak {
+    final completedDays = _allTasks
+        .where((task) => task.done)
+        .map((task) => dateOnly(task.scheduledDate))
+        .where((day) => !day.isAfter(today))
+        .map(dateKey)
+        .toSet();
+
+    if (completedDays.isEmpty) return 0;
+
+    var day =
+        completedDays.contains(dateKey(today)) ? today : addDays(today, -1);
+    if (!completedDays.contains(dateKey(day))) return 0;
+
+    var streak = 0;
+    while (completedDays.contains(dateKey(day))) {
+      streak++;
+      day = addDays(day, -1);
+    }
+
+    return streak;
+  }
+
+  void _syncStreakFromCompletedTasks() {
+    if (_sync != null && !_goalsSyncedFromFirebase) return;
+
+    final nextStreak = _calculatedCurrentStreak;
+    if (nextStreak == _streak) return;
+
+    setState(() => _streak = nextStreak);
+
+    final sync = _sync;
+    if (sync == null) return;
+    unawaited(sync.updateStreak(nextStreak).catchError((Object e) {
+      debugPrint('Streak sync failed: $e');
+    }));
+  }
 
   int get _remainingMinutes => _todayTasks
       .where((task) => !task.done)
@@ -2466,6 +2507,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           : 'for completing "${task.title}"',
     );
     unawaited(_persistTaskToggle(goal, task));
+    _syncStreakFromCompletedTasks();
     unawaited(_persistProfileStats());
     _queueNotificationScheduleSync();
   }
@@ -2487,13 +2529,19 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   void _deleteGoal(GoalProject goal) {
     setState(() => _goals.removeWhere((item) => item.id == goal.id));
+    setState(() => _goals.removeWhere((item) => item.id == goal.id));
 
     unawaited(_deleteGoalEverywhere(goal));
 
     _queueNotificationScheduleSync();
     _showMessage('Removed ${goal.title}.');
   }
+    _queueNotificationScheduleSync();
+    _showMessage('Removed ${goal.title}.');
+  }
 
+  Future<void> _deleteGoalEverywhere(GoalProject goal) async {
+    final user = context.read<AuthService>().currentUser;
   Future<void> _deleteGoalEverywhere(GoalProject goal) async {
     final user = context.read<AuthService>().currentUser;
 
@@ -2502,7 +2550,17 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         final deletedEvents = await context
             .read<GoogleCalendarService>()
             .deleteTaskEventsForGoal(goal);
+    if (user != null && !user.isAnonymous) {
+      try {
+        final deletedEvents = await context
+            .read<GoogleCalendarService>()
+            .deleteTaskEventsForGoal(goal);
 
+        debugPrint(
+          'Deleted $deletedEvents Google Calendar events for goal ${goal.title}.',
+        );
+      } catch (e) {
+        debugPrint('Google Calendar goal cleanup failed: $e');
         debugPrint(
           'Deleted $deletedEvents Google Calendar events for goal ${goal.title}.',
         );
@@ -2516,7 +2574,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         }
       }
     }
+        if (mounted) {
+          _showMessage(
+            'Goal removed, but Google Calendar cleanup failed.',
+          );
+        }
+      }
+    }
 
+    final sync = _sync;
     final sync = _sync;
 
     if (sync != null) {
@@ -2524,7 +2590,18 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         await sync.deleteGoal(goal.id.toString());
       } catch (e) {
         debugPrint('Delete goal sync failed: $e');
+    if (sync != null) {
+      try {
+        await sync.deleteGoal(goal.id.toString());
+      } catch (e) {
+        debugPrint('Delete goal sync failed: $e');
 
+        if (mounted) {
+          _showMessage('Goal removed locally, but Firebase delete failed.');
+        }
+      }
+    }
+  }
         if (mounted) {
           _showMessage('Goal removed locally, but Firebase delete failed.');
         }
@@ -2905,6 +2982,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         );
       }
     }
+    _syncStreakFromCompletedTasks();
     _queueNotificationScheduleSync();
 
     // §6.4: always explain WHY the schedule changed.
@@ -3529,7 +3607,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       CompanionPage(
         coins: _coins,
         happiness: _petHappiness,
-        streak: _streak,
+        lumiTier: lumiStreakTierFor(_streak),
         pet: _activePetSkin,
         accessory: _activeAccessory,
         onFeed: _feedPet,

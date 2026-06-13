@@ -405,7 +405,7 @@ class _CommunityPageState extends State<CommunityPage> {
     final profilesByUid = <String, _FriendProfile>{};
 
     for (final chunk in _chunks(orderedUids, 10)) {
-      final snapshot = await _publicProfiles
+      final snapshot = await _usersCollection
           .where(FieldPath.documentId, whereIn: chunk)
           .get();
 
@@ -444,7 +444,7 @@ class _CommunityPageState extends State<CommunityPage> {
       }
 
       // This can happen when users/{currentUid}.friends contains a UID,
-      // but that user has not created public_profiles/{uid} yet.
+      // but that user document is not readable yet.
       // Do not crash the whole Friends page; show a safe fallback row instead.
       final shortUid = uid.substring(0, min(6, uid.length));
       final displayName = 'Friend $shortUid';
@@ -2228,6 +2228,7 @@ class _FindFriendsPage extends StatefulWidget {
   const _FindFriendsPage({
     required this.currentUid,
     required this.publicProfiles,
+    required this.usersCollection,
     required this.currentFriendUids,
     required this.onProfileDetails,
     required this.onAddFriend,
@@ -2235,6 +2236,7 @@ class _FindFriendsPage extends StatefulWidget {
 
   final String? currentUid;
   final CollectionReference<Map<String, dynamic>> publicProfiles;
+  final CollectionReference<Map<String, dynamic>> usersCollection;
   final Set<String> currentFriendUids;
   final ValueChanged<_PublicProfile> onProfileDetails;
   final Future<void> Function(_PublicProfile profile) onAddFriend;
@@ -2255,11 +2257,18 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
     // Subscribe to Firestore once. Filtering by the search query happens in the
     // builder (see _visibleProfiles) so typing does not recreate the stream,
     // which would flash a spinner over the results on every keystroke.
-    _profileStream = widget.publicProfiles.limit(80).snapshots().map((snapshot) {
-      final profiles = snapshot.docs
-          .map((doc) => _PublicProfile.fromUserDoc(doc))
+    _profileStream =
+        widget.publicProfiles.limit(80).snapshots().asyncMap((snapshot) async {
+      var profiles = snapshot.docs
+          .map((doc) => _PublicProfile.fromPublicDoc(doc))
           .where((profile) => profile.uid != widget.currentUid)
           .toList();
+      final streaks =
+          await _fetchUserStreaks(profiles.map((profile) => profile.uid));
+      profiles = [
+        for (final profile in profiles)
+          profile.copyWith(streak: streaks[profile.uid] ?? profile.streak),
+      ];
 
       profiles.sort((a, b) => a.displayName.compareTo(b.displayName));
       return profiles;
@@ -2293,6 +2302,34 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
     } finally {
       if (mounted) setState(() => _adding = false);
     }
+  }
+
+  Future<Map<String, int>> _fetchUserStreaks(Iterable<String> uids) async {
+    final orderedUids = uids
+        .map((uid) => uid.trim())
+        .where((uid) => uid.isNotEmpty)
+        .toSet()
+        .toList();
+    final streaks = <String, int>{};
+
+    for (final chunk in _chunks(orderedUids, 10)) {
+      final snapshot = await widget.usersCollection
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+      for (final doc in snapshot.docs) {
+        streaks[doc.id] = _readInt(doc.data(), const ['streak'], 0);
+      }
+    }
+
+    return streaks;
+  }
+
+  List<List<T>> _chunks<T>(List<T> values, int size) {
+    final chunks = <List<T>>[];
+    for (var i = 0; i < values.length; i += size) {
+      chunks.add(values.sublist(i, min(i + size, values.length)));
+    }
+    return chunks;
   }
 
   @override
@@ -3408,7 +3445,7 @@ class _UserDetailPage extends StatelessWidget {
 
   Stream<DocumentSnapshot<Map<String, dynamic>>> _profileStream() {
     return _db
-        .collection('public_profiles')
+        .collection('users')
         .doc(initialProfile.uid)
         .snapshots();
   }
@@ -3497,7 +3534,7 @@ class _UserDetailPage extends StatelessWidget {
                 child: HelpfulErrorBox(
                   title: 'Profile failed to load',
                   message:
-                      'Check Firestore rules for public_profiles reads. Details: ${snapshot.error}',
+                      'Check Firestore rules for users reads. Details: ${snapshot.error}',
                   actionLabel: 'OK',
                   showAction: false,
                 ),
@@ -5457,8 +5494,19 @@ class _PublicProfile {
       displayName: displayName,
       username: username,
       photoUrl: photoUrl,
-      streak: streak,
+      streak: 0,
       searchText: searchText.toLowerCase(),
+    );
+  }
+
+  _PublicProfile copyWith({int? streak}) {
+    return _PublicProfile(
+      uid: uid,
+      displayName: displayName,
+      username: username,
+      photoUrl: photoUrl,
+      streak: streak ?? this.streak,
+      searchText: searchText,
     );
   }
 

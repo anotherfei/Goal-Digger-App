@@ -2,19 +2,25 @@ import 'package:flutter/material.dart';
 
 enum LumiStreakTier { low, mid, high }
 
+LumiStreakTier lumiStreakTierFor(int streak) {
+  if (streak >= 7) return LumiStreakTier.high;
+  if (streak >= 3) return LumiStreakTier.mid;
+  return LumiStreakTier.low;
+}
+
 enum LumiAnimationState { idle, interacted }
 
 class LumiCompanionSprite extends StatefulWidget {
   const LumiCompanionSprite({
     super.key,
-    required this.streak,
+    required this.tier,
     this.size = 180,
     this.onTap,
     this.idleFrameDuration = const Duration(milliseconds: 320),
     this.interactedFrameDuration = const Duration(milliseconds: 180),
   });
 
-  final int streak;
+  final LumiStreakTier tier;
   final double size;
   final VoidCallback? onTap;
   final Duration idleFrameDuration;
@@ -52,8 +58,7 @@ class _LumiCompanionSpriteState extends State<LumiCompanionSprite>
   void didUpdateWidget(covariant LumiCompanionSprite oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    if (oldWidget.streak != widget.streak &&
-        _state == LumiAnimationState.idle) {
+    if (oldWidget.tier != widget.tier && _state == LumiAnimationState.idle) {
       _playIdle();
     }
   }
@@ -62,12 +67,6 @@ class _LumiCompanionSpriteState extends State<LumiCompanionSprite>
   void dispose() {
     _controller.dispose();
     super.dispose();
-  }
-
-  LumiStreakTier _tierForStreak(int streak) {
-    if (streak >= 7) return LumiStreakTier.high;
-    if (streak >= 3) return LumiStreakTier.mid;
-    return LumiStreakTier.low;
   }
 
   String _assetPath(LumiStreakTier tier, LumiAnimationState state) {
@@ -104,8 +103,7 @@ class _LumiCompanionSpriteState extends State<LumiCompanionSprite>
 
   @override
   Widget build(BuildContext context) {
-    final tier = _tierForStreak(widget.streak);
-    final asset = _assetPath(tier, _state);
+    final asset = _assetPath(widget.tier, _state);
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
