@@ -3221,10 +3221,85 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   Future<bool> _deleteCurrentAccount() async {
-    final deleted = await context.read<AuthState>().deleteCurrentUser();
-    if (!deleted || !mounted) return false;
-    _resetForSignedOutState();
-    return true;
+    final authState = context.read<AuthState>();
+
+    // First attempt. Succeeds when the sign-in is recent; for Google accounts
+    // AuthService re-authenticates automatically when the session has aged out.
+    var deleted = await authState.deleteCurrentUser();
+
+    // Email/password accounts can't be re-authenticated silently — ask for the
+    // password and retry once.
+    if (!deleted && authState.needsPasswordReauth && mounted) {
+      final password = await _promptDeletePassword();
+      if (password == null) return false; // user cancelled
+      deleted = await authState.deleteCurrentUser(password: password);
+    }
+
+    if (deleted) {
+      if (mounted) _resetForSignedOutState();
+      return true;
+    }
+
+    // Surface the specific reason (e.g. wrong password, recent-login required)
+    // instead of a generic failure.
+    if (mounted) {
+      _showHelpfulError(
+        title: 'Delete account failed',
+        message: authState.errorMessage ??
+            'Could not delete account. Please try again.',
+        actionLabel: 'OK',
+        onAction: () {},
+      );
+    }
+    return false;
+  }
+
+  Future<String?> _promptDeletePassword() async {
+    final controller = TextEditingController();
+    try {
+      return await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          return AlertDialog(
+            icon: Icon(Icons.lock_outline_rounded, color: gdError),
+            title: const Text('Confirm your password'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'For security, re-enter your password to permanently delete '
+                  'this account.',
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: controller,
+                  obscureText: true,
+                  autofocus: true,
+                  decoration: const InputDecoration(labelText: 'Password'),
+                  onSubmitted: (value) =>
+                      Navigator.pop(dialogContext, value.trim()),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: gdError),
+                onPressed: () =>
+                    Navigator.pop(dialogContext, controller.text.trim()),
+                child: const Text('Delete account'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      controller.dispose();
+    }
   }
 
   void _addRoutine(RoutineItem routine) {
@@ -3257,6 +3332,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   void _openSettings() {
+    final authState = context.read<AuthState>();
+    final user = context.read<AuthService>().currentUser ?? authState.user;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
@@ -3270,6 +3347,16 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           onTestNotification: () => unawaited(_sendTestNotification()),
           onOpenNotificationSettings: _openAndroidNotificationSettings,
           onSignOut: () => unawaited(_handleSignOut()),
+          email: user?.email ?? '',
+          signedInWith: _signedInWith,
+          isGuest: user?.isAnonymous ?? authState.isGuest,
+          emailVerified: authState.emailVerified,
+          providerIds: authState.providerIds,
+          onSendEmailVerification: authState.sendEmailVerification,
+          onRefreshEmailVerification: authState.reloadUser,
+          onSendPasswordReset: () =>
+              authState.sendPasswordResetEmail(user?.email ?? ''),
+          onDeleteAccount: _deleteCurrentAccount,
         ),
       ),
     );

@@ -210,9 +210,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (deleted) {
       _showSnack('Account deleted.');
       Navigator.pop(context);
-    } else {
-      _showSnack('Could not delete account.');
     }
+    // On failure the host surfaces the specific reason (e.g. password required
+    // or a fresh login needed), so no generic snackbar is shown here.
   }
 
   void _showInfo({required String title, required String message}) {

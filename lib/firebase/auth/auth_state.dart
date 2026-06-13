@@ -26,6 +26,7 @@ class AuthState extends ChangeNotifier {
   AuthStatus _status = AuthStatus.unknown;
   bool _isLoading = false;
   String? _errorMessage;
+  bool _needsPasswordReauth = false;
   bool _disposed = false;
 
   static const Duration _authTimeout = Duration(seconds: 20);
@@ -40,6 +41,10 @@ class AuthState extends ChangeNotifier {
   bool get isSignedIn => _status == AuthStatus.signedIn;
   bool get isGuest => _status == AuthStatus.guest;
   bool get isKnown => _status != AuthStatus.unknown;
+
+  /// True when the last [deleteCurrentUser] failed only because an
+  /// email/password account must re-enter its password to delete.
+  bool get needsPasswordReauth => _needsPasswordReauth;
 
   /// Display name: real name, anonymous label, or "Guest".
   String get displayName {
@@ -261,14 +266,19 @@ class AuthState extends ChangeNotifier {
     }
   }
 
-  Future<bool> deleteCurrentUser() async {
+  Future<bool> deleteCurrentUser({String? password}) async {
     _setLoading(true);
+    _needsPasswordReauth = false;
     try {
-      await _authService.deleteCurrentUser();
+      await _authService.deleteCurrentUser(password: password);
       _user = null;
       _status = AuthStatus.signedOut;
       _errorMessage = null;
       return true;
+    } on ReauthPasswordRequiredException catch (e) {
+      _needsPasswordReauth = true;
+      _errorMessage = e.message;
+      return false;
     } on AuthException catch (e) {
       _errorMessage = e.message;
       return false;
