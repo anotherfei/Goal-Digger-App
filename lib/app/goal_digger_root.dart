@@ -18,6 +18,7 @@ import '../features/focus/widgets/focus_widgets.dart';
 import '../features/notifications/models/notification_models.dart';
 import '../features/notifications/notification_inbox_page.dart';
 import '../features/notifications/services/android_notification_service.dart';
+import '../features/notifications/services/push_notification_service.dart';
 import '../features/onboarding/onboarding_screen.dart';
 import '../features/planner/planner_page.dart';
 import '../features/profile/profile_screen.dart';
@@ -619,8 +620,14 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
 
   Future<void> _handleSignOut() async {
     unawaited(Navigator.of(context).maybePop());
+    final authState = context.read<AuthState>();
     try {
-      await context.read<AuthState>().signOut();
+      await PushNotificationService.instance.removeCurrentToken();
+    } catch (e) {
+      debugPrint('Push token cleanup failed: $e');
+    }
+    try {
+      await authState.signOut();
     } catch (e) {
       debugPrint('Sign out failed: $e');
     }

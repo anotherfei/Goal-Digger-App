@@ -29,13 +29,14 @@ import {
   type ReassignmentTrigger,
 } from "./agent/reassignment";
 import {
-  NotificationCandidate,
-  notificationContextFromProfile,
-  triageNotification,
-} from "./notifications/notificationTriage";
+  learnFromNotificationRead,
+  runNotificationAgent,
+} from "./notifications/notificationAgent";
 
-import { onDocumentCreated } from "firebase-functions/v2/firestore";
-import { logger } from "firebase-functions";
+import {
+  onDocumentCreated,
+  onDocumentUpdated,
+} from "firebase-functions/v2/firestore";
 
 // ── Initialise Admin SDK ──────────────────────────────────────────────────────
 admin.initializeApp();
@@ -277,103 +278,34 @@ export const sendNotificationPush = onDocumentCreated(
     const snapshot = event.data;
     if (!snapshot) return;
 
-    const data = snapshot.data();
-    const rawPayload = data.payload;
-    const payload =
-      rawPayload !== null &&
-      typeof rawPayload === "object" &&
-      !Array.isArray(rawPayload)
-        ? (rawPayload as Record<string, unknown>)
-        : {};
-    const candidate: NotificationCandidate = {
-      title: String(data.title ?? "Goal Digger"),
-      body: String(data.body ?? ""),
-      type: String(data.type ?? ""),
-      delivery: String(data.delivery ?? "inApp"),
-      sourceId: String(data.sourceId ?? ""),
-      important: data.important === true,
-      payload,
-    };
-
-    const userRef = admin.firestore().collection("users").doc(uid);
-    const profileSnapshot = await userRef.get();
-    const decision = await triageNotification(
-      candidate,
-      notificationContextFromProfile(profileSnapshot.data())
-    );
-
-    await snapshot.ref.set(
-      {
-        important: decision.important,
-        aiTriage: {
-          important: decision.important,
-          shouldPush: decision.shouldPush,
-          score: decision.score,
-          reason: decision.reason,
-          source: decision.source,
-          model: decision.source === "ai" ? defaultModel : null,
-          decidedAt: admin.firestore.FieldValue.serverTimestamp(),
-        },
-      },
-      { merge: true }
-    );
-
-    logger.info("Notification triage completed", {
+    await runNotificationAgent({
       uid,
       notificationId,
-      important: decision.important,
-      shouldPush: decision.shouldPush,
-      score: decision.score,
-      source: decision.source,
-      reason: decision.reason,
+      eventId: event.id,
+      notificationRef: snapshot.ref,
+      data: snapshot.data(),
     });
+  }
+);
 
-    if (!decision.shouldPush) {
-      return;
-    }
+export const learnNotificationEngagement = onDocumentUpdated(
+  {
+    region: "asia-east1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    document: "users/{uid}/notifications/{notificationId}",
+  },
+  async (event) => {
+    const before = event.data?.before;
+    const after = event.data?.after;
+    if (!before || !after) return;
 
-    const tokensSnapshot = await admin
-      .firestore()
-      .collection("users")
-      .doc(uid)
-      .collection("fcmTokens")
-      .get();
-
-    const tokens = tokensSnapshot.docs
-      .map((doc) => String(doc.data().token ?? ""))
-      .filter((token) => token.length > 0);
-
-    if (tokens.length === 0) {
-      logger.info("No FCM tokens found", { uid, notificationId });
-      return;
-    }
-
-    await admin.messaging().sendEachForMulticast({
-      tokens,
-      notification: {
-        title: candidate.title,
-        body: candidate.body,
-      },
-      android: {
-        priority: decision.important ? "high" : "normal",
-        notification: {
-          channelId: decision.important
-            ? "goal_digger_important"
-            : "goal_digger_standard_v2",
-        },
-      },
-      data: {
-        notificationId,
-        type: candidate.type,
-        sourceId: candidate.sourceId,
-        important: String(decision.important),
-        importanceScore: String(decision.score),
-        triageSource: decision.source,
-        actorUid: String(data.actorUid ?? ""),
-        route: String(payload.route ?? ""),
-        chatId: String(payload.chatId ?? ""),
-        friendUid: String(payload.friendUid ?? ""),
-      },
+    await learnFromNotificationRead({
+      uid: String(event.params.uid),
+      eventId: event.id,
+      notificationRef: after.ref,
+      before: before.data(),
+      after: after.data(),
     });
   }
 );

@@ -25,6 +25,24 @@ Gemini API  (../ai.ts singleton, gemini-2.5-flash)
 Shared memory (`memory.ts`, Firestore `agent_memory/{uid}`) stores learned
 preferences, mood history, and reassignment audit data (§10).
 
+## Notification agent
+
+`../notifications/notificationAgent.ts` runs an observe -> decide -> act ->
+learn loop whenever a notification document is created:
+
+- observes profile settings, recent inbox history, push frequency, duplicates,
+  mood, and learned read behavior;
+- asks Gemini for a bounded `push_now` or `inbox_only` plan plus safe push copy;
+- enforces deterministic preference, fatigue, importance, and protected social
+  content policies before delivery;
+- executes FCM delivery idempotently, records an audit trail, and removes
+  invalid tokens;
+- learns from the first `readAt` transition and stores per-type engagement in
+  `agent_memory/{uid}`.
+
+Flutter removes the active FCM token before sign-out, so signed-out sessions
+are not considered available delivery targets.
+
 ## Client triggers (Flutter)
 
 - Goal creation dialog → `agentPlanner` (Planning + Task Generation Agents).

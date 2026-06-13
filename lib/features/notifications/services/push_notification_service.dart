@@ -27,6 +27,9 @@ class PushNotificationService {
   StreamSubscription<RemoteMessage>? _foregroundSub;
 
   bool _initialized = false;
+  bool _tokenWritesPaused = false;
+  String? _activeUid;
+  String? _activeTokenId;
 
   Future<void> init() async {
     if (_initialized) return;
@@ -47,6 +50,7 @@ class PushNotificationService {
 
     _authSub = _auth.authStateChanges().listen((user) {
       if (user != null) {
+        _tokenWritesPaused = false;
         unawaited(_saveCurrentToken());
       }
     });
@@ -69,7 +73,7 @@ class PushNotificationService {
 
   Future<void> _saveToken(String token) async {
     final user = _auth.currentUser;
-    if (user == null) return;
+    if (user == null || _tokenWritesPaused) return;
 
     final tokenId = base64UrlEncode(utf8.encode(token)).replaceAll('=', '');
 
@@ -84,6 +88,36 @@ class PushNotificationService {
       'updatedAt': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+
+    _activeUid = user.uid;
+    _activeTokenId = tokenId;
+  }
+
+  Future<void> removeCurrentToken() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    _tokenWritesPaused = true;
+    var tokenId = _activeTokenId;
+    if (tokenId == null) {
+      final token = await _messaging.getToken();
+      if (token != null && token.isNotEmpty) {
+        tokenId = base64UrlEncode(utf8.encode(token)).replaceAll('=', '');
+      }
+    }
+    final uid = _activeUid ?? user.uid;
+
+    if (tokenId != null) {
+      await _db
+          .collection('users')
+          .doc(uid)
+          .collection('fcmTokens')
+          .doc(tokenId)
+          .delete();
+    }
+
+    _activeUid = null;
+    _activeTokenId = null;
   }
 
   Future<void> _showForegroundNotification(RemoteMessage message) async {

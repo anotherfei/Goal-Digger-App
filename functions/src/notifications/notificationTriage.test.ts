@@ -95,3 +95,95 @@ test("fallback preserves delivery while respecting explicit suppression", () => 
   assert.equal(decision.important, true);
   assert.equal(decision.shouldPush, false);
 });
+
+test("duplicate notifications stay in the inbox", () => {
+  const decision = applyDecisionPolicy(
+    baseCandidate,
+    baseContext,
+    {
+      important: false,
+      shouldPush: true,
+      score: 60,
+      reason: "Useful update.",
+      source: "ai",
+    },
+    {
+      duplicate: true,
+      recentPushCount: 0,
+      typeDecisionCount: 0,
+      typeReadCount: 0,
+    }
+  );
+
+  assert.equal(decision.action, "inbox_only");
+  assert.match(decision.reason, /equivalent recent notification/);
+});
+
+test("push budget holds non-important notifications", () => {
+  const decision = applyDecisionPolicy(
+    baseCandidate,
+    baseContext,
+    {
+      important: false,
+      shouldPush: true,
+      score: 65,
+      reason: "Worth seeing.",
+      source: "ai",
+    },
+    {
+      duplicate: false,
+      recentPushCount: 3,
+      typeDecisionCount: 0,
+      typeReadCount: 0,
+    }
+  );
+
+  assert.equal(decision.action, "inbox_only");
+  assert.match(decision.reason, /hourly push budget/);
+});
+
+test("protected social content cannot be rewritten by the model", () => {
+  const candidate = {
+    ...baseCandidate,
+    type: "chat",
+    title: "Farrel",
+    body: "Can we focus at 7?",
+  };
+  const decision = applyDecisionPolicy(candidate, baseContext, {
+    important: false,
+    shouldPush: true,
+    score: 62,
+    reason: "Direct message.",
+    source: "ai",
+    tone: "urgent",
+    pushTitle: "Invented urgent title",
+    pushBody: "Invented message",
+  });
+
+  assert.equal(decision.pushTitle, candidate.title);
+  assert.equal(decision.pushBody, candidate.body);
+  assert.equal(decision.tone, "preserve");
+});
+
+test("low learned engagement holds low-scoring notifications", () => {
+  const decision = applyDecisionPolicy(
+    baseCandidate,
+    baseContext,
+    {
+      important: false,
+      shouldPush: true,
+      score: 50,
+      reason: "General update.",
+      source: "ai",
+    },
+    {
+      duplicate: false,
+      recentPushCount: 0,
+      typeDecisionCount: 10,
+      typeReadCount: 1,
+    }
+  );
+
+  assert.equal(decision.action, "inbox_only");
+  assert.match(decision.reason, /learned engagement/);
+});
