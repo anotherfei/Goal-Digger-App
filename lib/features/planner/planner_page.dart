@@ -799,117 +799,126 @@ class _ActiveGoalTile extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
+      child: Stack(
         children: [
-          Container(
-            height: 5,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [goal.from, goal.to]),
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 4,
+            child: ColoredBox(
+              color: goal.from.withValues(alpha: 0.42),
             ),
           ),
-          Theme(
-            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              key: PageStorageKey('goal-${goal.id}'),
-              tilePadding: const EdgeInsets.fromLTRB(14, 10, 12, 8),
-              childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-              expandedCrossAxisAlignment: CrossAxisAlignment.start,
-              leading: CircularProgressBadge(
-                progress: goal.progress,
-                label: '${(goal.progress * 100).round()}%',
-                size: 54,
-                strokeWidth: 5,
-              ),
-              title: Text(
-                goal.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: complete ? gdMuted : gdInk,
-                  height: 1.16,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Theme(
+              data:
+                  Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                key: PageStorageKey('goal-${goal.id}'),
+                tilePadding: const EdgeInsets.fromLTRB(14, 10, 12, 8),
+                childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                expandedCrossAxisAlignment: CrossAxisAlignment.start,
+                leading: CircularProgressBadge(
+                  progress: goal.progress,
+                  label: '${(goal.progress * 100).round()}%',
+                  size: 54,
+                  strokeWidth: 5,
                 ),
-              ),
-              subtitle: Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Wrap(
-                  spacing: 7,
-                  runSpacing: 7,
-                  children: [
-                    _GoalMetaPill(
-                      icon: GdCategory.iconFor(goal.category),
-                      label: goal.category,
-                      color: gdPrimary,
-                      surface: gdPrimarySoft,
-                    ),
-                    _GoalMetaPill(
-                      icon: overdue
-                          ? Icons.warning_amber_rounded
-                          : Icons.event_rounded,
-                      label: overdue ? 'Overdue' : '$daysLeft days left',
-                      color: overdue || dueSoon ? gdWarning : gdMuted,
-                      surface: overdue || dueSoon ? gdWarningSoft : gdCardLight,
-                    ),
-                    _GoalMetaPill(
-                      icon: Icons.task_alt_rounded,
-                      label: '$completed/${goal.tasks.length}',
-                      color: complete ? gdSuccess : gdMuted,
-                      surface: complete ? gdSuccessSoft : gdCardLight,
-                    ),
-                  ],
+                title: Text(
+                  goal.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: complete ? gdMuted : gdInk,
+                    height: 1.16,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-              ),
-              children: [
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: onEditDeadline,
-                      icon: const Icon(Icons.event_rounded, size: 18),
-                      label: const Text('Deadline'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: onEditPriority,
-                      icon: const Icon(Icons.star_rounded, size: 18),
-                      label: const Text('Priority'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: onDelete,
-                      icon: const Icon(Icons.close_rounded, size: 18),
-                      label: const Text('Remove'),
-                      style: OutlinedButton.styleFrom(foregroundColor: gdError),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                if (previewTasks.isEmpty)
-                  Text(
-                    'No tasks scheduled yet.',
-                    style:
-                        TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
-                  )
-                else
-                  Column(
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Wrap(
+                    spacing: 7,
+                    runSpacing: 7,
                     children: [
-                      for (final task in previewTasks)
-                        _GoalTaskPreviewRow(task: task),
-                      if (goal.tasks.length > previewTasks.length)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            '+${goal.tasks.length - previewTasks.length} more tasks',
-                            style: TextStyle(
-                              color: gdMuted,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
+                      _GoalMetaPill(
+                        icon: GdCategory.iconFor(goal.category),
+                        label: goal.category,
+                        color: gdPrimary,
+                        surface: gdPrimarySoft,
+                      ),
+                      _GoalMetaPill(
+                        icon: overdue
+                            ? Icons.warning_amber_rounded
+                            : Icons.event_rounded,
+                        label: overdue ? 'Overdue' : '$daysLeft days left',
+                        color: overdue || dueSoon ? gdWarning : gdMuted,
+                        surface:
+                            overdue || dueSoon ? gdWarningSoft : gdCardLight,
+                      ),
+                      _GoalMetaPill(
+                        icon: Icons.task_alt_rounded,
+                        label: '$completed/${goal.tasks.length}',
+                        color: complete ? gdSuccess : gdMuted,
+                        surface: complete ? gdSuccessSoft : gdCardLight,
+                      ),
                     ],
                   ),
-              ],
+                ),
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: onEditDeadline,
+                        icon: const Icon(Icons.event_rounded, size: 18),
+                        label: const Text('Deadline'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: onEditPriority,
+                        icon: const Icon(Icons.star_rounded, size: 18),
+                        label: const Text('Priority'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: onDelete,
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        label: const Text('Remove'),
+                        style:
+                            OutlinedButton.styleFrom(foregroundColor: gdError),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (previewTasks.isEmpty)
+                    Text(
+                      'No tasks scheduled yet.',
+                      style: TextStyle(
+                          color: gdMuted, fontWeight: FontWeight.w700),
+                    )
+                  else
+                    Column(
+                      children: [
+                        for (final task in previewTasks)
+                          _GoalTaskPreviewRow(task: task),
+                        if (goal.tasks.length > previewTasks.length)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              '+${goal.tasks.length - previewTasks.length} more tasks',
+                              style: TextStyle(
+                                color: gdMuted,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                ],
+              ),
             ),
           ),
         ],
@@ -973,12 +982,28 @@ class _GoalTaskPreviewRow extends StatelessWidget {
       decoration: BoxDecoration(
         color: done ? gdSuccessSoft.withValues(alpha: 0.46) : gdCardLight,
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: done
+              ? gdSuccess.withValues(alpha: 0.18)
+              : task.load.color.withValues(alpha: 0.14),
+        ),
       ),
       child: Row(
         children: [
+          Container(
+            width: 3,
+            height: 26,
+            decoration: BoxDecoration(
+              color: done
+                  ? gdSuccess.withValues(alpha: 0.52)
+                  : task.load.color.withValues(alpha: 0.52),
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+          const SizedBox(width: 8),
           Icon(
             done ? Icons.check_circle_rounded : task.load.icon,
-            color: done ? gdSuccess : gdPrimary,
+            color: done ? gdSuccess : task.load.color,
             size: 17,
           ),
           const SizedBox(width: 8),

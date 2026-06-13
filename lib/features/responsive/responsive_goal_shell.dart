@@ -99,9 +99,13 @@ class _ResponsiveGoalShellState extends State<ResponsiveGoalShell> {
 
     return Scaffold(
       extendBody: true,
-      backgroundColor: Colors.transparent,
+      backgroundColor: gdBackground,
       appBar: AppBar(
         automaticallyImplyLeading: false,
+        backgroundColor: gdBackground,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
         titleSpacing: 0,
         leadingWidth: 72,
         leading: Padding(
@@ -134,6 +138,13 @@ class _ResponsiveGoalShellState extends State<ResponsiveGoalShell> {
             ),
           ),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(
+            height: 1,
+            color: gdBorder.withValues(alpha: 0.62),
+          ),
+        ),
       ),
       body: Stack(
         children: [
@@ -143,22 +154,25 @@ class _ResponsiveGoalShellState extends State<ResponsiveGoalShell> {
               child: SafeArea(
                 top: false,
                 bottom: false,
-                child: PageView.builder(
-                  controller: _pageController,
-                  itemCount: widget.pages.length,
-                  onPageChanged: (index) {
-                    if (index != widget.selectedIndex) {
-                      widget.onSelect(index);
-                    }
-                  },
-                  itemBuilder: (context, index) {
-                    return _AnimatedShellPage(
-                      controller: _pageController,
-                      selectedIndex: widget.selectedIndex,
-                      index: index,
-                      child: widget.pages[index],
-                    );
-                  },
+                child: ColoredBox(
+                  color: gdBackground,
+                  child: PageView.builder(
+                    controller: _pageController,
+                    itemCount: widget.pages.length,
+                    onPageChanged: (index) {
+                      if (index != widget.selectedIndex) {
+                        widget.onSelect(index);
+                      }
+                    },
+                    itemBuilder: (context, index) {
+                      return _AnimatedShellPage(
+                        controller: _pageController,
+                        selectedIndex: widget.selectedIndex,
+                        index: index,
+                        child: widget.pages[index],
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
@@ -225,14 +239,11 @@ class _AnimatedShellPage extends StatelessWidget {
         final delta = (page - index).clamp(-1.0, 1.0);
         final distance = delta.abs();
 
-        return Opacity(
-          opacity: 1 - distance * 0.12,
-          child: Transform.translate(
-            offset: Offset(delta * -16, distance * 6),
-            child: Transform.scale(
-              scale: 1 - distance * 0.015,
-              child: child,
-            ),
+        return ColoredBox(
+          color: gdBackground,
+          child: Opacity(
+            opacity: 1 - distance * 0.06,
+            child: child,
           ),
         );
       },

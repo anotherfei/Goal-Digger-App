@@ -131,7 +131,30 @@ class _CalendarPageState extends State<CalendarPage> {
       ..sort((a, b) => a.durationMinutes.compareTo(b.durationMinutes));
   }
 
+  List<RoutineItem> _routinesForDay(DateTime date) {
+    final day = dateOnly(date);
+    return widget.routines.where((routine) {
+      final startDay = dateOnly(routine.startsAt);
+      if (day.isBefore(startDay)) return false;
+      switch (routine.repeat) {
+        case RoutineRepeat.daily:
+          return true;
+        case RoutineRepeat.weekly:
+          return routine.startsAt.weekday == date.weekday;
+        case RoutineRepeat.monthly:
+          return routine.startsAt.day == date.day;
+        case RoutineRepeat.yearly:
+          return routine.startsAt.month == date.month &&
+              routine.startsAt.day == date.day;
+        case RoutineRepeat.custom:
+          return startDay == day;
+      }
+    }).toList()
+      ..sort((a, b) => a.startsAt.compareTo(b.startsAt));
+  }
+
   int _taskCountForDay(DateTime date) => _tasksForDay(date).length;
+  int _routineCountForDay(DateTime date) => _routinesForDay(date).length;
 
   @override
   Widget build(BuildContext context) {
@@ -142,6 +165,7 @@ class _CalendarPageState extends State<CalendarPage> {
         .toList();
     final completedThisMonth = monthTasks.where((task) => task.done).length;
     final selectedTasks = _tasksForDay(_selectedDate);
+    final selectedRoutines = _routinesForDay(_selectedDate);
 
     return PageScaffold(
       child: ListView(
@@ -202,7 +226,8 @@ class _CalendarPageState extends State<CalendarPage> {
                     if (date == null) return const SizedBox.shrink();
                     return _CalendarDayCell(
                         date: date,
-                        taskCount: _taskCountForDay(date),
+                        taskCount:
+                            _taskCountForDay(date) + _routineCountForDay(date),
                         completedCount: _tasksForDay(date)
                             .where((task) => task.done)
                             .length,
@@ -238,14 +263,22 @@ class _CalendarPageState extends State<CalendarPage> {
                               fontWeight: FontWeight.w900, fontSize: 16)),
                       const SizedBox(height: 3),
                       Text(
-                          selectedTasks.isEmpty
-                              ? 'No goals scheduled on this date.'
-                              : '${selectedTasks.length} scheduled goal actions. Open Home to check them off.',
+                          selectedTasks.isEmpty && selectedRoutines.isEmpty
+                              ? 'No goals or routines scheduled on this date.'
+                              : '${selectedTasks.length} task${selectedTasks.length == 1 ? '' : 's'} and ${selectedRoutines.length} routine${selectedRoutines.length == 1 ? '' : 's'} on this date.',
                           style: TextStyle(
                               color: gdMuted, fontWeight: FontWeight.w800))
                     ])),
               ]),
             ),
+          ),
+          const SizedBox(height: 12),
+          _CalendarDayAgenda(
+            tasks: selectedTasks,
+            routines: selectedRoutines,
+            goalForTask: widget.goalForTask,
+            onCreateGoal: widget.onCreateGoal,
+            onSyncTaskToGoogle: widget.onSyncTaskToGoogle,
           ),
           const SizedBox(height: 12),
           SizedBox(
@@ -256,24 +289,6 @@ class _CalendarPageState extends State<CalendarPage> {
               label: const Text('Sync all tasks to Google Calendar'),
             ),
           ),
-          const SizedBox(height: 12),
-          if (selectedTasks.isEmpty)
-            EmptyStateCard(
-                icon: Icons.event_available_rounded,
-                title: 'No goals on this date',
-                message:
-                    'Pick another date with a dot, or create a new goal and Goal Digger will schedule it for you.',
-                cta: 'Create goal',
-                onPressed: widget.onCreateGoal)
-          else
-            ...selectedTasks.map((task) {
-              final goal = widget.goalForTask(task);
-
-              return _CalendarTaskDetailTile(
-                task: task,
-                goal: goal,
-              );
-            }),
           const SizedBox(height: 18),
           SectionTitle(
               title: 'Routines', trailing: '${widget.routines.length}'),
@@ -353,36 +368,543 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 }
 
-class _CalendarTaskDetailTile extends StatelessWidget {
-  const _CalendarTaskDetailTile({
+class _CalendarDayAgenda extends StatefulWidget {
+  const _CalendarDayAgenda({
+    required this.tasks,
+    required this.routines,
+    required this.goalForTask,
+    required this.onCreateGoal,
+    required this.onSyncTaskToGoogle,
+  });
+
+  final List<MicroTask> tasks;
+  final List<RoutineItem> routines;
+  final GoalProject Function(MicroTask task) goalForTask;
+  final VoidCallback onCreateGoal;
+  final Future<void> Function(MicroTask task, GoalProject goal)
+      onSyncTaskToGoogle;
+
+  @override
+  State<_CalendarDayAgenda> createState() => _CalendarDayAgendaState();
+}
+
+class _CalendarDayAgendaState extends State<_CalendarDayAgenda> {
+  static const _collapsedGoalCount = 3;
+  bool _showAllGoals = false;
+
+  List<_CalendarGoalGroup> _groups() {
+    final groups = <_CalendarGoalGroup>[];
+    for (final task in widget.tasks) {
+      final goal = widget.goalForTask(task);
+      final existing = groups.where((group) => group.goal.id == goal.id);
+      if (existing.isNotEmpty) {
+        existing.first.tasks.add(task);
+      } else {
+        groups.add(_CalendarGoalGroup(goal: goal, tasks: [task]));
+      }
+    }
+    groups.sort((a, b) => a.goal.deadline.compareTo(b.goal.deadline));
+    return groups;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.tasks.isEmpty && widget.routines.isEmpty) {
+      return EmptyStateCard(
+        icon: Icons.event_available_rounded,
+        title: 'No goals on this date',
+        message:
+            'Pick another date with a dot, or create a new goal and Goal Digger will schedule it for you.',
+        cta: 'Create goal',
+        onPressed: widget.onCreateGoal,
+      );
+    }
+
+    final groups = _groups();
+    final visibleGoalCount =
+        _showAllGoals || groups.length <= _collapsedGoalCount
+            ? groups.length
+            : _collapsedGoalCount;
+    final hiddenGoalCount = groups.length - visibleGoalCount;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text('Day agenda', style: GdText.headlineMedium)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: gdPrimarySoft,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '${groups.length} goal${groups.length == 1 ? '' : 's'} · ${widget.routines.length} routine${widget.routines.length == 1 ? '' : 's'}',
+                style: TextStyle(
+                  color: gdPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (widget.routines.isNotEmpty) ...[
+          _FixedCommitmentsCard(routines: widget.routines),
+          const SizedBox(height: 10),
+        ],
+        AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: Column(
+            children: [
+              for (final group in groups.take(visibleGoalCount))
+                _CalendarGoalAgendaCard(
+                  group: group,
+                  onSyncTaskToGoogle: widget.onSyncTaskToGoogle,
+                ),
+            ],
+          ),
+        ),
+        if (groups.length > _collapsedGoalCount)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => setState(() => _showAllGoals = !_showAllGoals),
+              icon: Icon(_showAllGoals
+                  ? Icons.keyboard_arrow_up_rounded
+                  : Icons.keyboard_arrow_down_rounded),
+              label: Text(
+                _showAllGoals
+                    ? 'Show fewer goals'
+                    : 'Show $hiddenGoalCount more goal${hiddenGoalCount == 1 ? '' : 's'}',
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _CalendarGoalGroup {
+  _CalendarGoalGroup({required this.goal, required this.tasks});
+
+  final GoalProject goal;
+  final List<MicroTask> tasks;
+}
+
+class _FixedCommitmentsCard extends StatelessWidget {
+  const _FixedCommitmentsCard({required this.routines});
+
+  final List<RoutineItem> routines;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+      decoration: BoxDecoration(
+        color: gdFocusSoft.withValues(alpha: 0.48),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: gdFocus.withValues(alpha: 0.16)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: gdSurface,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.event_busy_rounded, size: 18, color: gdFocus),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Fixed commitments',
+                      style: TextStyle(
+                        color: gdInk,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Tasks should be planned around these blocks.',
+                      style: TextStyle(
+                        color: gdMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          for (final routine in routines) _RoutineCommitmentRow(routine),
+        ],
+      ),
+    );
+  }
+}
+
+class _RoutineCommitmentRow extends StatelessWidget {
+  const _RoutineCommitmentRow(this.routine);
+
+  final RoutineItem routine;
+
+  @override
+  Widget build(BuildContext context) {
+    final time =
+        TimeOfDay(hour: routine.startsAt.hour, minute: routine.startsAt.minute)
+            .format(context);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: gdSurface.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: gdBorder.withValues(alpha: 0.72)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.repeat_rounded, size: 18, color: gdFocus),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              routine.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: gdInk,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$time · ${routine.repeat.label}',
+            style: TextStyle(
+              color: gdMuted,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CalendarGoalAgendaCard extends StatelessWidget {
+  const _CalendarGoalAgendaCard({
+    required this.group,
+    required this.onSyncTaskToGoogle,
+  });
+
+  final _CalendarGoalGroup group;
+  final Future<void> Function(MicroTask task, GoalProject goal)
+      onSyncTaskToGoogle;
+
+  @override
+  Widget build(BuildContext context) {
+    final goal = group.goal;
+    final completed = group.tasks.where((task) => task.done).length;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: gdSurface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: gdBorderStrong.withValues(alpha: 0.50)),
+        boxShadow: [
+          BoxShadow(
+            color: gdShadow.withValues(alpha: 0.055),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 4,
+            child: ColoredBox(
+              color: goal.from.withValues(alpha: 0.42),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Theme(
+              data:
+                  Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                key: PageStorageKey('calendar-goal-${goal.id}'),
+                initiallyExpanded: true,
+                tilePadding: const EdgeInsets.fromLTRB(14, 10, 12, 8),
+                childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                expandedCrossAxisAlignment: CrossAxisAlignment.start,
+                title: Text(
+                  goal.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: gdInk,
+                    height: 1.16,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Wrap(
+                    spacing: 7,
+                    runSpacing: 7,
+                    children: [
+                      _CalendarAgendaPill(
+                        icon: GdCategory.iconFor(goal.category),
+                        label: goal.category,
+                        color: gdPrimary,
+                        surface: gdPrimarySoft,
+                      ),
+                      _CalendarAgendaPill(
+                        icon: Icons.task_alt_rounded,
+                        label: '$completed/${group.tasks.length} done',
+                        color: completed == group.tasks.length
+                            ? gdSuccess
+                            : gdMuted,
+                        surface: completed == group.tasks.length
+                            ? gdSuccessSoft
+                            : gdCardLight,
+                      ),
+                      _CalendarAgendaPill(
+                        icon: Icons.event_rounded,
+                        label: 'Due ${shortDate(goal.deadline)}',
+                        color: gdMuted,
+                        surface: gdCardLight,
+                      ),
+                    ],
+                  ),
+                ),
+                children: [
+                  _CalendarAgendaTaskList(
+                    tasks: group.tasks,
+                    goal: goal,
+                    onSyncTaskToGoogle: onSyncTaskToGoogle,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CalendarAgendaPill extends StatelessWidget {
+  const _CalendarAgendaPill({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.surface,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final Color surface;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: surface.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CalendarAgendaTaskList extends StatefulWidget {
+  const _CalendarAgendaTaskList({
+    required this.tasks,
+    required this.goal,
+    required this.onSyncTaskToGoogle,
+  });
+
+  final List<MicroTask> tasks;
+  final GoalProject goal;
+  final Future<void> Function(MicroTask task, GoalProject goal)
+      onSyncTaskToGoogle;
+
+  @override
+  State<_CalendarAgendaTaskList> createState() =>
+      _CalendarAgendaTaskListState();
+}
+
+class _CalendarAgendaTaskListState extends State<_CalendarAgendaTaskList> {
+  static const _collapsedCount = 4;
+  bool _showAll = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleCount = _showAll || widget.tasks.length <= _collapsedCount
+        ? widget.tasks.length
+        : _collapsedCount;
+    final hiddenCount = widget.tasks.length - visibleCount;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: Column(
+            children: [
+              for (final task in widget.tasks.take(visibleCount))
+                _CalendarAgendaTaskRow(
+                  task: task,
+                  goal: widget.goal,
+                  onSyncTaskToGoogle: widget.onSyncTaskToGoogle,
+                ),
+            ],
+          ),
+        ),
+        if (widget.tasks.length > _collapsedCount)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => setState(() => _showAll = !_showAll),
+              icon: Icon(_showAll
+                  ? Icons.keyboard_arrow_up_rounded
+                  : Icons.keyboard_arrow_down_rounded),
+              label: Text(
+                _showAll
+                    ? 'Show fewer tasks'
+                    : 'Show $hiddenCount more task${hiddenCount == 1 ? '' : 's'}',
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _CalendarAgendaTaskRow extends StatelessWidget {
+  const _CalendarAgendaTaskRow({
     required this.task,
     required this.goal,
+    required this.onSyncTaskToGoogle,
   });
 
   final MicroTask task;
   final GoalProject goal;
+  final Future<void> Function(MicroTask task, GoalProject goal)
+      onSyncTaskToGoogle;
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        minVerticalPadding: 12,
-        leading: CircleAvatar(
-          backgroundColor: task.load.softColor,
-          child: Icon(task.load.icon, color: task.load.color),
+    final done = task.done;
+    final textColor = done ? gdMuted.withValues(alpha: 0.58) : gdInk;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(10, 9, 8, 9),
+      decoration: BoxDecoration(
+        color: done ? gdSuccessSoft.withValues(alpha: 0.42) : gdCardLight,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: done
+              ? gdSuccess.withValues(alpha: 0.18)
+              : gdBorder.withValues(alpha: 0.70),
         ),
-        title: Text(
-          task.title,
-          style: const TextStyle(fontWeight: FontWeight.w900),
-        ),
-        subtitle: Text(
-          '${goal.title} · ${shortDate(task.scheduledDate)} · ${task.durationMinutes} min · ${task.load.label}',
-          style: TextStyle(
-            color: gdMuted,
-            fontWeight: FontWeight.w700,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 34,
+            decoration: BoxDecoration(
+              color: done
+                  ? gdSuccess.withValues(alpha: 0.52)
+                  : task.load.color.withValues(alpha: 0.52),
+              borderRadius: BorderRadius.circular(999),
+            ),
           ),
-        ),
+          const SizedBox(width: 9),
+          Icon(
+            done ? Icons.check_circle_rounded : task.load.icon,
+            color: done ? gdSuccess : task.load.color,
+            size: 20,
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  task.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: textColor,
+                    height: 1.18,
+                    decoration: done ? TextDecoration.lineThrough : null,
+                    fontWeight: done ? FontWeight.w800 : FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${task.durationMinutes} min · ${task.load.label}',
+                  style: TextStyle(
+                    color: gdMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Sync task to Google Calendar',
+            onPressed: () => onSyncTaskToGoogle(task, goal),
+            icon: Icon(Icons.calendar_month_rounded, color: gdPrimary),
+          ),
+        ],
       ),
     );
   }

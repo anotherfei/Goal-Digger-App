@@ -56,10 +56,88 @@ class _GoalPlanApprovalResult {
   final List<_DraftTaskSpec> tasks;
 }
 
+class _AiContextUsedStrip extends StatelessWidget {
+  const _AiContextUsedStrip({required this.chips});
+
+  final List<String> chips;
+
+  @override
+  Widget build(BuildContext context) {
+    if (chips.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
+      decoration: BoxDecoration(
+        color: gdPrimarySoft.withValues(alpha: 0.48),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: gdPrimary.withValues(alpha: 0.14)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.visibility_rounded, size: 16, color: gdPrimary),
+              const SizedBox(width: 7),
+              Text(
+                'AI used this context',
+                style: TextStyle(
+                  color: gdInk,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              for (final chip in chips) _AiContextChip(label: chip),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiContextChip extends StatelessWidget {
+  const _AiContextChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: gdSurface.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: gdBorder.withValues(alpha: 0.70)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: gdMuted,
+          fontSize: 11.5,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
 class _PlanPreviewSection extends StatelessWidget {
-  const _PlanPreviewSection({required this.tasks});
+  const _PlanPreviewSection({
+    required this.tasks,
+    this.contextChips = const [],
+  });
 
   final List<_DraftTaskSpec> tasks;
+  final List<String> contextChips;
 
   @override
   Widget build(BuildContext context) {
@@ -120,6 +198,10 @@ class _PlanPreviewSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
+          if (contextChips.isNotEmpty) ...[
+            _AiContextUsedStrip(chips: contextChips),
+            const SizedBox(height: 14),
+          ],
           for (var i = 0; i < tasks.length; i++)
             Padding(
               padding: EdgeInsets.only(bottom: i == tasks.length - 1 ? 0 : 12),
@@ -470,6 +552,102 @@ class _AiThinkingIndicatorState extends State<_AiThinkingIndicator>
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _LoadingStatusFeed extends StatefulWidget {
+  const _LoadingStatusFeed({required this.lines});
+
+  final List<String> lines;
+
+  @override
+  State<_LoadingStatusFeed> createState() => _LoadingStatusFeedState();
+}
+
+class _LoadingStatusFeedState extends State<_LoadingStatusFeed> {
+  Timer? _timer;
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LoadingStatusFeed oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.lines.join('|') == widget.lines.join('|')) return;
+    _index = 0;
+    _startTimer();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    if (widget.lines.length < 2) return;
+    _timer = Timer.periodic(const Duration(milliseconds: 1150), (_) {
+      if (!mounted) return;
+      setState(() => _index = (_index + 1) % widget.lines.length);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = widget.lines.isEmpty
+        ? const ['AI is checking timing and workload']
+        : widget.lines;
+    final line = lines[_index % lines.length];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: gdPrimarySoft.withValues(alpha: 0.64),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: gdPrimary.withValues(alpha: 0.10)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.manage_search_rounded, color: gdPrimary, size: 18),
+          const SizedBox(width: 9),
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                final offset = Tween<Offset>(
+                  begin: const Offset(0, 0.25),
+                  end: Offset.zero,
+                ).animate(animation);
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(position: offset, child: child),
+                );
+              },
+              child: Text(
+                line,
+                key: ValueKey(line),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: gdPrimary,
+                  fontSize: 12.5,
+                  height: 1.25,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1474,6 +1652,72 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       .where((task) => !task.done)
       .fold(0, (sum, task) => sum + task.durationMinutes);
 
+  bool _routineOccursOn(RoutineItem routine, DateTime date) {
+    final day = dateOnly(date);
+    final startDay = dateOnly(routine.startsAt);
+    if (day.isBefore(startDay)) return false;
+
+    switch (routine.repeat) {
+      case RoutineRepeat.daily:
+        return true;
+      case RoutineRepeat.weekly:
+        return routine.startsAt.weekday == date.weekday;
+      case RoutineRepeat.monthly:
+        return routine.startsAt.day == date.day;
+      case RoutineRepeat.yearly:
+        return routine.startsAt.month == date.month &&
+            routine.startsAt.day == date.day;
+      case RoutineRepeat.custom:
+        return startDay == day;
+    }
+  }
+
+  int _routineCountForDate(DateTime date) =>
+      _routines.where((routine) => _routineOccursOn(routine, date)).length;
+
+  List<String> _goalGenerationStatusLines(int deadlineDays) {
+    final routinesToday = _routineCountForDate(today);
+    return [
+      'Reading deadline: ${shortDate(_newGoalDeadline)}',
+      'Checking workload: $_remainingMinutes min today',
+      'Factoring mood: $_selectedMood',
+      routinesToday == 0
+          ? 'Checking saved routines'
+          : 'Reviewing $routinesToday routine${routinesToday == 1 ? '' : 's'} today',
+      'Building milestones across $deadlineDays day${deadlineDays == 1 ? '' : 's'}',
+    ];
+  }
+
+  List<String> _goalAiContextChips(int deadlineDays) {
+    final routinesToday = _routineCountForDate(today);
+    return [
+      'Mood: $_selectedMood',
+      'Deadline: ${shortDate(_newGoalDeadline)}',
+      '$deadlineDays day${deadlineDays == 1 ? '' : 's'} left',
+      'Workload: $_remainingMinutes min today',
+      'Routines: $routinesToday today',
+      'Priority: $_newGoalPriority/5',
+    ];
+  }
+
+  List<String> _reassignmentStatusLines(String trigger) {
+    final unfinished = _allTasks.where((task) => !task.done).length;
+    final routinesToday = _routineCountForDate(today);
+    final triggerLine = switch (trigger) {
+      'moodChanged' => 'Mood changed to $_selectedMood',
+      'routineAdded' => 'New routine added',
+      _ => 'Context changed',
+    };
+
+    return [
+      triggerLine,
+      'Checking $unfinished unfinished task${unfinished == 1 ? '' : 's'}',
+      'Reading $routinesToday routine${routinesToday == 1 ? '' : 's'} today',
+      'Looking for lighter days',
+      'Moving flexible tasks only',
+    ];
+  }
+
   String _formatFocusTime(int seconds) {
     final minutes = seconds ~/ 60;
     final remaining = seconds % 60;
@@ -2112,12 +2356,26 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   // Centered, non-dismissible loading card shown while the AI generates a plan.
-  Widget _buildGeneratingLoader(String label) {
+  Widget _buildGeneratingLoader(
+    String label, {
+    List<String> statusLines = const [],
+  }) {
     final adjusting = label.toLowerCase().contains('adjust');
     final title = adjusting ? 'Rebalancing your schedule' : 'Growing your plan';
     final message = adjusting
         ? 'Moving unfinished tasks into a calmer timeline.'
         : 'Planting your goal into small, realistic steps.';
+    final effectiveStatusLines = statusLines.isNotEmpty
+        ? statusLines
+        : [
+            adjusting ? 'Checking unfinished tasks' : 'Reading your deadline',
+            adjusting
+                ? 'Looking for lighter days'
+                : 'Checking current workload',
+            adjusting
+                ? 'Moving flexible tasks only'
+                : 'Building realistic milestones',
+          ];
 
     return PopScope(
       canPop: false,
@@ -2165,22 +2423,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: gdPrimarySoft.withValues(alpha: 0.64),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    'AI is checking timing and workload',
-                    style: TextStyle(
-                      color: gdPrimary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
+                _LoadingStatusFeed(lines: effectiveStatusLines),
               ],
             ),
           ),
@@ -2245,6 +2488,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         if (force) 'force': true,
       };
     }
+
+    List<String> goalContextChips() => _goalAiContextChips(deadlineDays);
 
     Future<AgentPlannerResponse> requestAgentPlan(
       String goal, {
@@ -2334,7 +2579,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         context: context,
         barrierDismissible: false,
         useRootNavigator: true,
-        builder: (_) => _buildGeneratingLoader('Generating your plan…'),
+        builder: (_) => _buildGeneratingLoader(
+          'Generating your plan...',
+          statusLines: _goalGenerationStatusLines(deadlineDays),
+        ),
       );
     }
 
@@ -2424,6 +2672,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     };
     if (!awaitingGoalRefinement) {
       firstMessage['tasks'] = _draftPreviewTasks(draftSpecs);
+      firstMessage['contextChips'] = goalContextChips();
     }
     final messages = <Map<String, dynamic>>[firstMessage];
 
@@ -2708,6 +2957,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                       ?.whereType<_DraftTaskSpec>()
                       .toList() ??
                   const <_DraftTaskSpec>[];
+              final contextChips = (message['contextChips'] as List?)
+                      ?.whereType<String>()
+                      .toList() ??
+                  const <String>[];
+              final effectiveContextChips = tasks.isNotEmpty && !isUser
+                  ? (contextChips.isEmpty ? goalContextChips() : contextChips)
+                  : const <String>[];
               final width = MediaQuery.of(context).size.width;
               final compact = width < 620;
               final bubbleMaxWidth =
@@ -2782,7 +3038,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                       const SizedBox(height: 16),
                       ConstrainedBox(
                         constraints: BoxConstraints(maxWidth: planMaxWidth),
-                        child: _PlanPreviewSection(tasks: tasks),
+                        child: _PlanPreviewSection(
+                          tasks: tasks,
+                          contextChips: effectiveContextChips,
+                        ),
                       ),
                     ],
                   ],
@@ -3507,14 +3766,17 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   // Show/hide the "agent is working" loader. Ref-counted: the dialog opens on
   // the first in-flight request and closes when the last one finishes.
-  void _showReassignmentLoader() {
+  void _showReassignmentLoader(String trigger) {
     if (!mounted) return;
     _reassignLoaderDepth++;
     if (_reassignLoaderRoute != null) return;
     final route = DialogRoute<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _buildGeneratingLoader('AI is adjusting your schedule…'),
+      builder: (_) => _buildGeneratingLoader(
+        'AI is adjusting your schedule...',
+        statusLines: _reassignmentStatusLines(trigger),
+      ),
     );
     _reassignLoaderRoute = route;
     unawaited(Navigator.of(context, rootNavigator: true).push(route));
@@ -3573,7 +3835,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
             ))
         .toList();
 
-    _showReassignmentLoader();
+    _showReassignmentLoader(trigger);
     try {
       final result = await context.read<GenkitService>().agentReassign.reassign(
             TaskReassignmentRequest(

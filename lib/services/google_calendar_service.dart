@@ -36,103 +36,116 @@ class GoogleCalendarService {
     return _insertTaskEvent(headers, task, goal);
   }
 
+  Future<String> createRoutineEvent(RoutineItem routine) async {
+    final headers = await _authService.getGoogleCalendarAuthHeaders();
+
+    final existingId = await _findExistingRoutineEventId(headers, routine);
+    if (existingId != null) {
+      return existingId;
+    }
+
+    return _insertRoutineEvent(headers, routine);
+  }
+
   Future<int> deleteTaskEventsForGoal(GoalProject goal) async {
-  final headers = await _authService.getGoogleCalendarAuthHeaders();
-  final eventIds = <String>{};
+    final headers = await _authService.getGoogleCalendarAuthHeaders();
+    final eventIds = <String>{};
 
-  final goalEventIds = await _findEventIdsByPrivateProperty(
-    headers,
-    'goalId',
-    goal.id.toString(),
-  );
-
-  eventIds.addAll(goalEventIds);
-
-  for (final task in goal.tasks) {
-    final taskEventIds = await _findEventIdsByPrivateProperty(
+    final goalEventIds = await _findEventIdsByPrivateProperty(
       headers,
-      'taskId',
-      task.id.toString(),
+      'goalId',
+      goal.id.toString(),
     );
 
-    eventIds.addAll(taskEventIds);
+    eventIds.addAll(goalEventIds);
+
+    for (final task in goal.tasks) {
+      final taskEventIds = await _findEventIdsByPrivateProperty(
+        headers,
+        'taskId',
+        task.id.toString(),
+      );
+
+      eventIds.addAll(taskEventIds);
+    }
+
+    var deleted = 0;
+
+    for (final eventId in eventIds) {
+      await _deleteEvent(headers, eventId);
+      deleted++;
+    }
+
+    return deleted;
   }
 
-  var deleted = 0;
+  Future<List<String>> _findEventIdsByPrivateProperty(
+    Map<String, String> headers,
+    String key,
+    String value,
+  ) async {
+    final ids = <String>[];
+    String? pageToken;
 
-  for (final eventId in eventIds) {
-    await _deleteEvent(headers, eventId);
-    deleted++;
+    do {
+      final query = {
+        'privateExtendedProperty': '$key=$value',
+        'maxResults': '250',
+        'showDeleted': 'false',
+        if (pageToken != null) 'pageToken': pageToken,
+      };
+
+      final uri = Uri.https(
+        'www.googleapis.com',
+        '/calendar/v3/calendars/primary/events',
+        query,
+      );
+
+      final response = await http.get(uri, headers: headers);
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(
+            'Failed to find Google Calendar events: ${response.body}');
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = data['items'] as List<dynamic>? ?? [];
+
+      for (final item in items) {
+        final event = item as Map<String, dynamic>;
+        final id = event['id']?.toString();
+
+        if (id != null && id.isNotEmpty) {
+          ids.add(id);
+        }
+      }
+
+      pageToken = data['nextPageToken']?.toString();
+    } while (pageToken != null && pageToken.isNotEmpty);
+
+    return ids;
   }
 
-  return deleted;
-}
-
-Future<List<String>> _findEventIdsByPrivateProperty(
-  Map<String, String> headers,
-  String key,
-  String value,
-) async {
-  final ids = <String>[];
-  String? pageToken;
-
-  do {
-    final query = {
-      'privateExtendedProperty': '$key=$value',
-      'maxResults': '250',
-      'showDeleted': 'false',
-      if (pageToken != null) 'pageToken': pageToken,
-    };
-
-    final uri = Uri.https(
-      'www.googleapis.com',
-      '/calendar/v3/calendars/primary/events',
-      query,
+  Future<void> _deleteEvent(
+    Map<String, String> headers,
+    String eventId,
+  ) async {
+    final response = await http.delete(
+      Uri.parse(
+        'https://www.googleapis.com/calendar/v3/calendars/primary/events/${Uri.encodeComponent(eventId)}',
+      ),
+      headers: headers,
     );
 
-    final response = await http.get(uri, headers: headers);
+    if (response.statusCode == 404 || response.statusCode == 410) {
+      return;
+    }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Failed to find Google Calendar events: ${response.body}');
+      throw Exception(
+          'Failed to delete Google Calendar event: ${response.body}');
     }
-
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
-    final items = data['items'] as List<dynamic>? ?? [];
-
-    for (final item in items) {
-      final event = item as Map<String, dynamic>;
-      final id = event['id']?.toString();
-
-      if (id != null && id.isNotEmpty) {
-        ids.add(id);
-      }
-    }
-
-    pageToken = data['nextPageToken']?.toString();
-  } while (pageToken != null && pageToken.isNotEmpty);
-
-  return ids;
-}
-
-Future<void> _deleteEvent(
-  Map<String, String> headers,
-  String eventId,
-) async {
-  final response = await http.delete(
-    Uri.parse(
-      'https://www.googleapis.com/calendar/v3/calendars/primary/events/${Uri.encodeComponent(eventId)}',
-    ),
-    headers: headers,
-  );
-
-  if (response.statusCode == 404 || response.statusCode == 410) {
-    return;
   }
-
-  if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw Exception('Failed to delete Google Calendar event: ${response.body}');
-  }
-}
 
   Future<GoogleCalendarSyncResult> syncAllTaskEvents(
     List<MicroTask> tasks,
@@ -182,6 +195,16 @@ Future<void> _deleteEvent(
     ].join('|');
   }
 
+  String _routineSyncKey(RoutineItem routine) {
+    return [
+      'goal_digger_routine',
+      routine.id,
+      routine.title.trim(),
+      routine.startsAt.toUtc().toIso8601String(),
+      routine.repeat.name,
+    ].join('|');
+  }
+
   Future<String?> _findExistingTaskEventId(
     Map<String, String> headers,
     MicroTask task,
@@ -224,7 +247,50 @@ Future<void> _deleteEvent(
         return event['id'] as String?;
       }
 
-      if (existingSyncKey == null && _legacyEventMatchesTask(event, task, goal)) {
+      if (existingSyncKey == null &&
+          _legacyEventMatchesTask(event, task, goal)) {
+        return event['id'] as String?;
+      }
+    }
+
+    return null;
+  }
+
+  Future<String?> _findExistingRoutineEventId(
+    Map<String, String> headers,
+    RoutineItem routine,
+  ) async {
+    final syncKey = _routineSyncKey(routine);
+
+    final uri = Uri.https(
+      'www.googleapis.com',
+      '/calendar/v3/calendars/primary/events',
+      {
+        'privateExtendedProperty': 'routineId=${routine.id}',
+        'maxResults': '20',
+        'showDeleted': 'false',
+      },
+    );
+
+    final response = await http.get(uri, headers: headers);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+          'Failed to check existing routine event: ${response.body}');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final items = data['items'] as List<dynamic>? ?? [];
+
+    for (final item in items) {
+      final event = item as Map<String, dynamic>;
+      final extendedProperties =
+          event['extendedProperties'] as Map<String, dynamic>?;
+      final privateProperties =
+          extendedProperties?['private'] as Map<String, dynamic>?;
+      final existingSyncKey = privateProperties?['syncKey']?.toString();
+
+      if (existingSyncKey == syncKey) {
         return event['id'] as String?;
       }
     }
@@ -298,5 +364,66 @@ Future<void> _deleteEvent(
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     return data['id'] as String;
+  }
+
+  Future<String> _insertRoutineEvent(
+    Map<String, String> headers,
+    RoutineItem routine,
+  ) async {
+    final start = routine.startsAt;
+    final end = start.add(const Duration(minutes: 30));
+    final recurrence = _routineRecurrence(routine.repeat);
+
+    final response = await http.post(
+      Uri.parse(
+        'https://www.googleapis.com/calendar/v3/calendars/primary/events',
+      ),
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'summary': routine.title,
+        'description': 'Goal Digger routine: ${routine.repeat.label}',
+        'start': {
+          'dateTime': start.toIso8601String(),
+          'timeZone': 'Asia/Taipei',
+        },
+        'end': {
+          'dateTime': end.toIso8601String(),
+          'timeZone': 'Asia/Taipei',
+        },
+        if (recurrence.isNotEmpty) 'recurrence': recurrence,
+        'extendedProperties': {
+          'private': {
+            'source': 'goal_digger',
+            'routineId': routine.id,
+            'syncKey': _routineSyncKey(routine),
+          },
+        },
+      }),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Google Calendar routine sync failed: ${response.body}');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return data['id'] as String;
+  }
+
+  List<String> _routineRecurrence(RoutineRepeat repeat) {
+    switch (repeat) {
+      case RoutineRepeat.daily:
+        return ['RRULE:FREQ=DAILY'];
+      case RoutineRepeat.weekly:
+        return ['RRULE:FREQ=WEEKLY'];
+      case RoutineRepeat.monthly:
+        return ['RRULE:FREQ=MONTHLY'];
+      case RoutineRepeat.yearly:
+        return ['RRULE:FREQ=YEARLY'];
+      case RoutineRepeat.custom:
+        return const [];
+    }
   }
 }
