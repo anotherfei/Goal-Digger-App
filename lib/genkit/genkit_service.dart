@@ -14,6 +14,8 @@ export 'flows/goal_coach_flow.dart'
         MoodAdvisorFlow,
         FocusInsightFlow,
         AgentPlannerFlow,
+        AgentModifyFlow,
+        AgentReassignFlow,
         GenkitFlowException;
 
 export 'models/ai_models.dart';
@@ -27,6 +29,8 @@ class GenkitService {
     moodAdvisor = MoodAdvisorFlow(_client);
     focusInsight = FocusInsightFlow(_client);
     agentPlanner = AgentPlannerFlow(_client);
+    agentModify = AgentModifyFlow(_client);
+    agentReassign = AgentReassignFlow(_client);
   }
 
   late final GenkitClient _client;
@@ -36,4 +40,6 @@ class GenkitService {
   late final MoodAdvisorFlow moodAdvisor;
   late final FocusInsightFlow focusInsight;
   late final AgentPlannerFlow agentPlanner;
+  late final AgentModifyFlow agentModify;
+  late final AgentReassignFlow agentReassign;
 }

@@ -21,6 +21,13 @@ import { defineMoodAdvisorFlow }   from "./flows/moodAdvisorFlow";
 import { defineFocusInsightFlow }  from "./flows/focusInsightFlow";
 import { getAI, defaultModel }     from "./ai";
 import { runAgent }                from "./agent/runtime";
+import { modificationAgent, type ModifiableTask } from "./agent/modification";
+import {
+  reassignmentAgent,
+  type ReassignableTask,
+  type ReassignGoalInfo,
+  type ReassignmentTrigger,
+} from "./agent/reassignment";
 
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { logger } from "firebase-functions";
@@ -86,6 +93,100 @@ export const agentPlanner = onCall(fnOptions, async (req) => {
   return await runAgent({
     userId: req.auth!.uid,
     goal,
+    context: req.data?.context ?? {},
+  });
+});
+
+// Task Modification Agent (§6.3): applies, clarifies, confirms, or rejects a
+// user-requested change against the CURRENT draft plan.
+export const agentModify = onCall(fnOptions, async (req) => {
+  requireAuth(req.auth);
+  const goal = String(req.data?.goal ?? "").trim();
+  const request = String(req.data?.request ?? "").trim();
+  if (!goal || !request) {
+    throw new HttpsError("invalid-argument", "goal and request are required.");
+  }
+  const rawTasks = Array.isArray(req.data?.currentTasks) ? req.data.currentTasks : [];
+  const currentTasks: ModifiableTask[] = rawTasks
+    .filter((t: unknown): t is Record<string, unknown> => !!t && typeof t === "object")
+    .map((t: Record<string, unknown>) => ({
+      title: String(t.title ?? ""),
+      durationMinutes: Number(t.durationMinutes ?? 20),
+      load: (["light", "focus", "stretch"].includes(String(t.load))
+        ? String(t.load)
+        : "focus") as ModifiableTask["load"],
+      dayOffset: Number(t.dayOffset ?? 0),
+    }))
+    .filter((t: ModifiableTask) => t.title.length > 0);
+
+  return await modificationAgent({
+    goal,
+    request,
+    currentTasks,
+    context: req.data?.context ?? {},
+    force: req.data?.force === true,
+  });
+});
+
+// Task Reassignment Agent (§6.4): reacts to mood/routine/deadline changes and
+// returns a validated set of reschedule recommendations.
+export const agentReassign = onCall(fnOptions, async (req) => {
+  requireAuth(req.auth);
+
+  const validTriggers = new Set([
+    "moodChanged",
+    "routineAdded",
+    "deadlineApproaching",
+    "priorityChanged",
+    "manual",
+  ]);
+  const trigger = String(req.data?.trigger ?? "manual");
+  if (!validTriggers.has(trigger)) {
+    throw new HttpsError("invalid-argument", `Unknown trigger "${trigger}".`);
+  }
+
+  const rawTasks = Array.isArray(req.data?.tasks) ? req.data.tasks : [];
+  const tasks: ReassignableTask[] = rawTasks
+    .filter((t: unknown): t is Record<string, unknown> => !!t && typeof t === "object")
+    .map((t: Record<string, unknown>) => ({
+      id: String(t.id ?? ""),
+      goalId: String(t.goalId ?? ""),
+      title: String(t.title ?? ""),
+      durationMinutes: Number(t.durationMinutes ?? 20),
+      load: String(t.load ?? "focus"),
+      dayOffset: Number(t.dayOffset ?? 0),
+      done: t.done === true,
+    }))
+    .filter((t: ReassignableTask) => t.id.length > 0 && t.title.length > 0);
+
+  const rawGoals = Array.isArray(req.data?.goals) ? req.data.goals : [];
+  const goals: ReassignGoalInfo[] = rawGoals
+    .filter((g: unknown): g is Record<string, unknown> => !!g && typeof g === "object")
+    .map((g: Record<string, unknown>) => ({
+      id: String(g.id ?? ""),
+      title: String(g.title ?? ""),
+      importance: Math.min(5, Math.max(1, Number(g.importance ?? 3))),
+      deadlineDays: Math.max(0, Number(g.deadlineDays ?? 14)),
+    }))
+    .filter((g: ReassignGoalInfo) => g.id.length > 0);
+
+  const rawRoutines = Array.isArray(req.data?.routines) ? req.data.routines : [];
+  const routines = rawRoutines
+    .filter((r: unknown): r is Record<string, unknown> => !!r && typeof r === "object")
+    .map((r: Record<string, unknown>) => ({
+      title: String(r.title ?? ""),
+      startsAt: String(r.startsAt ?? ""),
+      repeat: String(r.repeat ?? ""),
+    }))
+    .filter((r: { title: string }) => r.title.length > 0);
+
+  return await reassignmentAgent({
+    userId: req.auth!.uid,
+    trigger: trigger as ReassignmentTrigger,
+    mood: req.data?.mood != null ? String(req.data.mood) : undefined,
+    routines,
+    tasks,
+    goals,
     context: req.data?.context ?? {},
   });
 });

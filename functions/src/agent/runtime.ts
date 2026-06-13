@@ -20,7 +20,12 @@
 //     result from a fully fallen-back one.
 
 import * as admin from "firebase-admin";
-import { evaluateGoal, goalGuardMessage, type GoalGuardResult } from "./goal_guard";
+import {
+  evaluateGoal,
+  goalGuardMessage,
+  type DeadlineSuggestion,
+  type GoalGuardResult,
+} from "./goal_guard";
 import { plannerAgent } from "./planner";
 import { reflectionAgent } from "./reflection";
 import { toolRegistry } from "./tools/registry";
@@ -67,6 +72,14 @@ interface AgentRunResult {
   goalRejectionType: string | null;
   goalRejectionReason: string | null;
   goalRefinementPrompt: string | null;
+  // Positive goal filtering (§9.1): false when the goal was rejected for
+  // negative/destructive framing — the client should show the rejection
+  // reason and ask the user to re-input a positively framed goal.
+  positiveGoal: boolean;
+  // Deadline feasibility: non-null when the goal is allowed but its deadline
+  // is unrealistic. The client shows the reason and asks the user whether to
+  // adopt the suggested deadline (agree → adjust, decline → keep as-is).
+  deadlineSuggestion: DeadlineSuggestion | null;
   // Structured, ready-to-consume outputs (the client reads these directly):
   milestones: string[];
   milestoneNote: string | null;
@@ -148,6 +161,8 @@ function rejectedGoalResult(
     goalRejectionType: review.type,
     goalRejectionReason: review.reason,
     goalRefinementPrompt: review.refinementPrompt,
+    positiveGoal: review.positiveGoal,
+    deadlineSuggestion: null,
     milestones: [],
     milestoneNote: message,
     milestoneNeedsConfirmation: false,
@@ -167,6 +182,8 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
 
   console.log(`[agent/runtime] Starting agent for uid=${userId}, goal="${goal}"`);
 
+  // §9.1 positive goal filtering happens inside the guard: negatively framed
+  // goals are rejected with a reason and a prompt to re-input the goal.
   const goalReview = await evaluateGoal(goal, context);
   if (!goalReview.allowed) {
     console.log(
@@ -340,6 +357,8 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
     goalRejectionType: null,
     goalRejectionReason: null,
     goalRefinementPrompt: null,
+    positiveGoal: true,
+    deadlineSuggestion: goalReview.deadlineSuggestion,
     milestones,
     milestoneNote: milestonesResult?.feasibilityNote ?? null,
     milestoneNeedsConfirmation: milestonesResult?.needsConfirmation ?? false,
