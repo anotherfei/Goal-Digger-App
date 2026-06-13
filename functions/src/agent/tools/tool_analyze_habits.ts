@@ -32,9 +32,9 @@ export const analyzeHabitsTool = {
     const deadlineDays = Number(args.context?.deadlineDays ?? 14);
     const goal = String(args.goal ?? "general productivity");
 
-    // Derive heuristic signals
+    // Deterministic heuristic used ONLY as the offline fallback for burnout risk.
     const completionRate = totalToday > 0 ? completedToday / totalToday : 1;
-    const burnoutRisk: "low" | "medium" | "high" =
+    const heuristicBurnoutRisk: "low" | "medium" | "high" =
       completionRate < 0.25 && totalToday >= 4
         ? "high"
         : completionRate < 0.5 && totalToday >= 6
@@ -48,7 +48,10 @@ export const analyzeHabitsTool = {
     ];
     const strongestHours = preferredHours.slice(0, 3);
 
-    // AI-generated productivity insight
+    // AI assesses burnout risk AND writes the insight in one call — the risk is
+    // a judgement call (mood + completion + streak + deadline pressure), not a
+    // fixed threshold. Falls back to the heuristic if the model is unavailable.
+    let burnoutRisk: "low" | "medium" | "high" = heuristicBurnoutRisk;
     let productivityInsight = "";
     try {
       const ai = getAI();
@@ -59,30 +62,42 @@ Productivity snapshot:
 - Mood: ${mood}
 - Day streak: ${streak}
 - Days until deadline: ${deadlineDays}
-- Burnout risk: ${burnoutRisk}
 
-Write exactly ONE sentence (max 25 words) that identifies this user's strongest pattern AND their biggest risk right now. Be concrete and specific to the goal.
+Assess this user's burnout risk right now from ALL of the signals above (mood, completion rate, streak, and deadline pressure together — not any single number). Then write exactly ONE sentence (max 25 words) naming their strongest pattern AND their biggest risk, concrete and specific to the goal.
 
-Respond ONLY with valid JSON: { "insight": "..." }`.trim();
+Respond ONLY with valid JSON: { "burnoutRisk": "low" | "medium" | "high", "insight": "..." }`.trim();
 
       const { text } = await ai.generate({
         model: defaultModel,
         prompt,
         config: {
-          temperature: 0.45,
-          maxOutputTokens: 256,
+          temperature: 0.4,
+          maxOutputTokens: 512,
           responseMimeType: "application/json",
-          thinkingConfig: { thinkingBudget: 0 },
+          thinkingConfig: { thinkingBudget: 256 },
         },
       });
 
-      const parsed = parseModelJson<{ insight: string }>(text);
+      const parsed = parseModelJson<{
+        burnoutRisk?: string;
+        insight?: string;
+      }>(text);
+      if (
+        parsed.burnoutRisk === "low" ||
+        parsed.burnoutRisk === "medium" ||
+        parsed.burnoutRisk === "high"
+      ) {
+        burnoutRisk = parsed.burnoutRisk;
+      }
       if (parsed.insight?.trim()) {
         productivityInsight = parsed.insight.trim();
       }
     } catch (e) {
       console.error("[analyzeHabits] LLM call failed, using static:", e);
-      // Deterministic fallback
+    }
+
+    if (!productivityInsight) {
+      // Deterministic fallback insight (model unavailable or returned no text).
       if (burnoutRisk === "high") {
         productivityInsight = `Task completion is critically low (${completedToday}/${totalToday}) — reduce today's load and protect your streak.`;
       } else if (burnoutRisk === "medium") {

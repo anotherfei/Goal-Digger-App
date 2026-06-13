@@ -1527,7 +1527,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       } else {
         captureAgentMetadata(agentPlan);
         deadlineQuestion = captureDeadlineSuggestion(agentPlan);
-        if (agentPlan.milestones.isNotEmpty) {
+        // Prefer the agent's fully structured tasks (AI-decided duration,
+        // load, and day). Fall back to title-only milestones if an older
+        // backend returned just strings.
+        if (agentPlan.milestoneTasks.isNotEmpty) {
+          agentSpecs =
+              _draftSpecsFromGeneratedTasks(agentPlan.milestoneTasks).toList();
+        } else if (agentPlan.milestones.isNotEmpty) {
           agentSpecs = _draftSpecsFromTitles(agentPlan.milestones).toList();
         }
       }
@@ -1659,12 +1665,17 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                       'Done — I moved the deadline to ${shortDate(newDeadline)} and re-planned the milestones across the new timeline.';
                   try {
                     final replan = await requestAgentPlan(currentTitle);
-                    if (replan.goalGuardEvaluated &&
-                        !replan.goalRejected &&
-                        replan.milestones.isNotEmpty) {
-                      captureAgentMetadata(replan);
-                      draftSpecs =
-                          _draftSpecsFromTitles(replan.milestones).toList();
+                    if (replan.goalGuardEvaluated && !replan.goalRejected) {
+                      if (replan.milestoneTasks.isNotEmpty) {
+                        captureAgentMetadata(replan);
+                        draftSpecs =
+                            _draftSpecsFromGeneratedTasks(replan.milestoneTasks)
+                                .toList();
+                      } else if (replan.milestones.isNotEmpty) {
+                        captureAgentMetadata(replan);
+                        draftSpecs =
+                            _draftSpecsFromTitles(replan.milestones).toList();
+                      }
                     }
                   } catch (e) {
                     debugPrint('Replan after deadline change failed: $e');
@@ -1811,15 +1822,23 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                     .map((task) => task.trim())
                     .where((task) => task.isNotEmpty)
                     .toList();
-                if (refinedTitles.isNotEmpty) {
+                // Prefer the agent's fully structured tasks; fall back to
+                // title-only milestones, then to the local generator.
+                final hasStructured = refinedPlan.milestoneTasks.isNotEmpty;
+                if (hasStructured) {
+                  draftSpecs =
+                      _draftSpecsFromGeneratedTasks(refinedPlan.milestoneTasks)
+                          .toList();
+                } else if (refinedTitles.isNotEmpty) {
                   draftSpecs = _draftSpecsFromTitles(refinedTitles).toList();
                 } else if (wasAwaitingGoalRefinement) {
                   draftSpecs = await generatedOrLocalSpecs(goalToPlan);
                 }
+                final producedPlan = hasStructured || refinedTitles.isNotEmpty;
                 if (wasAwaitingGoalRefinement) {
                   currentTitle = goalToPlan;
                   aiAvailable = true;
-                  fromAgent = refinedTitles.isNotEmpty;
+                  fromAgent = producedPlan;
                 }
 
                 // Prefer the agent's feasibility note (e.g. "…Are you sure you
@@ -1829,8 +1848,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                     ? note
                     : (wasAwaitingGoalRefinement
                         ? 'That goal is clear enough to plan. I broke "$currentTitle" into ${draftSpecs.length} milestones.'
-                        : refinedTitles.isNotEmpty
-                            ? 'Updated the plan to ${refinedTitles.length} milestones.'
+                        : producedPlan
+                            ? 'Updated the plan to ${draftSpecs.length} milestones.'
                             : 'I refined the plan based on your request.');
                 final refinedDeadlineQuestion =
                     captureDeadlineSuggestion(refinedPlan);

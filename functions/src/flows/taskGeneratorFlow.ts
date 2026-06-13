@@ -52,7 +52,7 @@ export function defineTaskGeneratorFlow() {
         input.priority >= 4 ? "high" : input.priority >= 2 ? "medium" : "low";
 
       const prompt = `
-You are an expert productivity planner. Break this goal into 4–6 focused micro-tasks.
+You are an expert productivity planner. Break this goal into focused micro-tasks. Decide how many the goal genuinely needs (use as few or as many as the real scope requires, up to 10) — do not pad to a fixed number.
 
 Goal: "${input.goalTitle}"
 Category: ${input.category}
@@ -106,7 +106,7 @@ Respond ONLY with valid JSON:
               Math.max(0, Number(t.dayOffset))
             ),
           }))
-          .slice(0, 6);
+          .slice(0, 12);
 
         if (tasks.length >= 2) return {
           tasks,
