@@ -3,11 +3,14 @@ import 'package:flutter/material.dart';
 import '../../core/theme/gd_design.dart';
 import '../../models/models.dart';
 import '../../shared/widgets/shared_widgets.dart';
+import 'lumi_sprite.dart';
 
 class CompanionPage extends StatefulWidget {
   const CompanionPage({
+    super.key,
     required this.coins,
     required this.happiness,
+    required this.streak,
     required this.pet,
     required this.accessory,
     required this.onFeed,
@@ -17,6 +20,7 @@ class CompanionPage extends StatefulWidget {
 
   final int coins;
   final int happiness;
+  final int streak;
   final PetSkin pet;
   final String accessory;
   final VoidCallback onFeed;
@@ -49,12 +53,8 @@ class _CompanionPageState extends State<CompanionPage> {
               GoalShellInsets.bottomOf(context),
             ),
             children: [
-              // PageHero(
-              //   icon: Icons.pets_rounded,
-              //   title: 'Pet companion',
-              //   subtitle: 'Care for your companion, unlock chest rewards, and keep the visual style calm and consistent.',
-              // ),
               const SizedBox(height: 16),
+
               AppCard(
                 color: gdPrimarySoft,
                 child: Padding(
@@ -63,6 +63,7 @@ class _CompanionPageState extends State<CompanionPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const SizedBox(height: 8),
+
                       Center(
                         child: Text(
                           'PET PREVIEW',
@@ -74,49 +75,58 @@ class _CompanionPageState extends State<CompanionPage> {
                           ),
                         ),
                       ),
+
                       const SizedBox(height: 22),
+
                       Center(
-                        child: GestureDetector(
-                          onTap: widget.onPetInteract,
-                          child: Stack(
-                            alignment: Alignment.topRight,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(22),
-                                decoration: BoxDecoration(
-                                  color: gdCardLight,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: gdBorder),
-                                ),
-                                child: PetAvatar(pet: widget.pet, size: 142),
+                        child: Stack(
+                          alignment: Alignment.topRight,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: gdCardLight,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: gdBorder),
                               ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: gdSurface,
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(color: gdBorder),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.05),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 6),
-                                    ),
-                                  ],
-                                ),
-                                child: Text(
-                                  widget.accessory,
-                                  style: TextStyle(
-                                      color: gdInk,
-                                      fontWeight: FontWeight.w900),
+                              child: LumiCompanionSprite(
+                                streak: widget.streak,
+                                size: 178,
+                                onTap: widget.onPetInteract,
+                              ),
+                            ),
+
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: gdSurface,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(color: gdBorder),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.05),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 6),
+                                  ),
+                                ],
+                              ),
+                              child: Text(
+                                widget.accessory,
+                                style: TextStyle(
+                                  color: gdInk,
+                                  fontWeight: FontWeight.w900,
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
+
                       const SizedBox(height: 22),
+
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -129,27 +139,34 @@ class _CompanionPageState extends State<CompanionPage> {
                           children: [
                             Row(
                               children: [
-                                Icon(Icons.favorite_rounded,
-                                    color: gdAccent, size: 20),
+                                Icon(
+                                  Icons.favorite_rounded,
+                                  color: gdAccent,
+                                  size: 20,
+                                ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     'Happiness ${widget.happiness}%',
                                     style: TextStyle(
-                                        color: gdInk,
-                                        fontWeight: FontWeight.w900),
+                                      color: gdInk,
+                                      fontWeight: FontWeight.w900,
+                                    ),
                                   ),
                                 ),
                                 Text(
                                   'Tap to cheer up',
                                   style: TextStyle(
-                                      color: gdMuted,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w800),
+                                    color: gdMuted,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                  ),
                                 ),
                               ],
                             ),
+
                             const SizedBox(height: 10),
+
                             LinearProgressIndicator(
                               value: widget.happiness / 100,
                               minHeight: 10,
@@ -160,78 +177,114 @@ class _CompanionPageState extends State<CompanionPage> {
                           ],
                         ),
                       ),
+
                       const SizedBox(height: 18),
+
                       Row(
                         children: [
                           Expanded(
-                              child: _SkinPill(
-                                  label: 'Mint',
-                                  selected: _selectedSkin == 'Mint',
-                                  onTap: () =>
-                                      setState(() => _selectedSkin = 'Mint'))),
+                            child: _SkinPill(
+                              label: 'Mint',
+                              selected: _selectedSkin == 'Mint',
+                              onTap: () {
+                                setState(() => _selectedSkin = 'Mint');
+                              },
+                            ),
+                          ),
                           const SizedBox(width: 10),
                           Expanded(
-                              child: _SkinPill(
-                                  label: 'Peach',
-                                  selected: _selectedSkin == 'Peach',
-                                  onTap: () =>
-                                      setState(() => _selectedSkin = 'Peach'))),
+                            child: _SkinPill(
+                              label: 'Peach',
+                              selected: _selectedSkin == 'Peach',
+                              onTap: () {
+                                setState(() => _selectedSkin = 'Peach');
+                              },
+                            ),
+                          ),
                           const SizedBox(width: 10),
                           Expanded(
-                              child: _SkinPill(
-                                  label: 'Lunar',
-                                  selected: _selectedSkin == 'Lunar',
-                                  onTap: () =>
-                                      setState(() => _selectedSkin = 'Lunar'))),
+                            child: _SkinPill(
+                              label: 'Lunar',
+                              selected: _selectedSkin == 'Lunar',
+                              onTap: () {
+                                setState(() => _selectedSkin = 'Lunar');
+                              },
+                            ),
+                          ),
                         ],
                       ),
                     ],
                   ),
                 ),
               ),
+
               const SizedBox(height: 20),
-              SectionTitle(title: 'Mystery chest', trailing: '50 coins'),
+
+              const SectionTitle(
+                title: 'Mystery chest',
+                trailing: '50 coins',
+              ),
+
               const SizedBox(height: 10),
+
               AppCard(
                 color: gdSurface,
                 child: Padding(
                   padding: const EdgeInsets.all(18),
                   child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(children: [
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
                           CircleAvatar(
-                              backgroundColor: gdPrimarySoft,
-                              child: Icon(Icons.inventory_2_rounded,
-                                  color: gdPrimary)),
-                          SizedBox(width: 12),
+                            backgroundColor: gdPrimarySoft,
+                            child: Icon(
+                              Icons.inventory_2_rounded,
+                              color: gdPrimary,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
                           Expanded(
-                              child: Text(
-                                  'Open a chest for random pet skins or accessories.',
-                                  style: TextStyle(
-                                      color: gdInk,
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 16)))
-                        ]),
-                        const SizedBox(height: 14),
-                        SizedBox(
-                            width: double.infinity,
-                            child: FilledButton.icon(
-                                onPressed: widget.onOpenChest,
-                                icon: const Icon(Icons.auto_awesome_rounded),
-                                label: const Text('Open chest -50 coins'))),
-                        const SizedBox(height: 10),
-                        SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                                onPressed: widget.onFeed,
-                                icon: const Icon(Icons.restaurant_rounded),
-                                label: const Text('Feed companion -10 coins'))),
-                      ]),
+                            child: Text(
+                              'Open a chest for random pet skins or accessories.',
+                              style: TextStyle(
+                                color: gdInk,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: widget.onOpenChest,
+                          icon: const Icon(Icons.auto_awesome_rounded),
+                          label: const Text('Open chest -50 coins'),
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: widget.onFeed,
+                          icon: const Icon(Icons.restaurant_rounded),
+                          label: const Text('Feed companion -10 coins'),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
+
           Positioned(
             top: 14,
             left: 18,
@@ -244,21 +297,26 @@ class _CompanionPageState extends State<CompanionPage> {
 }
 
 class _FloatingWallet extends StatelessWidget {
-  const _FloatingWallet({required this.coins});
+  const _FloatingWallet({
+    required this.coins,
+  });
 
   final int coins;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 12,
+        vertical: 9,
+      ),
       decoration: BoxDecoration(
         color: gdSurface,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: gdBorder),
         boxShadow: [
           BoxShadow(
-            color: gdPrimary.withOpacity(0.08),
+            color: gdPrimary.withValues(alpha: 0.08),
             blurRadius: 16,
             offset: const Offset(0, 8),
           ),
@@ -270,18 +328,23 @@ class _FloatingWallet extends StatelessWidget {
           Container(
             width: 30,
             height: 30,
-            decoration:
-                BoxDecoration(color: gdStarGold, shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              color: gdStarGold,
+              shape: BoxShape.circle,
+            ),
             alignment: Alignment.center,
             child: const Text(
               'C',
               style: TextStyle(
-                  color: Color(0xFF5B3200),
-                  fontWeight: FontWeight.w900,
-                  fontSize: 14),
+                color: Color(0xFF5B3200),
+                fontWeight: FontWeight.w900,
+                fontSize: 14,
+              ),
             ),
           ),
+
           const SizedBox(width: 8),
+
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -289,15 +352,19 @@ class _FloatingWallet extends StatelessWidget {
               Text(
                 'Wallet',
                 style: TextStyle(
-                    color: gdMuted,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.6),
+                  color: gdMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.6,
+                ),
               ),
               Text(
-                '$coins coins',
+                '${coins} coins',
                 style: TextStyle(
-                    color: gdInk, fontSize: 13, fontWeight: FontWeight.w900),
+                  color: gdInk,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ],
           ),
@@ -308,8 +375,12 @@ class _FloatingWallet extends StatelessWidget {
 }
 
 class _SkinPill extends StatelessWidget {
-  const _SkinPill(
-      {required this.label, required this.selected, required this.onTap});
+  const _SkinPill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
   final String label;
   final bool selected;
   final VoidCallback onTap;
@@ -323,20 +394,25 @@ class _SkinPill extends StatelessWidget {
         height: 62,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-            color: selected ? gdPrimary : gdSurface,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: selected
-                ? null
-                : [
-                    BoxShadow(
-                        color: gdShadow.withValues(alpha: GdAlpha.faint),
-                        blurRadius: 12)
-                  ]),
-        child: Text(label,
-            style: TextStyle(
-                color: selected ? gdOnDark : gdMuted,
-                fontSize: 18,
-                fontWeight: FontWeight.w800)),
+          color: selected ? gdPrimary : gdSurface,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: selected
+              ? null
+              : [
+                  BoxShadow(
+                    color: gdShadow.withValues(alpha: GdAlpha.faint),
+                    blurRadius: 12,
+                  ),
+                ],
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? gdOnDark : gdMuted,
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
       ),
     );
   }
