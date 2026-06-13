@@ -1,24 +1,39 @@
 // functions/src/agent/tools/tool_create_milestones.ts
 //
-// Generates an AI milestone roadmap that adapts to the goal's duration AND to
-// what the user explicitly asks for — an exact count ("10 milestones"), a
-// cadence ("2 per day", "weekly"), or nothing at all.
+// Task Generation Agent (architecture §6.2). Produces a fully structured,
+// AI-decided milestone roadmap for a goal: the MODEL decides how many
+// milestones the goal genuinely needs, and for each one it decides the
+// title, the realistic duration, the load, and which day to schedule it on.
 //
-// Feasibility: if a request would be unrealistic for a normal person in the
-// available time, the tool scales it back to a sensible number and returns a
-// `feasibilityNote` explaining why. If the user FORCES it (e.g. says "force"),
-// the tool honors the full request (up to a hard safety ceiling) and warns
-// that it will be demanding.
+// What stays deterministic (and why): hard SAFETY RAILS only —
+//   • ABSOLUTE_MAX caps the count so a bad model response can't blow the
+//     output-token budget or flood the user with tasks;
+//   • durations are clamped to 5–90 min and dayOffsets to the deadline window
+//     (§9.5) so nothing the model returns can land past the deadline;
+//   • an explicit user count ("10 milestones") is honored/scaled with a
+//     yes/no confirmation when unrealistic — UX, not a generation decision;
+//   • staticFallback() runs only when the model is unavailable.
+// Everything that is a judgement call — count, sizing, load, day placement —
+// is the model's.
 
 import { getAI, defaultModel } from "../../ai";
 import { evaluateGoal, goalGuardMessage } from "../goal_guard";
 import { parseModelJson } from "../../json";
 
-// How many milestone-sized chunks a motivated person can realistically take on
-// per day before it stops being achievable, and the absolute ceiling we will
-// ever generate (protects the output-token budget even when forced).
+// Soft guidance for how many milestone-sized chunks a motivated person can
+// take on per day, and the absolute ceiling we will ever generate (protects
+// the output-token budget even when the user forces a large request).
 const FEASIBLE_PER_DAY = 3;
 const ABSOLUTE_MAX = 60;
+
+export type MilestoneLoad = "light" | "focus" | "stretch";
+
+export interface MilestoneTask {
+  title: string;
+  durationMinutes: number;
+  load: MilestoneLoad;
+  dayOffset: number; // 0 = today
+}
 
 interface CreateMilestonesArgs {
   goal?: string;
@@ -32,6 +47,9 @@ interface CreateMilestonesArgs {
     startDate?: string; // ISO date string
     durationDays?: number;
     deadlineDays?: number; // days-until-deadline (convention used by the other tools)
+    category?: string;
+    priority?: number; // 1–5
+    mood?: string;
     specialRequest?: string; // free-form user instructions, e.g. "2 milestones per day"
     force?: boolean; // user confirmed an unrealistic request
     notes?: string;
@@ -40,7 +58,8 @@ interface CreateMilestonesArgs {
 }
 
 interface MilestoneResult {
-  milestones: string[];
+  milestones: string[]; // titles only — kept for backward compatibility
+  tasks: MilestoneTask[]; // structured, AI-decided tasks (title + duration + load + day)
   count: number;
   durationDays: number | null;
   requestedCount: number | null;
@@ -74,7 +93,8 @@ function resolveDurationDays(args: CreateMilestonesArgs): number | null {
   return null;
 }
 
-// Default count range when the user gives no explicit count/cadence.
+// Soft count band used ONLY as guidance to the model (when the user gave no
+// explicit number) and as the deterministic offline-fallback count.
 function suggestedCount(durationDays: number | null): { min: number; max: number } {
   if (durationDays === null) return { min: 3, max: 3 };
   if (durationDays <= 3) return { min: 2, max: 3 };
@@ -125,22 +145,14 @@ function parseRequest(req: string, durationDays: number | null): number | null {
   return null;
 }
 
-// Decide how many milestones to actually produce, and whether to warn the user.
+// Honor or scale back an EXPLICIT user count, asking for confirmation when the
+// ask is unrealistic. (Only runs when the user named a number.)
 function decideTarget(
-  requestedCount: number | null,
+  requestedCount: number,
   forced: boolean,
   durationDays: number | null
 ): { target: number; feasibilityNote: string | null; needsConfirmation: boolean } {
-  const { min, max } = suggestedCount(durationDays);
-
-  if (requestedCount === null) {
-    return {
-      target: Math.round((min + max) / 2),
-      feasibilityNote: null,
-      needsConfirmation: false,
-    };
-  }
-
+  const { min } = suggestedCount(durationDays);
   const wanted = Math.max(1, requestedCount);
   const feasibleMax =
     durationDays !== null ? Math.max(min, durationDays * FEASIBLE_PER_DAY) : 12;
@@ -178,28 +190,72 @@ function decideTarget(
   return { target, feasibilityNote: note, needsConfirmation: true };
 }
 
+// ── Sanitisation (safety rails) ──────────────────────────────────────────────
+
+function loadFromDuration(duration: number): MilestoneLoad {
+  if (duration <= 15) return "light";
+  if (duration <= 35) return "focus";
+  return "stretch";
+}
+
+const VALID_LOADS = new Set<MilestoneLoad>(["light", "focus", "stretch"]);
+
+// Clamp anything the model returns into safe bounds. Never trusts the model
+// for the deadline rule (§9.5) or the duration ceiling.
+function sanitiseTasks(
+  raw: Array<Partial<MilestoneTask>>,
+  durationDays: number | null,
+  cap: number
+): MilestoneTask[] {
+  const maxDay = durationDays !== null ? Math.max(0, durationDays - 1) : 365;
+  const out: MilestoneTask[] = [];
+
+  raw.forEach((m, index) => {
+    const title = typeof m.title === "string" ? m.title.trim() : "";
+    if (!title) return;
+
+    let duration = Math.round(Number(m.durationMinutes));
+    if (!Number.isFinite(duration)) duration = 20;
+    duration = Math.min(90, Math.max(5, duration));
+
+    const load: MilestoneLoad = VALID_LOADS.has(m.load as MilestoneLoad)
+      ? (m.load as MilestoneLoad)
+      : loadFromDuration(duration);
+
+    let dayOffset = Math.round(Number(m.dayOffset));
+    if (!Number.isFinite(dayOffset)) {
+      // Model omitted a day — spread evenly across the window by position.
+      dayOffset = maxDay > 0 ? Math.round((index / Math.max(1, raw.length - 1)) * maxDay) : 0;
+    }
+    dayOffset = Math.min(maxDay, Math.max(0, dayOffset));
+
+    out.push({ title, durationMinutes: duration, load, dayOffset });
+  });
+
+  return out.slice(0, cap);
+}
+
 // ── Tool ────────────────────────────────────────────────────────────────────
 
 export const createMilestonesTool = {
   name: "createMilestones",
   description:
-    "Generates an adaptive milestone roadmap for a goal. The count scales with " +
-    "the goal's duration and honors explicit user requests (e.g. '10 milestones' " +
-    "or '2 per day'). Unrealistic asks are scaled back with an explanation unless " +
-    "the user forces them.",
+    "Generates an adaptive milestone roadmap for a goal. The AI decides how many " +
+    "milestones the goal needs and, for each, its title, duration, load, and day. " +
+    "Explicit user counts (e.g. '10 milestones') are honored, with unrealistic " +
+    "asks scaled back and confirmed.",
 
   async execute(args: CreateMilestonesArgs): Promise<MilestoneResult> {
     const goal = String(args.goal ?? "the goal").trim();
-    const goalReview = await evaluateGoal(
-      goal,
-      {
-        ...(args.context ?? {}),
-        ...(args.specialRequest ? { specialRequest: args.specialRequest } : {}),
-      }
-    );
+    const ctx = args.context ?? {};
+    const goalReview = await evaluateGoal(goal, {
+      ...ctx,
+      ...(args.specialRequest ? { specialRequest: args.specialRequest } : {}),
+    });
     if (!goalReview.allowed) {
       return {
         milestones: [],
+        tasks: [],
         count: 0,
         durationDays: resolveDurationDays(args),
         requestedCount: null,
@@ -210,24 +266,59 @@ export const createMilestonesTool = {
     }
 
     const specialRequest = String(
-      args.specialRequest ?? args.context?.specialRequest ?? args.context?.notes ?? ""
+      args.specialRequest ?? ctx.specialRequest ?? ctx.notes ?? ""
     ).trim();
 
     const durationDays = resolveDurationDays(args);
-    const requestedCount = specialRequest
+    const explicitCount = specialRequest
       ? parseRequest(specialRequest, durationDays)
       : null;
-    const forced = args.force === true || args.context?.force === true;
-    const { target, feasibilityNote, needsConfirmation } = decideTarget(
-      requestedCount,
-      forced,
-      durationDays
-    );
+    const forced = args.force === true || ctx.force === true;
+
+    // Count: honor/scale an explicit request (with confirmation); otherwise let
+    // the model choose within a sane band capped by ABSOLUTE_MAX.
+    let target: number | null;
+    let feasibilityNote: string | null;
+    let needsConfirmation: boolean;
+    let cap: number;
+    if (explicitCount !== null) {
+      const decided = decideTarget(explicitCount, forced, durationDays);
+      target = decided.target;
+      feasibilityNote = decided.feasibilityNote;
+      needsConfirmation = decided.needsConfirmation;
+      cap = decided.target;
+    } else {
+      target = null; // model decides
+      feasibilityNote = null;
+      needsConfirmation = false;
+      cap =
+        durationDays !== null
+          ? Math.min(ABSOLUTE_MAX, Math.max(3, durationDays * FEASIBLE_PER_DAY))
+          : 8;
+    }
+
+    const band = suggestedCount(durationDays);
+    const countInstruction =
+      target !== null
+        ? `Produce EXACTLY ${target} milestone(s) — no more, no fewer.`
+        : `Decide the RIGHT number of milestones yourself from the goal's real scope — usually ${band.min}–${band.max}, and never more than ${cap}. Use only as many as the goal genuinely needs; a simple goal needs few.`;
 
     const durationLine =
       durationDays !== null
-        ? `The user has about ${durationDays} day(s) to complete this goal.`
-        : `No deadline was given.`;
+        ? `The user has about ${durationDays} day(s) to reach this goal (day 0 = today, last day = ${durationDays - 1}).`
+        : `No deadline was given; schedule everything on day 0.`;
+
+    const category = ctx.category ? String(ctx.category) : null;
+    const priorityRaw = Number(ctx.priority);
+    const priority = Number.isFinite(priorityRaw) ? priorityRaw : null;
+    const mood = ctx.mood ? String(ctx.mood) : null;
+    const profileLine = [
+      category ? `Category: ${category}.` : "",
+      priority !== null ? `Priority: ${priority}/5.` : "",
+      mood ? `The user's current mood is "${mood}" — keep early days lighter if it is low.` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
 
     const requestLine = specialRequest
       ? `The user's request was: "${specialRequest}".`
@@ -236,50 +327,54 @@ export const createMilestonesTool = {
     try {
       const ai = getAI();
       const prompt = `
-Create exactly ${target} clear, ordered milestones for this goal: "${goal}".
+You are the Task Generation Agent for a productivity app. Build a concrete, scheduled milestone roadmap for this goal: "${goal}".
 
 ${durationLine}
+${profileLine}
 ${requestLine}
 
-First, think through what real work this goal actually requires — the concrete activities, in a sensible order — and only then write the milestones.
+First, reason privately about what real work this goal actually requires — the concrete activities, in a sensible order, and how long each realistically takes — then output the roadmap.
 
-Rules:
-- Produce EXACTLY ${target} milestones — no more, no fewer.
-- Spread them evenly across the ${
-        durationDays !== null ? `${durationDays}-day` : "overall"
-      } window so each is a realistic chunk of progress.
-- Every milestone must be a DOABLE ACTION: specific work the user can sit down and complete by themselves (research, write, build, record, practice, publish, …). A reader must be able to answer "what exactly do I do?" from the milestone text alone.
-- NEVER write outcome targets or metrics that depend on other people or luck — no "reach N subscribers/followers/views/sales", no "get X by day Y", no "achieve" or "hit" a number. Describe the WORK that drives the outcome instead (e.g. for a YouTube goal: "Set up the channel name, banner, and description", "Script and record the first video", "Publish two videos and share them in three relevant communities").
-- Start each with an action verb. Use plain language. Do NOT number them.
-- The final milestone should finish or ship the goal's actual work — still phrased as an action, not a metric.
+Count:
+- ${countInstruction}
 
-Respond ONLY with valid JSON: { "milestones": ["...", "..."] }`.trim();
+For EACH milestone decide and return:
+- "title": a DOABLE action the user can sit down and finish themselves (≤10 words, start with a verb). A reader must know exactly what to do from the title alone.
+- "durationMinutes": the realistic focused time it takes (integer 5–90), sized to that specific milestone — not a fixed number.
+- "load": "light" (≤15 min, easy), "focus" (16–35 min, needs concentration), or "stretch" (>35 min, demanding). Must match the durationMinutes.
+- "dayOffset": the day to schedule it on (integer, 0 = today, max ${durationDays !== null ? durationDays - 1 : 0}). Order milestones logically and spread them across the available days so the load is sustainable; put lighter, momentum-building work earlier.
+
+Hard rules:
+- NEVER write outcome targets or metrics that depend on other people or luck — no "reach N subscribers/followers/views/sales", no "get X by day Y", no "hit"/"achieve" a number. Describe the WORK that drives the outcome instead (e.g. for a YouTube goal: "Script and record the first video", not "Reach 20 subscribers").
+- The final milestone should finish or ship the goal's actual work — still an action, not a metric.
+
+Respond ONLY with valid JSON:
+{ "milestones": [ { "title": "...", "durationMinutes": 20, "load": "focus", "dayOffset": 0 } ] }`.trim();
 
       const { text } = await ai.generate({
         model: defaultModel,
         prompt,
         config: {
           temperature: 0.5,
-          // Thinking budget so the model reasons about what work the goal
-          // really needs before writing (counts toward maxOutputTokens on
-          // Gemini 2.5, so the cap leaves room for both).
-          maxOutputTokens: Math.min(8192, 1600 + target * 60),
+          // Room for the model to reason about the real work before writing,
+          // plus the structured output (thinking counts toward this budget on
+          // Gemini 2.5, so the cap leaves headroom for both).
+          maxOutputTokens: Math.min(8192, 2000 + cap * 80),
           responseMimeType: "application/json",
           thinkingConfig: { thinkingBudget: 1024 },
         },
       });
 
-      const parsed = parseModelJson<{ milestones: string[] }>(text);
-      const cleaned = (parsed.milestones ?? [])
-        .map((m: string) => m.trim())
-        .filter((m: string) => m.length > 0);
+      const parsed = parseModelJson<{ milestones: Array<Partial<MilestoneTask>> }>(text);
+      const tasks = sanitiseTasks(parsed.milestones ?? [], durationDays, cap);
 
-      if (cleaned.length >= 2) {
+      if (tasks.length >= 2) {
         return {
-          milestones: cleaned,
-          count: cleaned.length,
+          milestones: tasks.map((t) => t.title),
+          tasks,
+          count: tasks.length,
           durationDays,
-          requestedCount,
+          requestedCount: explicitCount,
           feasibilityNote,
           needsConfirmation,
           honoredRequest: specialRequest.length > 0,
@@ -290,11 +385,13 @@ Respond ONLY with valid JSON: { "milestones": ["...", "..."] }`.trim();
       console.error("[createMilestones] LLM call failed, using static:", e);
     }
 
+    const fallbackCount =
+      target ?? Math.round((band.min + band.max) / 2);
     return staticFallback(
       goal,
       durationDays,
-      target,
-      requestedCount,
+      fallbackCount,
+      explicitCount,
       feasibilityNote,
       needsConfirmation,
       specialRequest
@@ -302,7 +399,8 @@ Respond ONLY with valid JSON: { "milestones": ["...", "..."] }`.trim();
   },
 };
 
-// Deterministic fallback that still produces the requested number of milestones.
+// Deterministic fallback (model unavailable). Still returns fully structured
+// tasks so the client never has to invent durations/loads/days itself.
 function staticFallback(
   goal: string,
   durationDays: number | null,
@@ -321,19 +419,28 @@ function staticFallback(
     `Do a final review of ${goal}, then share it or submit it`,
   ];
 
-  const milestones: string[] = [];
-  for (let i = 0; i < target; i++) {
-    if (target <= base.length) {
-      milestones.push(base[i]);
-    } else {
-      // More milestones than the template — generate sequenced chunks.
-      milestones.push(`Make concrete progress on ${goal} (part ${i + 1} of ${target})`);
-    }
+  const count = Math.max(2, Math.min(target, ABSOLUTE_MAX));
+  const maxDay = durationDays !== null ? Math.max(0, durationDays - 1) : 0;
+  const tasks: MilestoneTask[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const title =
+      count <= base.length
+        ? base[i]
+        : `Make concrete progress on ${goal} (part ${i + 1} of ${count})`;
+    // Lighter, shorter early; heavier later — a safe deterministic ramp.
+    const duration = i === 0 ? 10 : Math.min(60, 15 + i * 5);
+    const load: MilestoneLoad =
+      i === 0 ? "light" : i === count - 1 ? "stretch" : "focus";
+    const dayOffset =
+      maxDay > 0 ? Math.round((i / Math.max(1, count - 1)) * maxDay) : 0;
+    tasks.push({ title, durationMinutes: duration, load, dayOffset });
   }
 
   return {
-    milestones,
-    count: milestones.length,
+    milestones: tasks.map((t) => t.title),
+    tasks,
+    count: tasks.length,
     durationDays,
     requestedCount,
     feasibilityNote,

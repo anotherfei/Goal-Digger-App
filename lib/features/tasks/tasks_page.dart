@@ -5,6 +5,7 @@ import '../../shared/widgets/shared_widgets.dart';
 
 class TasksPage extends StatelessWidget {
   const TasksPage({
+    super.key,
     required this.mood,
     required this.todayTasks,
     required this.todayProgress,
@@ -13,7 +14,7 @@ class TasksPage extends StatelessWidget {
     required this.remainingMinutes,
     required this.goalForTask,
     required this.onMoodChanged,
-    required this.onToggleTask,
+    required this.onCompleteTask,
     required this.onCreateGoal,
   });
 
@@ -25,8 +26,38 @@ class TasksPage extends StatelessWidget {
   final int remainingMinutes;
   final GoalProject Function(MicroTask task) goalForTask;
   final ValueChanged<String> onMoodChanged;
-  final ValueChanged<MicroTask> onToggleTask;
+  final ValueChanged<MicroTask> onCompleteTask;
   final VoidCallback onCreateGoal;
+
+  Future<void> _confirmAndCompleteTask(
+    BuildContext context,
+    MicroTask task,
+  ) async {
+    if (task.done) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Mark task done?'),
+        content: Text(
+          'Only confirm if you really finished "${task.title}". '
+          'Once it is marked done, it cannot be changed back.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Yes, I did it'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      onCompleteTask(task);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -73,7 +104,7 @@ class TasksPage extends StatelessWidget {
                 task: task,
                 goal: goalForTask(task),
                 mood: mood,
-                onToggle: () => onToggleTask(task),
+                onComplete: () => _confirmAndCompleteTask(context, task),
               ),
             ),
         ],

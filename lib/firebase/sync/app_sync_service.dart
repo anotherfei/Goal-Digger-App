@@ -61,11 +61,9 @@ class AppSyncService {
   Future<GoalProject> createGoal(GoalProject goal) =>
       _goalRepo.createGoal(uid, goal);
 
-  Future<void> updateGoal(GoalProject goal) =>
-      _goalRepo.updateGoal(uid, goal);
+  Future<void> updateGoal(GoalProject goal) => _goalRepo.updateGoal(uid, goal);
 
-  Future<void> deleteGoal(String goalId) =>
-      _goalRepo.deleteGoal(uid, goalId);
+  Future<void> deleteGoal(String goalId) => _goalRepo.deleteGoal(uid, goalId);
 
   Future<void> toggleTask(String goalId, String taskId, bool done) =>
       _goalRepo.toggleTask(uid, goalId, taskId, done);
@@ -74,7 +72,15 @@ class AppSyncService {
       _goalRepo.upsertTask(uid, goalId, task);
 
   // User profile
-  Future<void> updateStreak(int streak) => _userRepo.updateStreak(uid, streak);
+  Future<void> updateStreak(
+    int streak, {
+    String? lastStreakDateKey,
+  }) =>
+      _userRepo.updateStreak(
+        uid,
+        streak,
+        lastStreakDateKey: lastStreakDateKey,
+      );
 
   /// Adds [amount] to the user's coin balance using a Firestore increment
   /// so concurrent updates don't race (e.g. two tasks completed in quick
@@ -85,6 +91,26 @@ class AppSyncService {
   /// Use this when syncing the authoritative local total back to Firestore
   /// (e.g. after purchasing a pet chest).
   Future<void> setCoins(int coins) => _userRepo.updateCoins(uid, coins);
+
+  Future<void> updateProfileStats({
+    required int coins,
+    required int streak,
+    required String? lastStreakDateKey,
+    required String selectedMood,
+    required int petHappiness,
+    required PetSkin activePetSkin,
+    required String activeAccessory,
+  }) =>
+      _userRepo.updateProfileStats(
+        uid: uid,
+        coins: coins,
+        streak: streak,
+        lastStreakDateKey: lastStreakDateKey,
+        selectedMood: selectedMood,
+        petHappiness: petHappiness,
+        activePetSkin: activePetSkin,
+        activeAccessory: activeAccessory,
+      );
 
   Future<void> updateMood(String mood) => _userRepo.updateMood(uid, mood);
 
@@ -103,8 +129,7 @@ class AppSyncService {
   Future<void> updateFriends(List<String> friends) =>
       _userRepo.updateFriends(uid, friends);
 
-  Future<void> updatePetState(
-          int happiness, PetSkin skin, String accessory) =>
+  Future<void> updatePetState(int happiness, PetSkin skin, String accessory) =>
       _userRepo.updatePetState(uid, happiness, skin, accessory);
 
   Future<void> markOnboarded() => _userRepo.markOnboarded(uid);
@@ -133,8 +158,7 @@ class AppSyncService {
   Future<void> markNotificationRead(String notificationId) =>
       _notificationRepo.markRead(uid, notificationId);
 
-  Future<void> markAllNotificationsRead() =>
-      _notificationRepo.markAllRead(uid);
+  Future<void> markAllNotificationsRead() => _notificationRepo.markAllRead(uid);
 
   Future<void> deleteNotification(String notificationId) =>
       _notificationRepo.deleteNotification(uid, notificationId);

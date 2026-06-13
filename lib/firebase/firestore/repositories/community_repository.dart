@@ -133,10 +133,11 @@ class CommunityRepository {
     try {
       final d = doc.data()!;
       return CommunityGroup(
-        name: d['name'] as String,
-        members: (d['members'] as num).toInt(),
-        tag: d['tag'] as String,
-        description: d['description'] as String,
+        name: (d['name'] ?? d['title'])?.toString() ?? 'Untitled community',
+        members: _memberCount(d),
+        tag: (d['tag'] ?? d['category'])?.toString() ?? 'General',
+        description:
+            (d['description'] ?? d['about'])?.toString() ?? 'No description yet.',
         similarity: (d['similarity'] as num?)?.toInt() ?? 80,
         backendId: doc.id,
       );
@@ -144,5 +145,20 @@ class CommunityRepository {
       debugPrint('⚠️  Failed to parse community ${doc.id}: $e');
       return null;
     }
+  }
+
+  /// Member count tolerant of both community document schemas:
+  /// the legacy shape stores `members` as a numeric count, while the in-app
+  /// community page stores `members` as an array of member UIDs plus a
+  /// `memberCount` field.
+  int _memberCount(Map<String, dynamic> d) {
+    final members = d['members'];
+    if (members is num) return members.toInt();
+
+    final memberCount = d['memberCount'] ?? d['membersCount'];
+    if (memberCount is num) return memberCount.toInt();
+
+    if (members is List) return members.length;
+    return 0;
   }
 }

@@ -120,13 +120,12 @@ class PageHero extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      style: GdText.headlineMedium),
+                  Text(title, style: GdText.headlineMedium),
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
-                    style: TextStyle(
-                        color: gdMuted, fontWeight: FontWeight.w600),
+                    style:
+                        TextStyle(color: gdMuted, fontWeight: FontWeight.w600),
                   ),
                 ],
               ),
@@ -153,29 +152,29 @@ class MoodCheckPanel extends StatelessWidget {
   static List<_MoodOption> get _moods => [
         _MoodOption(
           label: 'Tired',
-      icon: Icons.spa_rounded,
-      // Low energy → a calm, restorative green (settle and recover gently).
-      color: GdColors.positive,
-      softColor: GdColors.positiveSoft,
-      subtitle: 'Light pace',
-    ),
-    _MoodOption(
-      label: 'Okay',
-      icon: Icons.tune_rounded,
-      // Balanced → steady brand blue (neutral-positive).
-      color: GdColors.brand,
-      softColor: GdColors.brandSoft,
-      subtitle: 'Balanced',
-    ),
-    _MoodOption(
-      label: 'Great',
-      icon: Icons.bolt_rounded,
-      // High energy → energising warm coral (enthusiasm, push further).
-      color: GdColors.warm,
-      softColor: GdColors.warmSoft,
-      subtitle: 'Stretch',
-    ),
-  ];
+          icon: Icons.spa_rounded,
+          // Low energy → a calm, restorative green (settle and recover gently).
+          color: GdColors.positive,
+          softColor: GdColors.positiveSoft,
+          subtitle: 'Light pace',
+        ),
+        _MoodOption(
+          label: 'Okay',
+          icon: Icons.tune_rounded,
+          // Balanced → steady brand blue (neutral-positive).
+          color: GdColors.brand,
+          softColor: GdColors.brandSoft,
+          subtitle: 'Balanced',
+        ),
+        _MoodOption(
+          label: 'Great',
+          icon: Icons.bolt_rounded,
+          // High energy → energising warm coral (enthusiasm, push further).
+          color: GdColors.warm,
+          softColor: GdColors.warmSoft,
+          subtitle: 'Stretch',
+        ),
+      ];
 
   @override
   Widget build(BuildContext context) {
@@ -401,8 +400,7 @@ class ProcessingProgressCard extends StatelessWidget {
                       const Icon(Icons.hourglass_top_rounded),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(label,
-                            style: GdText.titleMedium),
+                        child: Text(label, style: GdText.titleMedium),
                       ),
                     ],
                   ),
@@ -411,8 +409,8 @@ class ProcessingProgressCard extends StatelessWidget {
                     secondsRemaining == 0
                         ? 'Almost ready...'
                         : 'About $secondsRemaining seconds remaining',
-                    style: TextStyle(
-                        color: gdMuted, fontWeight: FontWeight.w700),
+                    style:
+                        TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
                   ),
                 ],
               ),
@@ -475,8 +473,8 @@ class TodayProgressCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     'About $remainingMinutes minutes left',
-                    style: TextStyle(
-                        color: gdMuted, fontWeight: FontWeight.w800),
+                    style:
+                        TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
                   ),
                 ],
               ),
@@ -570,12 +568,10 @@ class HelpfulErrorBox extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: TextStyle(
-                      color: gdError, fontWeight: FontWeight.w900),
+                  style: TextStyle(color: gdError, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 4),
-                Text(message,
-                    style: TextStyle(color: gdInk, height: 1.4)),
+                Text(message, style: TextStyle(color: gdInk, height: 1.4)),
                 if (showAction) ...[
                   const SizedBox(height: 8),
                   TextButton(onPressed: onAction, child: Text(actionLabel)),
@@ -623,8 +619,7 @@ class EmptyStateCard extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style:
-                  TextStyle(color: gdMuted, fontWeight: FontWeight.w600),
+              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 18),
             FilledButton.icon(
@@ -649,9 +644,7 @@ class SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(
-            child:
-                Text(title, style: GdText.headlineMedium)),
+        Expanded(child: Text(title, style: GdText.headlineMedium)),
         if (trailing != null)
           Text(
             trailing!,
@@ -724,8 +717,7 @@ class StatMiniCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(value, style: GdText.titleLarge),
           Text(label,
-              style:
-                  TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
         ]),
       ),
     );
@@ -808,12 +800,11 @@ class GoalCard extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(task.title,
-                  style: GdText.headlineMedium),
+              Text(task.title, style: GdText.headlineMedium),
               const SizedBox(height: 10),
               Text(goal.title,
-                  style: TextStyle(
-                      color: gdMuted, fontWeight: FontWeight.w800)),
+                  style:
+                      TextStyle(color: gdMuted, fontWeight: FontWeight.w800)),
               const SizedBox(height: 16),
               AppCard(
                   color: gdCardLight,
@@ -829,8 +820,7 @@ class GoalCard extends StatelessWidget {
               const SizedBox(height: 12),
               Text(
                   task.done ? 'Status: completed' : 'Status: not completed yet',
-                  style: TextStyle(
-                      color: gdInk, fontWeight: FontWeight.w800)),
+                  style: TextStyle(color: gdInk, fontWeight: FontWeight.w800)),
             ],
           ),
         ),
@@ -857,9 +847,7 @@ class GoalCard extends StatelessWidget {
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(
-                  child: Text(goal.title,
-                      style: GdText.titleLarge)),
+              Expanded(child: Text(goal.title, style: GdText.titleLarge)),
               Chip(
                   backgroundColor: gdPrimarySoft,
                   label: Text(goal.category,
@@ -901,8 +889,7 @@ class GoalCard extends StatelessWidget {
                     ]),
                     const SizedBox(height: 6),
                     Row(children: [
-                      Icon(Icons.star_rounded,
-                          size: 18, color: gdStarGold),
+                      Icon(Icons.star_rounded, size: 18, color: gdStarGold),
                       const SizedBox(width: 4),
                       Text('Priority ${goal.importance}/5',
                           style: TextStyle(
@@ -936,8 +923,7 @@ class GoalCard extends StatelessWidget {
                         TextStyle(color: gdInk, fontWeight: FontWeight.w900)),
                 subtitle: Text(
                   '$completed/${goal.tasks.length} complete',
-                  style: TextStyle(
-                      color: gdMuted, fontWeight: FontWeight.w800),
+                  style: TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
                 ),
                 children: [
                   if (goal.tasks.isEmpty)
@@ -1057,8 +1043,8 @@ class MoodAdjustmentNotice extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title,
-                      style: TextStyle(
-                          fontWeight: FontWeight.w900, color: gdInk)),
+                      style:
+                          TextStyle(fontWeight: FontWeight.w900, color: gdInk)),
                   const SizedBox(height: 3),
                   Text(
                     message,
@@ -1083,13 +1069,13 @@ class TaskCard extends StatelessWidget {
     required this.task,
     required this.goal,
     required this.mood,
-    required this.onToggle,
+    required this.onComplete,
   });
 
   final MicroTask task;
   final GoalProject goal;
   final String mood;
-  final VoidCallback onToggle;
+  final VoidCallback onComplete;
 
   String get _adjustedTitle {
     if (mood == 'Tired') {
@@ -1142,13 +1128,16 @@ class TaskCard extends StatelessWidget {
     return AppCard(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
-        onTap: onToggle,
+        onTap: task.done ? null : onComplete,
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Checkbox(value: task.done, onChanged: (_) => onToggle()),
+              Checkbox(
+                value: task.done,
+                onChanged: task.done ? null : (_) => onComplete(),
+              ),
               const SizedBox(width: 4),
               Expanded(
                 child: Column(

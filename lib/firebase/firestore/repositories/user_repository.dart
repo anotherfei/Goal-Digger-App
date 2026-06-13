@@ -20,6 +20,7 @@ class UserProfile {
     required this.email,
     required this.photoUrl,
     required this.streak,
+    required this.lastStreakDateKey,
     required this.coins,
     required this.petHappiness,
     required this.activePetSkin,
@@ -39,6 +40,7 @@ class UserProfile {
   final String email;
   final String? photoUrl;
   final int streak;
+  final String? lastStreakDateKey;
   final int coins;
   final int petHappiness;
   final PetSkin activePetSkin;
@@ -104,6 +106,7 @@ class UserRepository {
       ...identityData,
       'createdAt': FirestoreService.serverTimestamp,
       'streak': 0,
+      'lastStreakDateKey': null,
       'coins': 140,
       'petHappiness': 62,
       'activeAccessory': 'Cap',
@@ -115,9 +118,9 @@ class UserRepository {
       'onboarded': false,
       'petSkin': {
         'name': 'Mint',
-        'colorFrom': Colors.teal.shade200.value,
-        'colorTo': Colors.teal.shade400.value,
-        'accent': Colors.tealAccent.value,
+        'colorFrom': Colors.teal.shade200.toARGB32(),
+        'colorTo': Colors.teal.shade400.toARGB32(),
+        'accent': Colors.tealAccent.toARGB32(),
       },
     });
   }
@@ -131,11 +134,68 @@ class UserRepository {
     });
   }
 
-  Future<void> updateStreak(String uid, int streak) async {
-    await _svc.updateDoc(FirestorePaths.userDoc(uid), {
+  Future<void> updateStreak(
+    String uid,
+    int streak, {
+    String? lastStreakDateKey,
+  }) async {
+    final data = <String, dynamic>{
       'streak': streak,
       'updatedAt': FirestoreService.serverTimestamp,
-    });
+    };
+    if (lastStreakDateKey != null) {
+      data['lastStreakDateKey'] = lastStreakDateKey;
+    }
+    await _svc.updateDoc(FirestorePaths.userDoc(uid), data);
+
+    final publicProfilePath = FirestorePaths.publicProfileDoc(uid);
+    final publicProfile = await _svc.getDoc(publicProfilePath);
+    if (publicProfile.exists) {
+      await _svc.setDoc(publicProfilePath, data, merge: true);
+    }
+  }
+
+  Future<void> updateProfileStats({
+    required String uid,
+    required int coins,
+    required int streak,
+    required String? lastStreakDateKey,
+    required String selectedMood,
+    required int petHappiness,
+    required PetSkin activePetSkin,
+    required String activeAccessory,
+  }) async {
+    final data = <String, dynamic>{
+      'coins': coins,
+      'streak': streak,
+      'lastStreakDateKey': lastStreakDateKey,
+      'selectedMood': selectedMood,
+      'petHappiness': petHappiness,
+      'activeAccessory': activeAccessory,
+      'petSkin': {
+        'name': activePetSkin.name,
+        'colorFrom': activePetSkin.from.toARGB32(),
+        'colorTo': activePetSkin.to.toARGB32(),
+        'accent': activePetSkin.accent.toARGB32(),
+      },
+      'updatedAt': FirestoreService.serverTimestamp,
+    };
+
+    await _svc.updateDoc(FirestorePaths.userDoc(uid), data);
+
+    final publicProfilePath = FirestorePaths.publicProfileDoc(uid);
+    final publicProfile = await _svc.getDoc(publicProfilePath);
+    if (publicProfile.exists) {
+      await _svc.setDoc(
+        publicProfilePath,
+        {
+          'streak': streak,
+          'lastStreakDateKey': lastStreakDateKey,
+          'updatedAt': FirestoreService.serverTimestamp,
+        },
+        merge: true,
+      );
+    }
   }
 
   Future<void> updateCoins(String uid, int coins) async {
@@ -159,9 +219,9 @@ class UserRepository {
       'activeAccessory': accessory,
       'petSkin': {
         'name': skin.name,
-        'colorFrom': skin.from.value,
-        'colorTo': skin.to.value,
-        'accent': skin.accent.value,
+        'colorFrom': skin.from.toARGB32(),
+        'colorTo': skin.to.toARGB32(),
+        'accent': skin.accent.toARGB32(),
       },
       'updatedAt': FirestoreService.serverTimestamp,
     });
@@ -207,8 +267,7 @@ class UserRepository {
 
   // ── Serialisation ─────────────────────────────────────────────────────────────
 
-  UserProfile _profileFromDoc(
-      DocumentSnapshot<Map<String, dynamic>> snap) {
+  UserProfile _profileFromDoc(DocumentSnapshot<Map<String, dynamic>> snap) {
     final d = snap.data()!;
     final petMap = d['petSkin'] as Map<String, dynamic>? ?? {};
 
@@ -218,14 +277,20 @@ class UserRepository {
       email: d['email'] as String? ?? '',
       photoUrl: d['photoUrl'] as String?,
       streak: (d['streak'] as num?)?.toInt() ?? 0,
+      lastStreakDateKey: d['lastStreakDateKey'] as String?,
       coins: (d['coins'] as num?)?.toInt() ?? 0,
       petHappiness: (d['petHappiness'] as num?)?.toInt() ?? 50,
       activePetSkin: PetSkin(
         name: petMap['name'] as String? ?? 'Mint',
-        from: Color(petMap['colorFrom'] as int? ?? Colors.teal.shade200.value),
-        to: Color(petMap['colorTo'] as int? ?? Colors.teal.shade400.value),
-        accent:
-            Color(petMap['accent'] as int? ?? Colors.tealAccent.value),
+        from: Color(
+          petMap['colorFrom'] as int? ?? Colors.teal.shade200.toARGB32(),
+        ),
+        to: Color(
+          petMap['colorTo'] as int? ?? Colors.teal.shade400.toARGB32(),
+        ),
+        accent: Color(
+          petMap['accent'] as int? ?? Colors.tealAccent.toARGB32(),
+        ),
       ),
       activeAccessory: d['activeAccessory'] as String? ?? 'Cap',
       selectedMood: d['selectedMood'] as String? ?? 'Okay',
