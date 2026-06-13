@@ -105,6 +105,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   StreamSubscription<List<RoutineItem>>? _routinesSub;
   StreamSubscription<List<AppNotification>>? _notificationsSub;
   String? _activeUid;
+  bool _syncedGoalsLoaded = false;
+  bool _profileLoaded = false;
   Set<String> _joinedCommunityIds = {};
   List<RoutineItem> _routines = [];
   List<AppNotification> _notifications = [];
@@ -145,7 +147,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   String _selectedMood = 'Okay';
   int _petHappiness = 62;
   int _coins = 140;
-  int _streak = 7;
+  int _streak = 0;
+  String? _lastStreakDateKey;
   bool _goalReminders = true;
   bool _friendProgressSharing = true;
   List<String> _friends = ['Maya Chen', 'Leo Tan', 'Ari Putra'];
@@ -178,7 +181,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     if (user == null || user.isAnonymous) {
       _showHelpfulError(
         title: 'Google sign-in required',
-        message: 'Please sign in with Google before syncing to Google Calendar.',
+        message:
+            'Please sign in with Google before syncing to Google Calendar.',
         actionLabel: 'OK',
         onAction: () {},
       );
@@ -199,40 +203,41 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   Future<void> _syncAllTasksToGoogleCalendar() async {
-  final user = context.read<AuthService>().currentUser;
+    final user = context.read<AuthService>().currentUser;
 
-  if (user == null || user.isAnonymous) {
-    _showHelpfulError(
-      title: 'Google sign-in required',
-      message: 'Please sign in with Google before syncing to Google Calendar.',
-      actionLabel: 'OK',
-      onAction: () {},
-    );
-    return;
+    if (user == null || user.isAnonymous) {
+      _showHelpfulError(
+        title: 'Google sign-in required',
+        message:
+            'Please sign in with Google before syncing to Google Calendar.',
+        actionLabel: 'OK',
+        onAction: () {},
+      );
+      return;
+    }
+
+    if (_allTasks.isEmpty) {
+      _showMessage('No tasks available to sync.');
+      return;
+    }
+
+    try {
+      final result = await context
+          .read<GoogleCalendarService>()
+          .syncAllTaskEvents(_allTasks, _goalForTask);
+
+      _showMessage(
+        'Calendar sync complete: ${result.created} created, ${result.skipped} already synced, ${result.failed} failed.',
+      );
+    } catch (e) {
+      _showHelpfulError(
+        title: 'Calendar sync failed',
+        message: '$e',
+        actionLabel: 'OK',
+        onAction: () {},
+      );
+    }
   }
-
-  if (_allTasks.isEmpty) {
-    _showMessage('No tasks available to sync.');
-    return;
-  }
-
-  try {
-    final result = await context
-        .read<GoogleCalendarService>()
-        .syncAllTaskEvents(_allTasks, _goalForTask);
-
-    _showMessage(
-      'Calendar sync complete: ${result.created} created, ${result.skipped} already synced, ${result.failed} failed.',
-    );
-  } catch (e) {
-    _showHelpfulError(
-      title: 'Calendar sync failed',
-      message: '$e',
-      actionLabel: 'OK',
-      onAction: () {},
-    );
-  }
-}
 
   @override
   void initState() {
@@ -348,6 +353,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _notificationsSub = null;
     _sync?.dispose();
     _sync = null;
+    _syncedGoalsLoaded = false;
+    _profileLoaded = false;
   }
 
   void _resetForSignedOutState() {
@@ -369,6 +376,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _notifications = [];
       _locallyReadNotificationIds.clear();
       _sentDeadlineSystemNoticeIds.clear();
+      _streak = 0;
+      _lastStreakDateKey = null;
       _notificationSettings = const NotificationSettings.defaults();
       _goalReminders = _notificationSettings.systemNotificationsEnabled;
       _friends = ['Maya Chen', 'Leo Tan', 'Ari Putra'];
@@ -403,7 +412,11 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _goalsSub = sync.goalsStream.listen(
       (goals) {
         if (!mounted) return;
-        setState(() => _goals = goals);
+        setState(() {
+          _goals = goals;
+          _syncedGoalsLoaded = true;
+        });
+        _restoreTodayStreakFromCompletedTask();
         _queueNotificationScheduleSync();
         _ensureImportantDeadlineNotifications();
       },
@@ -418,9 +431,14 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         final syncedDisplayName = authDisplayName?.isNotEmpty == true
             ? authDisplayName!
             : profile.displayName.trim();
+        final currentStreak = _streakForToday(
+          profile.streak,
+          profile.lastStreakDateKey,
+        );
         setState(() {
           _coins = profile.coins;
-          _streak = profile.streak;
+          _streak = currentStreak;
+          _lastStreakDateKey = profile.lastStreakDateKey;
           _petHappiness = profile.petHappiness;
           _activePetSkin = profile.activePetSkin;
           _activeAccessory = profile.activeAccessory;
@@ -435,6 +453,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               ? ['Maya Chen', 'Leo Tan', 'Ari Putra']
               : List<String>.from(profile.friends);
           _onboarded = profile.onboarded;
+          _profileLoaded = true;
           final providerId = user?.providerData.isNotEmpty == true
               ? user!.providerData.first.providerId
               : null;
@@ -444,8 +463,17 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                   ? 'Google'
                   : providerId == 'password'
                       ? 'Email'
-              : 'Firebase';
+                      : 'Firebase';
         });
+        if (currentStreak != profile.streak) {
+          unawaited(
+            sync.updateStreak(
+              currentStreak,
+              lastStreakDateKey: profile.lastStreakDateKey,
+            ),
+          );
+        }
+        _restoreTodayStreakFromCompletedTask();
         _queueNotificationScheduleSync();
       },
       onError: (Object error) => debugPrint('Profile sync error: $error'),
@@ -510,15 +538,25 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   Future<void> _persistProfileStats() async {
     final sync = _sync;
     if (sync == null) return;
+    final coins = _coins;
+    final streak = _streak;
+    final lastStreakDateKey = _lastStreakDateKey;
+    final selectedMood = _selectedMood;
+    final petHappiness = _petHappiness;
+    final activePetSkin = _activePetSkin;
+    final activeAccessory = _activeAccessory;
     try {
-      // Use setCoins (absolute write) so the Firestore value always matches
-      // the authoritative local total, which already has all increments/
-      // decrements from task toggles and pet interactions applied.
-      await sync.setCoins(_coins);
-      await sync.updateStreak(_streak);
-      await sync.updateMood(_selectedMood);
-      await sync.updatePetState(
-          _petHappiness, _activePetSkin, _activeAccessory);
+      // One user-doc write keeps profile listeners from seeing a partial
+      // coins-only update and resetting streak before the streak write lands.
+      await sync.updateProfileStats(
+        coins: coins,
+        streak: streak,
+        lastStreakDateKey: lastStreakDateKey,
+        selectedMood: selectedMood,
+        petHappiness: petHappiness,
+        activePetSkin: activePetSkin,
+        activeAccessory: activeAccessory,
+      );
     } catch (e) {
       debugPrint('Profile write failed: $e');
     }
@@ -686,6 +724,62 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   int get _remainingMinutes => _todayTasks
       .where((task) => !task.done)
       .fold(0, (sum, task) => sum + task.durationMinutes);
+
+  DateTime? _dateFromKey(String? key) {
+    if (key == null || key.trim().isEmpty) return null;
+    final parts = key.split('-');
+    if (parts.length != 3) return null;
+    final year = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    final day = int.tryParse(parts[2]);
+    if (year == null || month == null || day == null) return null;
+    return dateOnly(DateTime(year, month, day));
+  }
+
+  int _streakForToday(int streak, String? lastStreakDateKey) {
+    final lastStreakDay = _dateFromKey(lastStreakDateKey);
+    if (lastStreakDay == null) return streak;
+
+    final gap = daysBetween(lastStreakDay, dateOnly(DateTime.now()));
+    return gap > 1 ? 0 : streak;
+  }
+
+  bool _awardTaskCompletionStreak() {
+    final streakDay = dateOnly(DateTime.now());
+    final streakDayKey = dateKey(streakDay);
+    if (_lastStreakDateKey == streakDayKey) return false;
+
+    final lastStreakDay = _dateFromKey(_lastStreakDateKey);
+    final daysSinceLast =
+        lastStreakDay == null ? null : daysBetween(lastStreakDay, streakDay);
+
+    if (daysSinceLast == null) {
+      _streak = max(1, _streak + 1);
+    } else if (daysSinceLast == 1) {
+      _streak += 1;
+    } else if (daysSinceLast == 0) {
+      return false;
+    } else {
+      _streak = 1;
+    }
+
+    _lastStreakDateKey = streakDayKey;
+    return true;
+  }
+
+  void _restoreTodayStreakFromCompletedTask() {
+    if (!_syncedGoalsLoaded || !_profileLoaded) return;
+    if (_todayCompleted == 0) return;
+    if (_lastStreakDateKey == dateKey(DateTime.now())) return;
+
+    var streakAwarded = false;
+    setState(() {
+      streakAwarded = _awardTaskCompletionStreak();
+    });
+    if (streakAwarded) {
+      unawaited(_persistProfileStats());
+    }
+  }
 
   String _formatFocusTime(int seconds) {
     final minutes = seconds ~/ 60;
@@ -1232,7 +1326,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Android notification permission is not enabled.'),
+          content:
+              const Text('Android notification permission is not enabled.'),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 8),
           action: SnackBarAction(
@@ -1244,7 +1339,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       return;
     }
     await _androidNotifications.showNow(
-      id: _stableNotificationId('test_${DateTime.now().millisecondsSinceEpoch}'),
+      id: _stableNotificationId(
+          'test_${DateTime.now().millisecondsSinceEpoch}'),
       title: 'Goal Digger test',
       body: 'Android notifications are ready.',
       important: true,
@@ -1339,7 +1435,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               SizedBox(
                 width: 38,
                 height: 38,
-                child: CircularProgressIndicator(strokeWidth: 3, color: gdPrimary),
+                child:
+                    CircularProgressIndicator(strokeWidth: 3, color: gdPrimary),
               ),
               const SizedBox(height: 18),
               Text(
@@ -1353,7 +1450,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               const SizedBox(height: 6),
               Text(
                 'This may take a few seconds…',
-                style: TextStyle(color: gdMuted, fontSize: 13, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                    color: gdMuted, fontSize: 13, fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -1538,7 +1636,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         }
       }
     } catch (e) {
-      debugPrint('Agent planner unavailable before goal guard verification: $e');
+      debugPrint(
+          'Agent planner unavailable before goal guard verification: $e');
       awaitingGoalRefinement = true;
       guardReply = guardUnavailableReply;
       draftSpecs = [];
@@ -1752,8 +1851,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
                   if (!dialogContext.mounted) return;
                   setLocalState(() {
-                    if (modification.applied &&
-                        modification.tasks.isNotEmpty) {
+                    if (modification.applied && modification.tasks.isNotEmpty) {
                       draftSpecs =
                           _draftSpecsFromGeneratedTasks(modification.tasks)
                               .toList();
@@ -2060,8 +2158,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
                               child: IconButton(
                                 tooltip: 'Close',
                                 onPressed: () => closeGoalDialog(dialogContext),
-                                icon: Icon(Icons.close_rounded,
-                                    color: gdMuted),
+                                icon: Icon(Icons.close_rounded, color: gdMuted),
                               ),
                             ),
                           ],
@@ -2352,24 +2449,22 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     });
   }
 
-  void _toggleTask(MicroTask task) {
+  void _completeTask(MicroTask task) {
+    if (task.done) return;
     final goal = _goalForTask(task);
+    var streakAwarded = false;
     setState(() {
-      task.done = !task.done;
-      if (task.done) {
-        _coins += task.points;
-        _petHappiness = min(100, _petHappiness + 8);
-      } else {
-        _coins = max(0, _coins - task.points);
-        _petHappiness = max(0, _petHappiness - 8);
-      }
+      task.done = true;
+      _coins += task.points;
+      _petHappiness = min(100, _petHappiness + 8);
+      streakAwarded = _awardTaskCompletionStreak();
     });
-    if (task.done) {
-      _showCoinRewardPrompt(
-        task.points,
-        'for completing "${task.title}"',
-      );
-    }
+    _showCoinRewardPrompt(
+      task.points,
+      streakAwarded
+          ? 'for completing "${task.title}" and keeping a $_streak day streak'
+          : 'for completing "${task.title}"',
+    );
     unawaited(_persistTaskToggle(goal, task));
     unawaited(_persistProfileStats());
     _queueNotificationScheduleSync();
@@ -2391,52 +2486,51 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   void _deleteGoal(GoalProject goal) {
-  setState(() => _goals.removeWhere((item) => item.id == goal.id));
+    setState(() => _goals.removeWhere((item) => item.id == goal.id));
 
-  unawaited(_deleteGoalEverywhere(goal));
+    unawaited(_deleteGoalEverywhere(goal));
 
-  _queueNotificationScheduleSync();
-  _showMessage('Removed ${goal.title}.');
-}
+    _queueNotificationScheduleSync();
+    _showMessage('Removed ${goal.title}.');
+  }
 
-Future<void> _deleteGoalEverywhere(GoalProject goal) async {
-  final user = context.read<AuthService>().currentUser;
+  Future<void> _deleteGoalEverywhere(GoalProject goal) async {
+    final user = context.read<AuthService>().currentUser;
 
-  if (user != null && !user.isAnonymous) {
-    try {
-      final deletedEvents = await context
-          .read<GoogleCalendarService>()
-          .deleteTaskEventsForGoal(goal);
+    if (user != null && !user.isAnonymous) {
+      try {
+        final deletedEvents = await context
+            .read<GoogleCalendarService>()
+            .deleteTaskEventsForGoal(goal);
 
-      debugPrint(
-        'Deleted $deletedEvents Google Calendar events for goal ${goal.title}.',
-      );
-    } catch (e) {
-      debugPrint('Google Calendar goal cleanup failed: $e');
-
-      if (mounted) {
-        _showMessage(
-          'Goal removed, but Google Calendar cleanup failed.',
+        debugPrint(
+          'Deleted $deletedEvents Google Calendar events for goal ${goal.title}.',
         );
+      } catch (e) {
+        debugPrint('Google Calendar goal cleanup failed: $e');
+
+        if (mounted) {
+          _showMessage(
+            'Goal removed, but Google Calendar cleanup failed.',
+          );
+        }
+      }
+    }
+
+    final sync = _sync;
+
+    if (sync != null) {
+      try {
+        await sync.deleteGoal(goal.id.toString());
+      } catch (e) {
+        debugPrint('Delete goal sync failed: $e');
+
+        if (mounted) {
+          _showMessage('Goal removed locally, but Firebase delete failed.');
+        }
       }
     }
   }
-
-  final sync = _sync;
-
-  if (sync != null) {
-    try {
-      await sync.deleteGoal(goal.id.toString());
-    } catch (e) {
-      debugPrint('Delete goal sync failed: $e');
-
-      if (mounted) {
-        _showMessage('Goal removed locally, but Firebase delete failed.');
-      }
-    }
-  }
-}
-
 
   void _addCommunity() {
     final title = _communityController.text.trim();
@@ -2915,7 +3009,7 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
     _focusTimer?.cancel();
 
     if (completed && config?.task != null && config!.task!.done == false) {
-      _toggleTask(config.task!);
+      _completeTask(config.task!);
     }
 
     setState(() {
@@ -3214,8 +3308,8 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(goal.title,
-                  style: TextStyle(
-                      color: gdMuted, fontWeight: FontWeight.w800)),
+                  style:
+                      TextStyle(color: gdMuted, fontWeight: FontWeight.w800)),
               const SizedBox(height: 14),
               PrioritySelector(
                 value: draftPriority,
@@ -3329,7 +3423,7 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
         remainingMinutes: _remainingMinutes,
         goalForTask: _goalForTask,
         onMoodChanged: _handleMoodChanged,
-        onToggleTask: _toggleTask,
+        onCompleteTask: _completeTask,
         onCreateGoal: () => setState(() => _selectedIndex = 0),
       ),
       CommunityPage(
@@ -3338,6 +3432,7 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
         friends: _friends,
         friendSuggestions: _friendSuggestions,
         streak: _streak,
+        lastStreakDateKey: _lastStreakDateKey,
         onAddCommunity: _addCommunity,
         onJoinCommunity: _joinCommunity,
         onDeleteCommunity: _deleteCommunity,
@@ -3367,7 +3462,8 @@ Future<void> _deleteGoalEverywhere(GoalProject goal) async {
       unreadNotifications:
           _notifications.where((notification) => notification.isUnread).length,
       importantUnreadNotifications: _notifications
-          .where((notification) => notification.important && notification.isUnread)
+          .where(
+              (notification) => notification.important && notification.isUnread)
           .length,
       hasActiveFocus: _hasActiveFocus || _focusComplete,
       focusLabel: _activeFocusConfig == null

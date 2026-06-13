@@ -19,6 +19,8 @@ class FirestorePaths {
 
   static String userDoc(String uid) => 'users/$uid';
 
+  static String publicProfileDoc(String uid) => 'public_profiles/$uid';
+
   // ── Goals ────────────────────────────────────────────────────────────────────
 
   static String goalsCol(String uid) => 'users/$uid/goals';
@@ -31,7 +33,6 @@ class FirestorePaths {
       'users/$uid/goals/$goalId/tasks';
   static String taskDoc(String uid, String goalId, String taskId) =>
       'users/$uid/goals/$goalId/tasks/$taskId';
-
 
   // ── Routines ────────────────────────────────────────────────────────────────
 
@@ -49,8 +50,7 @@ class FirestorePaths {
 
   /// Global community groups (not per-user)
   static const String communitiesCol = 'communities';
-  static String communityDoc(String communityId) =>
-      'communities/$communityId';
+  static String communityDoc(String communityId) => 'communities/$communityId';
 
   /// Which communities a user has joined
   static String userCommunitiesCol(String uid) => 'users/$uid/communities';
