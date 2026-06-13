@@ -329,6 +329,13 @@ async function executePush(
   candidate: NotificationCandidate,
   decision: NotificationDecision
 ): Promise<void> {
+  if (candidate.type === "reward") {
+    await setExecutionStatus(input.notificationRef, "inbox_only", {
+      reason: "Reward notifications are never delivered as phone pushes.",
+    });
+    return;
+  }
+
   if (!(await claimPushDelivery(input.notificationRef, input.eventId))) {
     logger.info("Notification agent skipped an already-claimed delivery", {
       uid: input.uid,

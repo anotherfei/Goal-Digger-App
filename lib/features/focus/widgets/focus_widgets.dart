@@ -621,14 +621,7 @@ class _BlockedAppPickerState extends State<_BlockedAppPicker> {
                               }
                             });
                           },
-                          secondary: CircleAvatar(
-                            backgroundColor: gdPrimarySoft,
-                            child: Icon(
-                              Icons.apps_rounded,
-                              color: gdPrimary,
-                              size: 20,
-                            ),
-                          ),
+                          secondary: _BlockedAppIcon(app: app),
                           title: Text(
                             app.label,
                             style: const TextStyle(
@@ -656,6 +649,46 @@ class _BlockedAppPickerState extends State<_BlockedAppPicker> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BlockedAppIcon extends StatelessWidget {
+  const _BlockedAppIcon({required this.app});
+
+  final FocusBlockedApp app;
+
+  @override
+  Widget build(BuildContext context) {
+    final iconBytes = app.iconBytes;
+    if (iconBytes == null || iconBytes.isEmpty) {
+      return CircleAvatar(
+        backgroundColor: gdPrimarySoft,
+        child: Icon(
+          Icons.apps_rounded,
+          color: gdPrimary,
+          size: 20,
+        ),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Image.memory(
+        iconBytes,
+        width: 42,
+        height: 42,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        errorBuilder: (context, error, stackTrace) => CircleAvatar(
+          backgroundColor: gdPrimarySoft,
+          child: Icon(
+            Icons.apps_rounded,
+            color: gdPrimary,
+            size: 20,
+          ),
         ),
       ),
     );

@@ -4,6 +4,9 @@ import android.Manifest
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -11,6 +14,7 @@ import android.view.accessibility.AccessibilityManager
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
 import java.util.Locale
 
 class MainActivity : FlutterActivity() {
@@ -103,13 +107,14 @@ class MainActivity : FlutterActivity() {
 
                 "getLaunchableApps" -> result.success(launchableApps())
 
-                "startBlocking" -> {
+                "startFocusSession" -> {
                     val packages = call.argument<List<*>>("packages")
                         .orEmpty()
                         .mapNotNull { it?.toString() }
                         .toSet()
                     val endsAtMillis =
                         call.argument<Number>("endsAtMillis")?.toLong()
+                    val title = call.argument<String>("title") ?: "Focus session"
 
                     if (endsAtMillis == null) {
                         result.error(
@@ -117,17 +122,46 @@ class MainActivity : FlutterActivity() {
                             "The focus session end time was missing.",
                             null
                         )
-                    } else if (!isFocusBlockingServiceEnabled()) {
-                        result.success(false)
                     } else {
+                        val accessibilityRequired =
+                            packages.isNotEmpty() &&
+                                !isFocusBlockingServiceEnabled()
+                        val blockingReady = when {
+                            accessibilityRequired -> false
+                            packages.isEmpty() -> {
+                                FocusBlockStore.stop(this)
+                                true
+                            }
+                            else -> FocusBlockStore.start(
+                                this,
+                                packages,
+                                endsAtMillis
+                            )
+                        }
+                        val notificationShown = blockingReady &&
+                            FocusTimerNotification.show(
+                                this,
+                                title,
+                                endsAtMillis
+                            )
+                        if (!notificationShown) {
+                            FocusBlockStore.stop(this)
+                        }
                         result.success(
-                            FocusBlockStore.start(this, packages, endsAtMillis)
+                            mapOf(
+                                "started" to
+                                    (blockingReady && notificationShown),
+                                "accessibilityRequired" to
+                                    accessibilityRequired,
+                                "notificationShown" to notificationShown
+                            )
                         )
                     }
                 }
 
-                "stopBlocking" -> {
+                "stopFocusSession" -> {
                     FocusBlockStore.stop(this)
+                    FocusTimerNotification.stop(this)
                     result.success(true)
                 }
 
@@ -208,7 +242,7 @@ class MainActivity : FlutterActivity() {
     }
 
     @Suppress("DEPRECATION")
-    private fun launchableApps(): List<Map<String, String>> {
+    private fun launchableApps(): List<Map<String, Any>> {
         val launcherIntent = Intent(Intent.ACTION_MAIN)
             .addCategory(Intent.CATEGORY_LAUNCHER)
         val homeIntent = Intent(Intent.ACTION_MAIN)
@@ -247,14 +281,42 @@ class MainActivity : FlutterActivity() {
             .filterNot { it.activityInfo.packageName in protectedPackages }
             .distinctBy { it.activityInfo.packageName }
             .map { activity ->
-                mapOf(
+                val app = mutableMapOf<String, Any>(
                     "packageName" to activity.activityInfo.packageName,
                     "label" to activity.loadLabel(packageManager).toString()
                 )
+                drawableToPng(activity.loadIcon(packageManager))?.let {
+                    app["icon"] = it
+                }
+                app
             }
             .sortedBy { app ->
-                app["label"].orEmpty().lowercase(Locale.getDefault())
+                app["label"].toString().lowercase(Locale.getDefault())
             }
             .toList()
+    }
+
+    private fun drawableToPng(drawable: Drawable?): ByteArray? {
+        if (drawable == null) return null
+        val bitmap = Bitmap.createBitmap(
+            APP_ICON_SIZE_PX,
+            APP_ICON_SIZE_PX,
+            Bitmap.Config.ARGB_8888
+        )
+        return try {
+            val canvas = Canvas(bitmap)
+            drawable.setBounds(0, 0, canvas.width, canvas.height)
+            drawable.draw(canvas)
+            ByteArrayOutputStream().use { stream ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+                stream.toByteArray()
+            }
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    companion object {
+        private const val APP_ICON_SIZE_PX = 96
     }
 }

@@ -96,6 +96,31 @@ test("fallback preserves delivery while respecting explicit suppression", () => 
   assert.equal(decision.shouldPush, false);
 });
 
+test("all reward notifications stay in the inbox", () => {
+  const decision = applyDecisionPolicy(
+    {
+      ...baseCandidate,
+      type: "reward",
+      title: "Focus reward earned",
+      sourceId: "focus_reward_25",
+    },
+    baseContext,
+    {
+      important: true,
+      shouldPush: true,
+      score: 95,
+      reason: "Celebratory update.",
+      source: "ai",
+      tone: "celebratory",
+    }
+  );
+
+  assert.equal(decision.action, "inbox_only");
+  assert.equal(decision.important, false);
+  assert.equal(decision.shouldPush, false);
+  assert.match(decision.reason, /reward notifications stay in the in-app inbox/);
+});
+
 test("duplicate notifications stay in the inbox", () => {
   const decision = applyDecisionPolicy(
     baseCandidate,

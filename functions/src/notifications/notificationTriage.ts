@@ -127,12 +127,8 @@ function clampScore(value: unknown, fallback: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function isChestReward(candidate: NotificationCandidate): boolean {
-  if (candidate.type !== "reward") return false;
-  return (
-    candidate.sourceId.startsWith("pet_chest") ||
-    candidate.title.toLowerCase().includes("chest reward")
-  );
+function isReward(candidate: NotificationCandidate): boolean {
+  return candidate.type === "reward";
 }
 
 function isProtectedSocialContent(candidate: NotificationCandidate): boolean {
@@ -148,7 +144,7 @@ function forcedImportance(candidate: NotificationCandidate): boolean | null {
   ) {
     return true;
   }
-  if (isChestReward(candidate)) return false;
+  if (isReward(candidate)) return false;
   return null;
 }
 
@@ -190,8 +186,8 @@ export function pushBlockReason(
   if (candidate.sourceId === "android_permission") {
     return "a push cannot resolve disabled Android notifications";
   }
-  if (isChestReward(candidate)) {
-    return "cosmetic chest rewards stay in the in-app inbox";
+  if (isReward(candidate)) {
+    return "reward notifications stay in the in-app inbox";
   }
 
   const settingKey = TYPE_SETTING_KEYS[candidate.type];
@@ -335,7 +331,7 @@ function fixedPolicyDecision(
       signals
     );
   }
-  if (isChestReward(candidate)) {
+  if (isReward(candidate)) {
     return applyDecisionPolicy(
       candidate,
       context,
@@ -343,7 +339,7 @@ function fixedPolicyDecision(
         important: false,
         shouldPush: false,
         score: 15,
-        reason: "A cosmetic reward is useful in-app but not interruption-worthy.",
+        reason: "Rewards are available in-app without interrupting the user.",
         source: "policy",
         tone: "celebratory",
       },

@@ -281,6 +281,13 @@ class AppNotification {
 }
 
 extension AppNotificationX on AppNotification {
+  bool get isChestReward {
+    if (type != AppNotificationType.reward) return false;
+    final source = sourceId?.toLowerCase() ?? '';
+    return source.startsWith('pet_chest') ||
+        title.toLowerCase().contains('chest reward');
+  }
+
   bool get isPetRelated {
     if (type != AppNotificationType.reward) return false;
 

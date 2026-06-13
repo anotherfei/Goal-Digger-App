@@ -114,6 +114,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
   List<RoutineItem> _routines = [];
   List<AppNotification> _notifications = [];
   final Set<String> _locallyReadNotificationIds = {};
+  final Set<String> _suppressedChestNotificationIds = {};
   final AndroidNotificationService _androidNotifications =
       AndroidNotificationService();
   NotificationSettings _notificationSettings =
@@ -179,6 +180,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       _activeFocusConfig != null && _focusRemainingSeconds > 0;
   bool get _focusComplete =>
       _activeFocusConfig != null && _focusRemainingSeconds <= 0;
+  List<AppNotification> get _visibleNotifications => _notifications
+      .where((notification) => !notification.isChestReward)
+      .toList(growable: false);
 
   Future<void> _syncTaskToGoogleCalendar(
     MicroTask task,
@@ -393,6 +397,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       _routines = _defaultRoutines();
       _notifications = [];
       _locallyReadNotificationIds.clear();
+      _suppressedChestNotificationIds.clear();
       _sentDeadlineSystemNoticeIds.clear();
       _streak = 0;
       _lastStreakDateKey = null;
@@ -407,7 +412,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       _highlightedGoalId = null;
     });
     unawaited(_androidNotifications.cancelAll());
-    unawaited(_focusAppBlocking.stopBlocking());
+    unawaited(_focusAppBlocking.stopFocusSession());
   }
 
   Future<void> _ensureUserProfile(AuthState authState) async {
@@ -537,6 +542,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
         if (!mounted) return;
         final now = DateTime.now();
         final mergedNotifications = notifications
+            .where((notification) => !notification.isChestReward)
             .map(
               (notification) =>
                   _locallyReadNotificationIds.contains(notification.id) &&
@@ -546,6 +552,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
             )
             .toList();
         setState(() => _notifications = mergedNotifications);
+        for (final notification
+            in notifications.where((item) => item.isChestReward)) {
+          if (!_suppressedChestNotificationIds.add(notification.id)) continue;
+          unawaited(
+            sync.deleteNotification(notification.id).catchError((Object e) {
+              debugPrint('Chest notification cleanup failed: $e');
+            }),
+          );
+        }
         _ensureImportantDeadlineNotifications();
       },
       onError: (Object error) => debugPrint('Notification sync error: $error'),
@@ -948,6 +963,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     bool important = false,
     String? sourceId,
   }) async {
+    if (type == AppNotificationType.reward) return;
     if (!_androidNotifications.isSupported) return;
     if (!_notificationBridgeReady) {
       _notificationBridgeReady = await _androidNotifications.initialize();
@@ -981,6 +997,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       bool important = false,
       String? sourceId,
     }) {
+      if (type == AppNotificationType.reward) return;
       if (!scheduledAt.isAfter(now)) return;
       if (!scheduledAt.isBefore(horizon)) return;
       requests.add(
@@ -1286,7 +1303,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       MaterialPageRoute<void>(
         fullscreenDialog: true,
         builder: (context) => NotificationInboxPage(
-          notifications: _notifications,
+          notifications: _visibleNotifications,
           onMarkRead: _markNotificationRead,
           onMarkAllRead: _markAllNotificationsRead,
           onDelete: _deleteNotification,
@@ -2711,12 +2728,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       _petHappiness = min(100, _petHappiness + 6);
     });
     unawaited(_persistProfileStats());
-    _addInAppNotification(
-      title: 'Chest reward unlocked',
-      body: '${skin.name} skin and $accessory are now in your collection.',
-      type: AppNotificationType.reward,
-      sourceId: 'pet_chest_${skin.name}_$accessory',
-    );
     _showMessage('Chest opened: ${skin.name} skin + $accessory unlocked!');
   }
 
@@ -2969,22 +2980,41 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     final endsAt =
         DateTime.now().add(Duration(minutes: config.durationMinutes));
 
-    if (config.blocksApps) {
-      final blockingStarted = await _focusAppBlocking.startBlocking(
+    if (_focusAppBlocking.isSupported) {
+      if (!_notificationBridgeReady) {
+        _notificationBridgeReady = await _androidNotifications.initialize();
+      }
+      final notificationsAllowed =
+          await _ensureAndroidNotificationPermission();
+      if (!mounted) return;
+      if (!notificationsAllowed) {
+        _showMessage(
+          'Enable Goal Digger notifications to show the focus timer.',
+        );
+        await _androidNotifications.openNotificationSettings();
+        return;
+      }
+
+      final nativeSession = await _focusAppBlocking.startFocusSession(
         packages: config.blockedPackages,
         endsAt: endsAt,
+        title: config.title,
       );
       if (!mounted) return;
-      if (!blockingStarted) {
+      if (!nativeSession.started) {
+        if (!nativeSession.accessibilityRequired) {
+          _showMessage(
+            'Enable the Focus timer notification channel to start focus.',
+          );
+          await _androidNotifications.openNotificationSettings();
+          return;
+        }
         _showMessage(
           'Enable Goal Digger App Block in Android Accessibility settings.',
         );
         await _focusAppBlocking.openAccessibilitySettings();
         return;
       }
-    } else {
-      await _focusAppBlocking.stopBlocking();
-      if (!mounted) return;
     }
 
     setState(() {
@@ -3028,7 +3058,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     final shouldCloseFocusDialog = _focusDialogOpen;
     _focusCompletionHandled = true;
     _focusTimer?.cancel();
-    unawaited(_focusAppBlocking.stopBlocking());
+    unawaited(_focusAppBlocking.stopFocusSession());
     unawaited(SystemSound.play(SystemSoundType.alert));
     if (_notificationSettings.systemNotificationsEnabled &&
         _notificationSettings.focusNotificationsEnabled) {
@@ -3110,13 +3140,21 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     if (_focusPaused) {
       final endsAt =
           DateTime.now().add(Duration(seconds: _focusRemainingSeconds));
-      if (config.blocksApps) {
-        final blockingStarted = await _focusAppBlocking.startBlocking(
+      if (_focusAppBlocking.isSupported) {
+        final nativeSession = await _focusAppBlocking.startFocusSession(
           packages: config.blockedPackages,
           endsAt: endsAt,
+          title: config.title,
         );
         if (!mounted) return;
-        if (!blockingStarted) {
+        if (!nativeSession.started) {
+          if (!nativeSession.accessibilityRequired) {
+            _showMessage(
+              'Enable the Focus timer notification channel before resuming.',
+            );
+            await _androidNotifications.openNotificationSettings();
+            return;
+          }
           _showMessage(
             'App blocking is disabled. Enable it before resuming focus.',
           );
@@ -3135,7 +3173,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
         _focusPaused = true;
         _focusEndsAt = null;
       });
-      await _focusAppBlocking.stopBlocking();
+      await _focusAppBlocking.stopFocusSession();
       if (!mounted) return;
     }
     _queueNotificationScheduleSync();
@@ -3149,7 +3187,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       return;
     }
     _focusTimer?.cancel();
-    unawaited(_focusAppBlocking.stopBlocking());
+    unawaited(_focusAppBlocking.stopFocusSession());
 
     setState(() {
       _activeFocusConfig = null;
@@ -3618,7 +3656,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
         onEditGoalDeadline: _editGoalDeadline,
         onEditGoalPriority: _editGoalPriority,
         onCreateFirstGoal: () => setState(() => _selectedIndex = 0),
-        onToggleTask: _toggleTask,
+        onToggleTask: _completeTask,
         highlightedGoalId: _highlightedGoalId,
       ),
       CalendarPage(
@@ -3681,9 +3719,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       onProfile: _openProfile,
       onSettings: _openSettings,
       onNotifications: _openNotifications,
-      unreadNotifications:
-          _notifications.where((notification) => notification.isUnread).length,
-      importantUnreadNotifications: _notifications
+      unreadNotifications: _visibleNotifications
+          .where((notification) => notification.isUnread)
+          .length,
+      importantUnreadNotifications: _visibleNotifications
           .where(
               (notification) => notification.important && notification.isUnread)
           .length,

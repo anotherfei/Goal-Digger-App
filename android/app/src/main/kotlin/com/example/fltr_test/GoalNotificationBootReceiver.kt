@@ -12,6 +12,7 @@ class GoalNotificationBootReceiver : BroadcastReceiver() {
             Intent.ACTION_TIME_CHANGED,
             Intent.ACTION_TIMEZONE_CHANGED -> {
                 GoalNotificationScheduler.restoreScheduled(context)
+                FocusTimerNotification.restore(context)
             }
         }
     }

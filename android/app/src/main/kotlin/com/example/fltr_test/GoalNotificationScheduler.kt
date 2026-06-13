@@ -155,6 +155,7 @@ object GoalNotificationScheduler {
         val manager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.cancelAll()
+        FocusTimerNotification.restore(context)
     }
 
     fun cancelScheduled(context: Context) {

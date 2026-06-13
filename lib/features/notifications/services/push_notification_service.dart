@@ -121,6 +121,8 @@ class PushNotificationService {
   }
 
   Future<void> _showForegroundNotification(RemoteMessage message) async {
+    if (message.data['type'] == 'reward') return;
+
     final title = message.notification?.title ?? message.data['title'];
     final body = message.notification?.body ?? message.data['body'];
     final important = message.data['important'] == 'true';
