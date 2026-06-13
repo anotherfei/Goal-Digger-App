@@ -10,6 +10,7 @@
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 /// Thin wrapper around [FirebaseAuth] and [GoogleSignIn].
@@ -20,41 +21,39 @@ class AuthService {
     FirebaseAuth? auth,
     GoogleSignIn? googleSignIn,
   })  : _auth = auth ?? FirebaseAuth.instance,
-        _googleSignIn = googleSignIn ?? 
-        GoogleSignIn(
-          scopes: const [
-            'email',
-            'https://www.googleapis.com/auth/calendar.events'
-          ],
-        );
+        _googleSignIn = googleSignIn ??
+            GoogleSignIn(
+              scopes: const [
+                'email',
+                'https://www.googleapis.com/auth/calendar.events'
+              ],
+            );
 
   final FirebaseAuth _auth;
   final GoogleSignIn _googleSignIn;
 
   // Calendar
   Future<Map<String, String>> getGoogleCalendarAuthHeaders() async {
-  var account = _googleSignIn.currentUser;
+    var account = _googleSignIn.currentUser;
 
-  account ??= await _googleSignIn.signInSilently();
+    account ??= await _googleSignIn.signInSilently();
 
-  if (account == null) {
-    account = await _googleSignIn.signIn();
+    account ??= await _googleSignIn.signIn();
+
+    if (account == null) {
+      throw const AuthException('Google sign-in is required to sync Calendar.');
+    }
+
+    final granted = await _googleSignIn.requestScopes(const [
+      'https://www.googleapis.com/auth/calendar.events',
+    ]);
+
+    if (!granted) {
+      throw const AuthException('Google Calendar permission was not granted.');
+    }
+
+    return account.authHeaders;
   }
-
-  if (account == null) {
-    throw const AuthException('Google sign-in is required to sync Calendar.');
-  }
-
-  final granted = await _googleSignIn.requestScopes(const [
-    'https://www.googleapis.com/auth/calendar.events',
-  ]);
-
-  if (!granted) {
-    throw const AuthException('Google Calendar permission was not granted.');
-  }
-
-  return account.authHeaders;
-}
 
   // ── Streams ─────────────────────────────────────────────────────────────────
 
@@ -74,31 +73,38 @@ class AuthService {
   /// Google credential to the anonymous account so that local data is
   /// preserved after the upgrade.
   Future<UserCredential> signInWithGoogle() async {
-    final googleUser = await _googleSignIn.signIn();
-    if (googleUser == null) {
-      throw const AuthException('Google sign-in was cancelled by the user.');
-    }
-
-    final googleAuth = await googleUser.authentication;
-    final credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth.accessToken,
-      idToken: googleAuth.idToken,
-    );
-
-    // Upgrade anonymous account → real account (links data, avoids orphans)
-    if (currentUser != null && currentUser!.isAnonymous) {
-      try {
-        return await currentUser!.linkWithCredential(credential);
-      } on FirebaseAuthException catch (e) {
-        // Credential already in use on another account – just sign in normally
-        if (e.code == 'credential-already-in-use') {
-          return _auth.signInWithCredential(credential);
-        }
-        rethrow;
+    try {
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        throw const AuthException('Google sign-in was cancelled by the user.');
       }
-    }
 
-    return _auth.signInWithCredential(credential);
+      final googleAuth = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      // Upgrade anonymous account to a real account while preserving data.
+      if (currentUser != null && currentUser!.isAnonymous) {
+        try {
+          return await currentUser!.linkWithCredential(credential);
+        } on FirebaseAuthException catch (e) {
+          if (e.code == 'credential-already-in-use') {
+            return _auth.signInWithCredential(credential);
+          }
+          rethrow;
+        }
+      }
+
+      return _auth.signInWithCredential(credential);
+    } on AuthException {
+      rethrow;
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_firebaseAuthMessage(e));
+    } on PlatformException catch (e) {
+      throw AuthException(_googleSignInMessage(e));
+    }
   }
 
   Future<UserCredential> signInWithEmail({
@@ -331,6 +337,20 @@ String _firebaseAuthMessage(FirebaseAuthException e) {
     default:
       return e.message ?? 'Authentication failed. Please try again.';
   }
+}
+
+String _googleSignInMessage(PlatformException e) {
+  final details = '${e.message ?? ''} ${e.details ?? ''}'.toLowerCase();
+  if (e.code == 'sign_in_canceled') {
+    return 'Google sign-in was cancelled by the user.';
+  }
+  if (e.code == 'network_error') {
+    return 'Network connection failed during Google sign-in. Try again.';
+  }
+  if (e.code == 'sign_in_failed' && details.contains('10')) {
+    return 'Google sign-in is not configured for this Android build. Check the Firebase Google provider and add this app signing SHA-1/SHA-256 fingerprint.';
+  }
+  return e.message ?? 'Google sign-in failed. Please try again.';
 }
 
 String _passwordResetAuthMessage(FirebaseAuthException e) {

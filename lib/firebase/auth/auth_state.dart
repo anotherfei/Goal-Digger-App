@@ -100,9 +100,8 @@ class AuthState extends ChangeNotifier {
       action: () => _authService.createAccountWithEmail(
         email: email.trim(),
         password: password,
-        displayName: displayName?.trim().isEmpty == true
-            ? null
-            : displayName?.trim(),
+        displayName:
+            displayName?.trim().isEmpty == true ? null : displayName?.trim(),
       ),
     );
   }
@@ -128,8 +127,8 @@ class AuthState extends ChangeNotifier {
     } on AuthException catch (e) {
       _errorMessage = e.message;
     } catch (e) {
-      _errorMessage = 'Could not create that account. Please try again.';
-      debugPrint('createAccountWithEmail error: $e');
+      _errorMessage = fallbackError;
+      debugPrint('$actionName error: $e');
     } finally {
       _setLoading(false);
     }
