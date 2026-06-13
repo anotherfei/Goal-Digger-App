@@ -10,8 +10,8 @@ class LumiCompanionSprite extends StatefulWidget {
     required this.streak,
     this.size = 180,
     this.onTap,
-    this.idleFrameDuration = const Duration(milliseconds: 115),
-    this.interactedFrameDuration = const Duration(milliseconds: 80),
+    this.idleFrameDuration = const Duration(milliseconds: 320),
+    this.interactedFrameDuration = const Duration(milliseconds: 180),
   });
 
   final int streak;
@@ -121,20 +121,27 @@ class _LumiCompanionSpriteState extends State<LumiCompanionSprite>
                 .clamp(0, LumiCompanionSprite.frameCount - 1)
                 .toInt();
 
-            final alignmentX = -1.0 +
-                (2.0 * frame / (LumiCompanionSprite.frameCount - 1));
-
             return ClipRect(
-              child: Align(
-                alignment: Alignment(alignmentX, 0),
-                widthFactor: 1 / LumiCompanionSprite.frameCount,
-                child: Image.asset(
-                  asset,
-                  width: widget.size * LumiCompanionSprite.frameCount,
-                  height: widget.size,
-                  fit: BoxFit.fill,
-                  gaplessPlayback: true,
-                  filterQuality: FilterQuality.high,
+              child: SizedBox(
+                width: widget.size,
+                height: widget.size,
+                child: OverflowBox(
+                  alignment: Alignment.centerLeft,
+                  minWidth: widget.size * LumiCompanionSprite.frameCount,
+                  maxWidth: widget.size * LumiCompanionSprite.frameCount,
+                  minHeight: widget.size,
+                  maxHeight: widget.size,
+                  child: Transform.translate(
+                    offset: Offset(-frame * widget.size, 0),
+                    child: Image.asset(
+                      asset,
+                      width: widget.size * LumiCompanionSprite.frameCount,
+                      height: widget.size,
+                      fit: BoxFit.fill,
+                      gaplessPlayback: true,
+                      filterQuality: FilterQuality.high,
+                    ),
+                  ),
                 ),
               ),
             );
