@@ -29,6 +29,10 @@ CompanionStreakTier companionStreakTierFor(int streak) {
 
 enum _SpriteMood { idle, interacted }
 
+const _idleAnimationDuration = Duration(milliseconds: 2200);
+const _interactedAnimationDuration = Duration(milliseconds: 1400);
+const _interactionHoldDuration = Duration(milliseconds: 1800);
+
 class CompanionSprite extends StatefulWidget {
   const CompanionSprite({
     super.key,
@@ -60,7 +64,7 @@ class _CompanionSpriteState extends State<CompanionSprite> {
     widget.onTap?.call();
     _interactionTimer?.cancel();
     setState(() => _mood = _SpriteMood.interacted);
-    _interactionTimer = Timer(const Duration(milliseconds: 1200), () {
+    _interactionTimer = Timer(_interactionHoldDuration, () {
       if (!mounted) return;
       setState(() => _mood = _SpriteMood.idle);
     });
@@ -84,8 +88,8 @@ class _CompanionSpriteState extends State<CompanionSprite> {
           assetPath: _assetPath,
           size: widget.size,
           duration: _mood == _SpriteMood.interacted
-              ? const Duration(milliseconds: 720)
-              : const Duration(milliseconds: 1200),
+              ? _interactedAnimationDuration
+              : _idleAnimationDuration,
         ),
       ),
     );
@@ -181,7 +185,7 @@ class SpriteSheetAnimation extends StatefulWidget {
     required this.size,
     this.frameCount = 8,
     this.frameSize = 320,
-    this.duration = const Duration(milliseconds: 1200),
+    this.duration = _idleAnimationDuration,
   });
 
   final String assetPath;

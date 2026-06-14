@@ -74,13 +74,8 @@ class _CompanionPageState extends State<CompanionPage> {
       backgroundColor: gdSurface,
       builder: (sheetContext) {
         return _CompanionPickerSheet(
-          coins: widget.coins,
           activeCompanion: widget.activeCompanion,
           unlockedCompanions: widget.unlockedCompanions,
-          onGachaPull: () {
-            Navigator.pop(sheetContext);
-            _handleGachaPull();
-          },
           onSelected: (companion) {
             Navigator.pop(sheetContext);
             widget.onCompanionSelected(companion);
@@ -386,6 +381,7 @@ class _GachaPullPanel extends StatelessWidget {
     final lockedCount = gachaCompanions
         .where((companion) => !_isUnlocked(companion))
         .length;
+    final allUnlocked = lockedCount == 0;
     final hiddenText = lockedCount == 0
         ? 'All companions discovered'
         : '$lockedCount companions still hidden';
@@ -451,9 +447,17 @@ class _GachaPullPanel extends StatelessWidget {
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
-            onPressed: isPulling ? null : onPull,
-            icon: const Icon(Icons.auto_awesome_rounded),
-            label: const Text('Pull capsule -$companionGachaCost coins'),
+            onPressed: isPulling || allUnlocked ? null : onPull,
+            icon: Icon(
+              allUnlocked
+                  ? Icons.check_circle_rounded
+                  : Icons.auto_awesome_rounded,
+            ),
+            label: Text(
+              allUnlocked
+                  ? 'All companions unlocked'
+                  : 'Pull capsule -$companionGachaCost coins',
+            ),
           ),
         ),
       ],
@@ -703,17 +707,13 @@ class _GachaResultCard extends StatelessWidget {
 
 class _CompanionPickerSheet extends StatelessWidget {
   const _CompanionPickerSheet({
-    required this.coins,
     required this.activeCompanion,
     required this.unlockedCompanions,
-    required this.onGachaPull,
     required this.onSelected,
   });
 
-  final int coins;
   final CompanionKind activeCompanion;
   final Set<CompanionKind> unlockedCompanions;
-  final VoidCallback onGachaPull;
   final ValueChanged<CompanionKind> onSelected;
 
   bool _isUnlocked(CompanionKind companion) {
@@ -735,13 +735,6 @@ class _CompanionPickerSheet extends StatelessWidget {
                 Expanded(
                   child: Text('Companions', style: GdText.titleLarge),
                 ),
-                Text(
-                  '$coins coins',
-                  style: TextStyle(
-                    color: gdMuted,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
               ],
             ),
             const SizedBox(height: 14),
@@ -755,15 +748,6 @@ class _CompanionPickerSheet extends StatelessWidget {
               if (companion != CompanionKind.values.last)
                 Divider(color: gdBorder),
             ],
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: onGachaPull,
-                icon: const Icon(Icons.auto_awesome_rounded),
-                label: const Text('Pull capsule -$companionGachaCost coins'),
-              ),
-            ),
           ],
         ),
       ),

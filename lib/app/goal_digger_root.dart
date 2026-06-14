@@ -2751,6 +2751,14 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   Future<CompanionGachaResult?> _pullCompanionGacha() async {
+    final allGachaCompanionsUnlocked = gachaCompanions.every(
+      _unlockedCompanions.contains,
+    );
+    if (allGachaCompanionsUnlocked) {
+      _showMessage('All companions are already unlocked.');
+      return null;
+    }
+
     if (_coins < companionGachaCost) {
       _showHelpfulError(
         title: 'Not enough coins',
