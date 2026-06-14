@@ -1516,6 +1516,7 @@ class _CommunityPageState extends State<CommunityPage> {
         builder: (_) => _FindFriendsPage(
           currentUid: _user?.uid,
           publicProfiles: _publicProfiles,
+          usersCollection: _usersCollection,
           currentFriendUids:
               Set<String>.from(currentFriendUids ?? const <String>{}),
           onProfileDetails: (profile) =>
@@ -5495,6 +5496,39 @@ class _PublicProfile {
       username: username,
       photoUrl: photoUrl,
       streak: 0,
+      searchText: searchText.toLowerCase(),
+    );
+  }
+
+  factory _PublicProfile.fromPublicDoc(
+      DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data() ?? {};
+    final displayName = _readString(
+      data,
+      const ['displayName', 'name', 'fullName'],
+      'Goal Digger User',
+    );
+    final username = _readString(
+      data,
+      const ['username', 'handle'],
+      _fallbackUsernameFor(displayName, '', doc.id),
+    );
+    final photoUrl = _readNullableString(
+      data,
+      const ['photoUrl', 'photoURL', 'avatarUrl', 'avatarURL'],
+    );
+    final searchText = _readString(
+      data,
+      const ['searchName', 'searchText'],
+      '${displayName.toLowerCase()} ${username.toLowerCase()} ${username.toLowerCase().replaceAll('@', '')}',
+    );
+
+    return _PublicProfile(
+      uid: _readString(data, const ['uid'], doc.id),
+      displayName: displayName,
+      username: username,
+      photoUrl: photoUrl,
+      streak: _readStreak(data),
       searchText: searchText.toLowerCase(),
     );
   }

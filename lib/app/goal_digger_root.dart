@@ -13,7 +13,7 @@ import '../data/seed_data.dart';
 import '../features/calendar/calendar_page.dart';
 import '../features/community/community_page.dart';
 import '../features/companion/companion_page.dart';
-import '../features/companion/lumi_sprite.dart';
+import '../features/companion/companion_sprite.dart';
 import '../features/focus/widgets/focus_widgets.dart';
 import '../features/notifications/models/notification_models.dart';
 import '../features/notifications/notification_inbox_page.dart';
@@ -409,7 +409,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _disposeSync();
     final sync = AppSyncService(uid: uid);
     _sync = sync;
-    _goalsSyncedFromFirebase = false;
+    _syncedGoalsLoaded = false;
 
     _goalsSub = sync.goalsStream.listen(
       (goals) {
@@ -748,7 +748,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   void _syncStreakFromCompletedTasks() {
-    if (_sync != null && !_goalsSyncedFromFirebase) return;
+    if (_sync != null && !_syncedGoalsLoaded) return;
 
     final nextStreak = _calculatedCurrentStreak;
     if (nextStreak == _streak) return;
@@ -2529,19 +2529,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   void _deleteGoal(GoalProject goal) {
     setState(() => _goals.removeWhere((item) => item.id == goal.id));
-    setState(() => _goals.removeWhere((item) => item.id == goal.id));
 
     unawaited(_deleteGoalEverywhere(goal));
 
     _queueNotificationScheduleSync();
     _showMessage('Removed ${goal.title}.');
   }
-    _queueNotificationScheduleSync();
-    _showMessage('Removed ${goal.title}.');
-  }
 
-  Future<void> _deleteGoalEverywhere(GoalProject goal) async {
-    final user = context.read<AuthService>().currentUser;
   Future<void> _deleteGoalEverywhere(GoalProject goal) async {
     final user = context.read<AuthService>().currentUser;
 
@@ -2550,17 +2544,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         final deletedEvents = await context
             .read<GoogleCalendarService>()
             .deleteTaskEventsForGoal(goal);
-    if (user != null && !user.isAnonymous) {
-      try {
-        final deletedEvents = await context
-            .read<GoogleCalendarService>()
-            .deleteTaskEventsForGoal(goal);
 
-        debugPrint(
-          'Deleted $deletedEvents Google Calendar events for goal ${goal.title}.',
-        );
-      } catch (e) {
-        debugPrint('Google Calendar goal cleanup failed: $e');
         debugPrint(
           'Deleted $deletedEvents Google Calendar events for goal ${goal.title}.',
         );
@@ -2574,15 +2558,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         }
       }
     }
-        if (mounted) {
-          _showMessage(
-            'Goal removed, but Google Calendar cleanup failed.',
-          );
-        }
-      }
-    }
 
-    final sync = _sync;
     final sync = _sync;
 
     if (sync != null) {
@@ -2590,18 +2566,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         await sync.deleteGoal(goal.id.toString());
       } catch (e) {
         debugPrint('Delete goal sync failed: $e');
-    if (sync != null) {
-      try {
-        await sync.deleteGoal(goal.id.toString());
-      } catch (e) {
-        debugPrint('Delete goal sync failed: $e');
 
-        if (mounted) {
-          _showMessage('Goal removed locally, but Firebase delete failed.');
-        }
-      }
-    }
-  }
         if (mounted) {
           _showMessage('Goal removed locally, but Firebase delete failed.');
         }
@@ -3607,7 +3572,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       CompanionPage(
         coins: _coins,
         happiness: _petHappiness,
-        lumiTier: lumiStreakTierFor(_streak),
+        streakTier: companionStreakTierFor(_streak),
         pet: _activePetSkin,
         accessory: _activeAccessory,
         onFeed: _feedPet,

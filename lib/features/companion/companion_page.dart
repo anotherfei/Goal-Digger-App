@@ -3,14 +3,14 @@ import 'package:flutter/material.dart';
 import '../../core/theme/gd_design.dart';
 import '../../models/models.dart';
 import '../../shared/widgets/shared_widgets.dart';
-import 'lumi_sprite.dart';
+import 'companion_sprite.dart';
 
 class CompanionPage extends StatefulWidget {
   const CompanionPage({
     super.key,
     required this.coins,
     required this.happiness,
-    required this.lumiTier,
+    required this.streakTier,
     required this.pet,
     required this.accessory,
     required this.onFeed,
@@ -20,7 +20,11 @@ class CompanionPage extends StatefulWidget {
 
   final int coins;
   final int happiness;
-  final LumiStreakTier lumiTier;
+  final CompanionStreakTier streakTier;
+
+  /// Kept so the existing root/profile state can keep passing the current skin
+  /// without breaking other parts of the app. The page now displays the sprite
+  /// companion selected below instead of the old circular PetAvatar.
   final PetSkin pet;
   final String accessory;
   final VoidCallback onFeed;
@@ -32,13 +36,7 @@ class CompanionPage extends StatefulWidget {
 }
 
 class _CompanionPageState extends State<CompanionPage> {
-  String _selectedSkin = 'Mint';
-
-  @override
-  void didUpdateWidget(covariant CompanionPage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _selectedSkin = widget.pet.name;
-  }
+  CompanionKind _selectedCompanion = CompanionKind.lumi;
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +52,6 @@ class _CompanionPageState extends State<CompanionPage> {
             ),
             children: [
               const SizedBox(height: 16),
-
               AppCard(
                 color: gdPrimarySoft,
                 child: Padding(
@@ -63,7 +60,6 @@ class _CompanionPageState extends State<CompanionPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const SizedBox(height: 8),
-
                       Center(
                         child: Text(
                           'PET PREVIEW',
@@ -75,9 +71,7 @@ class _CompanionPageState extends State<CompanionPage> {
                           ),
                         ),
                       ),
-
                       const SizedBox(height: 22),
-
                       Center(
                         child: Stack(
                           alignment: Alignment.topRight,
@@ -89,13 +83,13 @@ class _CompanionPageState extends State<CompanionPage> {
                                 shape: BoxShape.circle,
                                 border: Border.all(color: gdBorder),
                               ),
-                              child: LumiCompanionSprite(
-                                tier: widget.lumiTier,
+                              child: CompanionSprite(
+                                kind: _selectedCompanion,
+                                tier: widget.streakTier,
                                 size: 178,
                                 onTap: widget.onPetInteract,
                               ),
                             ),
-
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -124,9 +118,7 @@ class _CompanionPageState extends State<CompanionPage> {
                           ],
                         ),
                       ),
-
                       const SizedBox(height: 22),
-
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -164,9 +156,7 @@ class _CompanionPageState extends State<CompanionPage> {
                                 ),
                               ],
                             ),
-
                             const SizedBox(height: 10),
-
                             LinearProgressIndicator(
                               value: widget.happiness / 100,
                               minHeight: 10,
@@ -177,56 +167,33 @@ class _CompanionPageState extends State<CompanionPage> {
                           ],
                         ),
                       ),
-
                       const SizedBox(height: 18),
-
                       Row(
                         children: [
-                          Expanded(
-                            child: _SkinPill(
-                              label: 'Mint',
-                              selected: _selectedSkin == 'Mint',
-                              onTap: () {
-                                setState(() => _selectedSkin = 'Mint');
-                              },
+                          for (final companion in CompanionKind.values) ...[
+                            Expanded(
+                              child: _SkinPill(
+                                label: companion.label,
+                                selected: _selectedCompanion == companion,
+                                onTap: () {
+                                  setState(
+                                    () => _selectedCompanion = companion,
+                                  );
+                                },
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _SkinPill(
-                              label: 'Peach',
-                              selected: _selectedSkin == 'Peach',
-                              onTap: () {
-                                setState(() => _selectedSkin = 'Peach');
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _SkinPill(
-                              label: 'Lunar',
-                              selected: _selectedSkin == 'Lunar',
-                              onTap: () {
-                                setState(() => _selectedSkin = 'Lunar');
-                              },
-                            ),
-                          ),
+                            if (companion != CompanionKind.values.last)
+                              const SizedBox(width: 10),
+                          ],
                         ],
                       ),
                     ],
                   ),
                 ),
               ),
-
               const SizedBox(height: 20),
-
-              const SectionTitle(
-                title: 'Mystery chest',
-                trailing: '50 coins',
-              ),
-
+              const SectionTitle(title: 'Mystery chest', trailing: '50 coins'),
               const SizedBox(height: 10),
-
               AppCard(
                 color: gdSurface,
                 child: Padding(
@@ -256,9 +223,7 @@ class _CompanionPageState extends State<CompanionPage> {
                           ),
                         ],
                       ),
-
                       const SizedBox(height: 14),
-
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton.icon(
@@ -267,9 +232,7 @@ class _CompanionPageState extends State<CompanionPage> {
                           label: const Text('Open chest -50 coins'),
                         ),
                       ),
-
                       const SizedBox(height: 10),
-
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
@@ -284,7 +247,6 @@ class _CompanionPageState extends State<CompanionPage> {
               ),
             ],
           ),
-
           Positioned(
             top: 14,
             left: 18,
@@ -297,19 +259,14 @@ class _CompanionPageState extends State<CompanionPage> {
 }
 
 class _FloatingWallet extends StatelessWidget {
-  const _FloatingWallet({
-    required this.coins,
-  });
+  const _FloatingWallet({required this.coins});
 
   final int coins;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: 9,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
         color: gdSurface,
         borderRadius: BorderRadius.circular(18),
@@ -342,9 +299,7 @@ class _FloatingWallet extends StatelessWidget {
               ),
             ),
           ),
-
           const SizedBox(width: 8),
-
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
