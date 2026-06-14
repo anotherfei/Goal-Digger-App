@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/gd_design.dart';
 import '../../models/models.dart';
 import '../../shared/widgets/shared_widgets.dart';
+import '../companion/companion_sprite.dart';
 
 typedef GuestUpgradeCallback = Future<bool> Function({
   required String displayName,
@@ -35,8 +36,8 @@ class ProfileScreen extends StatefulWidget {
     required this.coins,
     required this.streak,
     required this.petHappiness,
-    required this.pet,
-    required this.accessory,
+    required this.companion,
+    required this.streakTier,
     required this.selectedMood,
     required this.goals,
     required this.tasks,
@@ -67,8 +68,8 @@ class ProfileScreen extends StatefulWidget {
   final int coins;
   final int streak;
   final int petHappiness;
-  final PetSkin pet;
-  final String accessory;
+  final CompanionKind companion;
+  final CompanionStreakTier streakTier;
   final String selectedMood;
   final List<GoalProject> goals;
   final List<MicroTask> tasks;
@@ -122,8 +123,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int get coins => widget.coins;
   int get streak => widget.streak;
   int get petHappiness => widget.petHappiness;
-  PetSkin get pet => widget.pet;
-  String get accessory => widget.accessory;
+  CompanionKind get companion => widget.companion;
+  CompanionStreakTier get streakTier => widget.streakTier;
   String get selectedMood => widget.selectedMood;
   List<GoalProject> get goals => widget.goals;
   List<MicroTask> get tasks => widget.tasks;
@@ -287,8 +288,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 14),
                     _CompanionSection(
-                      pet: pet,
-                      accessory: accessory,
+                      companion: companion,
+                      streakTier: streakTier,
                       happiness: petHappiness,
                       selectedMood: selectedMood,
                       title: _profileTitle,
@@ -956,15 +957,15 @@ class _ProgressSection extends StatelessWidget {
 
 class _CompanionSection extends StatelessWidget {
   const _CompanionSection({
-    required this.pet,
-    required this.accessory,
+    required this.companion,
+    required this.streakTier,
     required this.happiness,
     required this.selectedMood,
     required this.title,
   });
 
-  final PetSkin pet;
-  final String accessory;
+  final CompanionKind companion;
+  final CompanionStreakTier streakTier;
   final int happiness;
   final String selectedMood;
   final String title;
@@ -977,7 +978,7 @@ class _CompanionSection extends StatelessWidget {
         padding: const EdgeInsets.all(18),
         child: Row(
           children: [
-            PetAvatar(pet: pet, size: 92),
+            CompanionSprite(kind: companion, tier: streakTier, size: 92),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
@@ -986,7 +987,7 @@ class _CompanionSection extends StatelessWidget {
                   Text(title, style: GdText.titleLarge),
                   const SizedBox(height: 6),
                   Text(
-                    '${pet.name} companion with $accessory. Mood: $selectedMood.',
+                    '${companion.label} companion. Mood: $selectedMood.',
                     style: TextStyle(
                       color: gdMuted,
                       fontWeight: FontWeight.w800,

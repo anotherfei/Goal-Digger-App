@@ -3,28 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
-/// Companion choices shown on the companion page.
-enum CompanionKind { lumi, auri }
-
-extension CompanionKindX on CompanionKind {
-  String get label {
-    switch (this) {
-      case CompanionKind.lumi:
-        return 'Lumi';
-      case CompanionKind.auri:
-        return 'Auri';
-    }
-  }
-
-  String get assetFolder {
-    switch (this) {
-      case CompanionKind.lumi:
-        return 'lumi';
-      case CompanionKind.auri:
-        return 'auri';
-    }
-  }
-}
+import '../../models/models.dart';
 
 /// The streak tier controls which sprite sheet is displayed.
 enum CompanionStreakTier { low, mid, high }
@@ -109,6 +88,88 @@ class _CompanionSpriteState extends State<CompanionSprite> {
               : const Duration(milliseconds: 1200),
         ),
       ),
+    );
+  }
+}
+
+class CompanionPortrait extends StatefulWidget {
+  const CompanionPortrait({
+    super.key,
+    required this.kind,
+    this.size = 64,
+    this.silhouette = false,
+  });
+
+  final CompanionKind kind;
+  final double size;
+  final bool silhouette;
+
+  @override
+  State<CompanionPortrait> createState() => _CompanionPortraitState();
+}
+
+class _CompanionPortraitState extends State<CompanionPortrait> {
+  ImageStream? _imageStream;
+  ImageStreamListener? _imageStreamListener;
+  ui.Image? _image;
+
+  String get _assetPath => 'assets/${widget.kind.assetFolder}/mid_idle.png';
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _resolveImage();
+  }
+
+  @override
+  void didUpdateWidget(covariant CompanionPortrait oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.kind != widget.kind) {
+      _resolveImage();
+    }
+  }
+
+  void _resolveImage() {
+    final provider = AssetImage(_assetPath);
+    final stream = provider.resolve(createLocalImageConfiguration(context));
+    if (stream.key == _imageStream?.key) return;
+
+    if (_imageStream != null && _imageStreamListener != null) {
+      _imageStream!.removeListener(_imageStreamListener!);
+    }
+    _imageStream = stream;
+    _image = null;
+
+    _imageStreamListener = ImageStreamListener((info, _) {
+      if (!mounted) return;
+      setState(() => _image = info.image);
+    });
+    stream.addListener(_imageStreamListener!);
+  }
+
+  @override
+  void dispose() {
+    if (_imageStream != null && _imageStreamListener != null) {
+      _imageStream!.removeListener(_imageStreamListener!);
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: widget.size,
+      child: _image == null
+          ? const SizedBox.shrink()
+          : CustomPaint(
+              painter: _SpriteSheetPainter(
+                image: _image!,
+                frame: 0,
+                frameSize: 320,
+                silhouette: widget.silhouette,
+              ),
+              size: Size.square(widget.size),
+            ),
     );
   }
 }
@@ -210,6 +271,7 @@ class _SpriteSheetAnimationState extends State<SpriteSheetAnimation>
               image: image,
               frame: frame,
               frameSize: widget.frameSize,
+              silhouette: false,
             ),
             size: Size.square(widget.size),
           );
@@ -224,11 +286,13 @@ class _SpriteSheetPainter extends CustomPainter {
     required this.image,
     required this.frame,
     required this.frameSize,
+    required this.silhouette,
   });
 
   final ui.Image image;
   final int frame;
   final double frameSize;
+  final bool silhouette;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -239,16 +303,22 @@ class _SpriteSheetPainter extends CustomPainter {
       frameSize,
     );
     final destination = Offset.zero & size;
+    final paint = Paint()..filterQuality = FilterQuality.high;
+    if (silhouette) {
+      paint.colorFilter = const ColorFilter.mode(Colors.black, BlendMode.srcIn);
+    }
     canvas.drawImageRect(
       image,
       source,
       destination,
-      Paint()..filterQuality = FilterQuality.high,
+      paint,
     );
   }
 
   @override
   bool shouldRepaint(covariant _SpriteSheetPainter oldDelegate) {
-    return oldDelegate.image != image || oldDelegate.frame != frame;
+    return oldDelegate.image != image ||
+        oldDelegate.frame != frame ||
+        oldDelegate.silhouette != silhouette;
   }
 }
