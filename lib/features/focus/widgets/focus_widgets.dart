@@ -645,7 +645,7 @@ class _BlockedAppPickerState extends State<_BlockedAppPicker> {
                   Set<String>.unmodifiable(_selected),
                 ),
                 icon: const Icon(Icons.check_rounded),
-                label: const Text('Use selected apps'),
+                label: const Text('Block selected apps'),
               ),
             ),
           ],
