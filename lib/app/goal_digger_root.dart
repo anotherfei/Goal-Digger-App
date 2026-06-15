@@ -1731,7 +1731,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       _goalReminders = normalizedSettings.systemNotificationsEnabled;
     });
 
-    if (!normalizedSettings.inAppNotificationsEnabled) {
+    if (!normalizedSettings.inAppNotificationsEnabled ||
+        !normalizedSettings.importantInAppEnabled) {
       ScaffoldMessenger.of(context).clearSnackBars();
     }
 
@@ -5049,6 +5050,25 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       ),
     ];
 
+    final unreadNotifications = _notificationSettings.inAppNotificationsEnabled
+        ? _notifications
+            .where(
+              (notification) =>
+                  notification.isUnread &&
+                  (!notification.important ||
+                      _notificationSettings.importantInAppEnabled),
+            )
+            .length
+        : 0;
+    final importantUnreadNotifications =
+        _notificationSettings.inAppNotificationsEnabled &&
+                _notificationSettings.importantInAppEnabled
+            ? _notifications
+                .where((notification) =>
+                    notification.important && notification.isUnread)
+                .length
+            : 0;
+
     return ResponsiveGoalShell(
       selectedIndex: _selectedIndex,
       signedInWith: _signedInWith,
@@ -5058,12 +5078,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       onProfile: _openProfile,
       onSettings: _openSettings,
       onNotifications: _openNotifications,
-      unreadNotifications:
-          _notifications.where((notification) => notification.isUnread).length,
-      importantUnreadNotifications: _notifications
-          .where(
-              (notification) => notification.important && notification.isUnread)
-          .length,
+      unreadNotifications: unreadNotifications,
+      importantUnreadNotifications: importantUnreadNotifications,
       hasActiveFocus: _hasActiveFocus || _focusComplete,
       focusLabel: _activeFocusConfig == null
           ? null
