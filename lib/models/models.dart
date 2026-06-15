@@ -180,13 +180,13 @@ extension CompanionRarityX on CompanionRarity {
   double get gachaWeight {
     switch (this) {
       case CompanionRarity.common:
-        return 25;
+        return 34;
       case CompanionRarity.uncommon:
-        return 15;
+        return 10;
       case CompanionRarity.rare:
-        return 7.5;
-      case CompanionRarity.epic:
         return 5;
+      case CompanionRarity.epic:
+        return 2;
     }
   }
 }
@@ -195,6 +195,9 @@ enum CompanionKind { lumi, auri, porc, mush, cels, pyro, gbat, nong }
 
 const int companionGachaCost = 100;
 const int companionDuplicateRefund = companionGachaCost ~/ 2;
+const int defaultCompanionHappiness = 50;
+const int companionSwitchHappinessPenalty = 10;
+const int companionSwitchHappinessFloor = 30;
 
 const List<CompanionKind> gachaCompanions = [
   CompanionKind.auri,

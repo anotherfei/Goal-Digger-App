@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // lib/firebase/firestore/repositories/user_repository.dart
 //
-// Persists user profile data: display name, streak, coins, pet happiness,
+// Persists user profile data: display name, streak, coins, companion happiness,
 // active companion, unlocked companions, and mood.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -22,6 +22,7 @@ class UserProfile {
     required this.lastStreakDateKey,
     required this.coins,
     required this.petHappiness,
+    required this.companionHappiness,
     required this.lastHappinessDecayDateKey,
     required this.activeCompanion,
     required this.unlockedCompanions,
@@ -43,6 +44,7 @@ class UserProfile {
   final String? lastStreakDateKey;
   final int coins;
   final int petHappiness;
+  final Map<CompanionKind, int> companionHappiness;
   final String? lastHappinessDecayDateKey;
   final CompanionKind activeCompanion;
   final Set<CompanionKind> unlockedCompanions;
@@ -109,7 +111,10 @@ class UserRepository {
       'streak': 0,
       'lastStreakDateKey': null,
       'coins': 140,
-      'petHappiness': 62,
+      'petHappiness': defaultCompanionHappiness,
+      'companionHappiness': {
+        CompanionKind.lumi.id: defaultCompanionHappiness,
+      },
       'lastHappinessDecayDateKey': null,
       'activeCompanion': CompanionKind.lumi.id,
       'unlockedCompanions': [CompanionKind.lumi.id],
@@ -159,6 +164,7 @@ class UserRepository {
     required String? lastStreakDateKey,
     required String selectedMood,
     required int petHappiness,
+    required Map<CompanionKind, int> companionHappiness,
     required String? lastHappinessDecayDateKey,
     required CompanionKind activeCompanion,
     required Set<CompanionKind> unlockedCompanions,
@@ -169,6 +175,10 @@ class UserRepository {
       'lastStreakDateKey': lastStreakDateKey,
       'selectedMood': selectedMood,
       'petHappiness': petHappiness,
+      'companionHappiness': _companionHappinessDoc(
+        companionHappiness,
+        unlockedCompanions,
+      ),
       'lastHappinessDecayDateKey': lastHappinessDecayDateKey,
       'activeCompanion': activeCompanion.id,
       'unlockedCompanions': _companionIds(unlockedCompanions),
@@ -210,12 +220,17 @@ class UserRepository {
     required String uid,
     required int coins,
     required int happiness,
+    required Map<CompanionKind, int> companionHappiness,
     required CompanionKind activeCompanion,
     required Set<CompanionKind> unlockedCompanions,
   }) async {
     await _svc.updateDoc(FirestorePaths.userDoc(uid), {
       'coins': coins,
       'petHappiness': happiness,
+      'companionHappiness': _companionHappinessDoc(
+        companionHappiness,
+        unlockedCompanions,
+      ),
       'activeCompanion': activeCompanion.id,
       'unlockedCompanions': _companionIds(unlockedCompanions),
       'updatedAt': FirestoreService.serverTimestamp,
@@ -267,19 +282,113 @@ class UserRepository {
       ..sort());
   }
 
+  Map<String, int> _companionHappinessDoc(
+    Map<CompanionKind, int> happiness,
+    Set<CompanionKind> unlockedCompanions,
+  ) {
+    final companions = ({CompanionKind.lumi, ...unlockedCompanions}).toList()
+      ..sort((a, b) => a.id.compareTo(b.id));
+
+    return {
+      for (final companion in companions)
+        companion.id: _clampHappiness(
+          happiness[companion] ?? defaultCompanionHappiness,
+        ),
+    };
+  }
+
+  int _clampHappiness(num value) {
+    final rounded = value.round();
+    if (rounded < 0) return 0;
+    if (rounded > 100) return 100;
+    return rounded;
+  }
+
+  CompanionKind? _companionKindFromDocId(Object? value) {
+    final id = value?.toString();
+    for (final companion in CompanionKind.values) {
+      if (companion.id == id) return companion;
+    }
+    return null;
+  }
+
   Set<CompanionKind> _companionSetFromDoc(Object? value) {
     final ids = value is List<dynamic> ? value : const <dynamic>[];
-    final companions =
-        ids.map((id) => companionKindFromId(id.toString())).toSet();
+    final companions = <CompanionKind>{};
+    for (final id in ids) {
+      final companion = _companionKindFromDocId(id);
+      if (companion != null) companions.add(companion);
+    }
     companions.add(CompanionKind.lumi);
     return companions;
   }
 
+  Map<CompanionKind, int> _companionHappinessFromDoc({
+    required Object? value,
+    required Set<CompanionKind> unlockedCompanions,
+    required CompanionKind activeCompanion,
+    required int legacyPetHappiness,
+  }) {
+    final happiness = <CompanionKind, int>{};
+    final hasSavedMap = value is Map && value.isNotEmpty;
+
+    if (value is Map) {
+      value.forEach((key, rawValue) {
+        final companion = _companionKindFromDocId(key);
+        if (companion != null && rawValue is num) {
+          happiness[companion] = _clampHappiness(rawValue);
+        }
+      });
+    }
+
+    final companions = {
+      CompanionKind.lumi,
+      ...unlockedCompanions,
+      activeCompanion,
+    };
+    for (final companion in companions) {
+      happiness.putIfAbsent(companion, () {
+        if (!hasSavedMap && companion == activeCompanion) {
+          return _clampHappiness(legacyPetHappiness);
+        }
+        return defaultCompanionHappiness;
+      });
+    }
+
+    happiness.removeWhere((companion, _) => !companions.contains(companion));
+    return happiness;
+  }
+
   UserProfile _profileFromDoc(DocumentSnapshot<Map<String, dynamic>> snap) {
     final d = snap.data()!;
-    final activeCompanion = companionKindFromId(d['activeCompanion'] as String?);
+    var activeCompanion = companionKindFromId(d['activeCompanion'] as String?);
     final unlockedCompanions = _companionSetFromDoc(d['unlockedCompanions']);
     unlockedCompanions.add(activeCompanion);
+    final legacyPetHappiness = _clampHappiness(
+      (d['petHappiness'] as num?) ?? defaultCompanionHappiness,
+    );
+    final companionHappiness = _companionHappinessFromDoc(
+      value: d['companionHappiness'],
+      unlockedCompanions: unlockedCompanions,
+      activeCompanion: activeCompanion,
+      legacyPetHappiness: legacyPetHappiness,
+    );
+    companionHappiness.removeWhere((companion, happiness) {
+      if (companion == CompanionKind.lumi) return false;
+      final shouldLock = happiness <= 0;
+      if (shouldLock) unlockedCompanions.remove(companion);
+      return shouldLock || !unlockedCompanions.contains(companion);
+    });
+    unlockedCompanions.add(CompanionKind.lumi);
+    companionHappiness.putIfAbsent(
+      CompanionKind.lumi,
+      () => defaultCompanionHappiness,
+    );
+    if (!unlockedCompanions.contains(activeCompanion)) {
+      activeCompanion = CompanionKind.lumi;
+    }
+    final activeHappiness =
+        companionHappiness[activeCompanion] ?? defaultCompanionHappiness;
 
     return UserProfile(
       uid: d['uid'] as String? ?? snap.id,
@@ -289,7 +398,8 @@ class UserRepository {
       streak: (d['streak'] as num?)?.toInt() ?? 0,
       lastStreakDateKey: d['lastStreakDateKey'] as String?,
       coins: (d['coins'] as num?)?.toInt() ?? 0,
-      petHappiness: (d['petHappiness'] as num?)?.toInt() ?? 50,
+      petHappiness: activeHappiness,
+      companionHappiness: companionHappiness,
       lastHappinessDecayDateKey: d['lastHappinessDecayDateKey'] as String?,
       activeCompanion: activeCompanion,
       unlockedCompanions: unlockedCompanions,

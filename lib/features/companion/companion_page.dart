@@ -12,6 +12,7 @@ class CompanionPage extends StatefulWidget {
     super.key,
     required this.coins,
     required this.happiness,
+    required this.companionHappiness,
     required this.streakTier,
     required this.activeCompanion,
     required this.unlockedCompanions,
@@ -23,6 +24,7 @@ class CompanionPage extends StatefulWidget {
 
   final int coins;
   final int happiness;
+  final Map<CompanionKind, int> companionHappiness;
   final CompanionStreakTier streakTier;
   final CompanionKind activeCompanion;
   final Set<CompanionKind> unlockedCompanions;
@@ -76,6 +78,7 @@ class _CompanionPageState extends State<CompanionPage> {
         return _CompanionPickerSheet(
           activeCompanion: widget.activeCompanion,
           unlockedCompanions: widget.unlockedCompanions,
+          companionHappiness: widget.companionHappiness,
           onSelected: (companion) {
             Navigator.pop(sheetContext);
             widget.onCompanionSelected(companion);
@@ -164,7 +167,7 @@ class _CompanionPageState extends State<CompanionPage> {
                                   ),
                                 ),
                                 Text(
-                                  'Tap to cheer up',
+                                  'Tap for a cheer',
                                   style: TextStyle(
                                     color: gdMuted,
                                     fontSize: 12,
@@ -378,9 +381,8 @@ class _GachaPullPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final lockedCount = gachaCompanions
-        .where((companion) => !_isUnlocked(companion))
-        .length;
+    final lockedCount =
+        gachaCompanions.where((companion) => !_isUnlocked(companion)).length;
     final allUnlocked = lockedCount == 0;
     final hiddenText = lockedCount == 0
         ? 'All companions discovered'
@@ -410,7 +412,7 @@ class _GachaPullPanel extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Common 50% | Uncommon 30% | Rare 15% | Epic 5%',
+                    'Common 68% | Uncommon 20% | Rare 10% | Epic 2%',
                     style: TextStyle(
                       color: gdMuted,
                       fontSize: 12,
@@ -709,16 +711,24 @@ class _CompanionPickerSheet extends StatelessWidget {
   const _CompanionPickerSheet({
     required this.activeCompanion,
     required this.unlockedCompanions,
+    required this.companionHappiness,
     required this.onSelected,
   });
 
   final CompanionKind activeCompanion;
   final Set<CompanionKind> unlockedCompanions;
+  final Map<CompanionKind, int> companionHappiness;
   final ValueChanged<CompanionKind> onSelected;
 
   bool _isUnlocked(CompanionKind companion) {
     return companion == CompanionKind.lumi ||
         unlockedCompanions.contains(companion);
+  }
+
+  int _happinessFor(CompanionKind companion) {
+    final happiness =
+        companionHappiness[companion] ?? defaultCompanionHappiness;
+    return happiness.clamp(0, 100).toInt();
   }
 
   @override
@@ -743,6 +753,7 @@ class _CompanionPickerSheet extends StatelessWidget {
                 companion: companion,
                 selected: activeCompanion == companion,
                 unlocked: _isUnlocked(companion),
+                happiness: _happinessFor(companion),
                 onSelected: () => onSelected(companion),
               ),
               if (companion != CompanionKind.values.last)
@@ -760,12 +771,14 @@ class _CompanionPickerRow extends StatelessWidget {
     required this.companion,
     required this.selected,
     required this.unlocked,
+    required this.happiness,
     required this.onSelected,
   });
 
   final CompanionKind companion;
   final bool selected;
   final bool unlocked;
+  final int happiness;
   final VoidCallback onSelected;
 
   @override
@@ -806,7 +819,9 @@ class _CompanionPickerRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  unlocked ? rarityLabel : 'Locked | $rarityLabel',
+                  unlocked
+                      ? '$rarityLabel | Happiness $happiness%'
+                      : 'Locked | $rarityLabel',
                   style: TextStyle(
                     color: gdMuted,
                     fontWeight: FontWeight.w800,
