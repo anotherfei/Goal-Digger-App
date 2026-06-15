@@ -19,6 +19,7 @@ import { defineGoalCoachFlow }     from "./flows/goalCoachFlow";
 import { defineTaskGeneratorFlow } from "./flows/taskGeneratorFlow";
 import { defineMoodAdvisorFlow }   from "./flows/moodAdvisorFlow";
 import { defineFocusInsightFlow }  from "./flows/focusInsightFlow";
+import { defineSocialSuggestionFlow } from "./flows/socialSuggestionFlow";
 import { getAI, defaultModel }     from "./ai";
 import { runAgent }                from "./agent/runtime";
 import { modificationAgent, type ModifiableTask } from "./agent/modification";
@@ -61,6 +62,7 @@ const goalCoachFlowFn     = defineGoalCoachFlow();
 const taskGeneratorFlowFn = defineTaskGeneratorFlow();
 const moodAdvisorFlowFn   = defineMoodAdvisorFlow();
 const focusInsightFlowFn  = defineFocusInsightFlow();
+const socialSuggestionFlowFn = defineSocialSuggestionFlow();
 
 // ── Callable functions (Flutter uses cloud_functions package) ─────────────────
 
@@ -82,6 +84,11 @@ export const moodAdvisor = onCall(fnOptions, async (req) => {
 export const focusInsight = onCall(fnOptions, async (req) => {
   requireAuth(req.auth);
   return await focusInsightFlowFn(req.data);
+});
+
+export const socialSuggestions = onCall(fnOptions, async (req) => {
+  requireAuth(req.auth);
+  return await socialSuggestionFlowFn(req.data);
 });
 
 export const agentPlanner = onCall(fnOptions, async (req) => {

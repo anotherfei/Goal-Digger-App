@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:uuid/uuid.dart';
@@ -12,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../firebase/auth/auth_state.dart';
+import '../../genkit/genkit_service.dart';
 import '../onboarding/onboarding_screen.dart';
 
 import '../../core/theme/gd_design.dart';
@@ -29,6 +31,7 @@ class CommunityPage extends StatefulWidget {
     required this.friendSuggestions,
     required this.streak,
     required this.lastStreakDateKey,
+    required this.aiSuggestionContext,
     required this.onAddCommunity,
     required this.onJoinCommunity,
     required this.onDeleteCommunity,
@@ -42,6 +45,7 @@ class CommunityPage extends StatefulWidget {
   final List<String> friendSuggestions;
   final int streak;
   final String? lastStreakDateKey;
+  final Map<String, dynamic> aiSuggestionContext;
   final VoidCallback onAddCommunity;
   final ValueChanged<CommunityGroup> onJoinCommunity;
   final ValueChanged<CommunityGroup> onDeleteCommunity;
@@ -960,6 +964,11 @@ class _CommunityPageState extends State<CommunityPage> {
         'ownerName': displayName,
         'members': [user.uid],
         'memberCount': 1,
+        'communityStreak': 0,
+        'lastCommunityStreakDateKey': null,
+        'activeMemberCountToday': 0,
+        'requiredActiveMembersToday': 1,
+        'lastCommunityActivityDateKey': null,
         'joinCode': joinCode,
         'searchText': _communitySearchText(
             name, tag, 'A community for people working on $name.', joinCode),
@@ -970,6 +979,14 @@ class _CommunityPageState extends State<CommunityPage> {
       await _usersCollection.doc(user.uid).set({
         'communityIds': FieldValue.arrayUnion([docRef.id]),
         'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      await _usersCollection
+          .doc(user.uid)
+          .collection('communities')
+          .doc(docRef.id)
+          .set({
+        'communityId': docRef.id,
+        'joinedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
       widget.controller.clear();
@@ -1129,6 +1146,14 @@ class _CommunityPageState extends State<CommunityPage> {
         'communityIds': FieldValue.arrayUnion([community.id]),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      await _usersCollection
+          .doc(user.uid)
+          .collection('communities')
+          .doc(community.id)
+          .set({
+        'communityId': community.id,
+        'joinedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
       if (didJoin) {
         await _addCommunitySystemMessage(
@@ -1259,6 +1284,11 @@ class _CommunityPageState extends State<CommunityPage> {
         'communityIds': FieldValue.arrayRemove([community.id]),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      await _usersCollection
+          .doc(user.uid)
+          .collection('communities')
+          .doc(community.id)
+          .delete();
 
       _showSnack(
           isOwner ? '${community.name} deleted.' : 'Left ${community.name}.');
@@ -1285,8 +1315,7 @@ class _CommunityPageState extends State<CommunityPage> {
 
         final groups = snapshot.data ?? const <_DbCommunity>[];
         final joined = groups.where((group) => group.joined).toList();
-        final leaderboard = [...groups]
-          ..sort((a, b) => b.members.compareTo(a.members));
+        final leaderboard = [...groups]..sort(_compareDbCommunitiesByStreak);
         final topThree = leaderboard.take(3).toList();
         final communityPreview = joined.take(5).toList();
 
@@ -1467,6 +1496,7 @@ class _CommunityPageState extends State<CommunityPage> {
         builder: (_) => _FindCommunitiesPage(
           communitiesCollection: _communitiesCollection,
           currentUid: user.uid,
+          aiSuggestionContext: widget.aiSuggestionContext,
           onJoin: (group) => unawaited(_joinCommunity(group)),
         ),
       ),
@@ -1519,6 +1549,7 @@ class _CommunityPageState extends State<CommunityPage> {
           usersCollection: _usersCollection,
           currentFriendUids:
               Set<String>.from(currentFriendUids ?? const <String>{}),
+          aiSuggestionContext: widget.aiSuggestionContext,
           onProfileDetails: (profile) =>
               _openPublicUserDetailsPage(context, profile),
           onAddFriend: _addFriend,
@@ -1805,7 +1836,7 @@ class _FriendListCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final subtitle = friend.lastMessageText.isNotEmpty
-        ? '${friend.chatLabel} · ${friend.lastMessageText}'
+        ? friend.lastMessageText
         : '${friend.username} · ${friend.streak} day streak';
 
     return AppCard(
@@ -2062,11 +2093,13 @@ class _FindCommunitiesPage extends StatefulWidget {
   const _FindCommunitiesPage({
     required this.communitiesCollection,
     required this.currentUid,
+    required this.aiSuggestionContext,
     required this.onJoin,
   });
 
   final CollectionReference<Map<String, dynamic>> communitiesCollection;
   final String currentUid;
+  final Map<String, dynamic> aiSuggestionContext;
   final ValueChanged<_DbCommunity> onJoin;
 
   @override
@@ -2076,7 +2109,12 @@ class _FindCommunitiesPage extends StatefulWidget {
 class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
   final TextEditingController _searchController = TextEditingController();
   final Set<String> _joiningCommunityIds = <String>{};
+  final Map<String, _AiSuggestionMatch> _aiMatches = {};
   String _query = '';
+  String? _aiRankKey;
+  bool _aiRanking = false;
+  bool _aiRankFailed = false;
+  int _aiRankSerial = 0;
   late final Stream<List<_DbCommunity>> _communitiesStream;
 
   @override
@@ -2093,7 +2131,7 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
 
       communities.sort((a, b) {
         if (a.joined != b.joined) return a.joined ? 1 : -1;
-        return b.similarity.compareTo(a.similarity);
+        return _compareDbCommunitiesByStreak(a, b);
       });
 
       return communities;
@@ -2117,6 +2155,93 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
           group.description.toLowerCase().contains(q) ||
           group.joinCode.toLowerCase().contains(q);
     }).toList();
+  }
+
+  void _queueAiRanking(List<_DbCommunity> communities) {
+    final candidates = communities
+        .where((group) =>
+            !group.joined && !_joiningCommunityIds.contains(group.id))
+        .take(40)
+        .toList();
+    final key = _aiRankKeyFor(
+      'communities',
+      candidates.map((group) => group.id),
+      widget.aiSuggestionContext,
+    );
+
+    if (_aiRankKey == key) return;
+
+    _aiRankKey = key;
+    _aiRanking = candidates.isNotEmpty;
+    _aiRankFailed = false;
+
+    if (candidates.isEmpty) {
+      _aiMatches.clear();
+      return;
+    }
+
+    final serial = ++_aiRankSerial;
+    final ai = context.read<GenkitService>();
+    final request = SocialSuggestionRequest(
+      kind: 'communities',
+      userContext: widget.aiSuggestionContext,
+      candidates: [
+        for (final group in candidates)
+          SocialSuggestionCandidate(
+            id: group.id,
+            title: group.name,
+            subtitle:
+                '${group.members} members ${group.communityStreak} day streak',
+            description: group.description,
+            category: group.tag,
+            streak: group.communityStreak,
+            memberCount: group.members,
+            activeToday: group.activeMemberCountToday,
+            searchText: '${group.name} ${group.tag} ${group.description}',
+          ),
+      ],
+    );
+
+    unawaited(ai.socialSuggestions.rank(request).then((response) {
+      if (!mounted || serial != _aiRankSerial) return;
+      setState(() {
+        _aiMatches
+          ..clear()
+          ..addEntries(response.matches.map(
+            (match) => MapEntry(
+              match.id,
+              _AiSuggestionMatch(
+                score: match.score,
+                reason: match.reason,
+                degraded: response.degraded,
+              ),
+            ),
+          ));
+        _aiRanking = false;
+        _aiRankFailed = false;
+      });
+    }).catchError((Object error) {
+      if (!mounted || serial != _aiRankSerial) return;
+      setState(() {
+        _aiRanking = false;
+        _aiRankFailed = true;
+      });
+    }));
+  }
+
+  List<_DbCommunity> _sortByAiFit(List<_DbCommunity> communities) {
+    final sorted = List<_DbCommunity>.from(communities);
+    sorted.sort((a, b) {
+      final aMatch = _aiMatches[a.id];
+      final bMatch = _aiMatches[b.id];
+      if (aMatch != null || bMatch != null) {
+        final scoreCompare =
+            (bMatch?.score ?? -1).compareTo(aMatch?.score ?? -1);
+        if (scoreCompare != 0) return scoreCompare;
+      }
+      return _compareDbCommunitiesByStreak(a, b);
+    });
+    return sorted;
   }
 
   void _join(_DbCommunity group) {
@@ -2148,7 +2273,7 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'These are live documents from Firestore communities.',
+                      'Live Firestore communities, ranked by AI fit for your current goals.',
                       style: TextStyle(
                           color: gdMuted, fontWeight: FontWeight.w700),
                     ),
@@ -2167,7 +2292,7 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
               ),
             ),
             const SizedBox(height: 16),
-            SectionTitle(title: 'Community suggestions'),
+            SectionTitle(title: 'AI community suggestions'),
             const SizedBox(height: 10),
             StreamBuilder<List<_DbCommunity>>(
               stream: _communitiesStream,
@@ -2193,7 +2318,8 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
                 }
 
                 final communities = snapshot.data ?? const <_DbCommunity>[];
-                final filtered = _filterCommunities(communities);
+                _queueAiRanking(communities);
+                final filtered = _sortByAiFit(_filterCommunities(communities));
                 final joinedCount =
                     communities.where((group) => group.joined).length;
 
@@ -2209,9 +2335,20 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
 
                 return Column(
                   children: [
+                    if (_aiRanking)
+                      const _AiSuggestionStatus(
+                        message: 'AI is ranking best-fit communities...',
+                      ),
+                    if (_aiRankFailed)
+                      const _AiSuggestionStatus(
+                        message:
+                            'AI ranking is unavailable. Showing live suggestions.',
+                        loading: false,
+                      ),
                     for (final group in filtered)
                       _DbCommunityMatchCard(
                         group: group,
+                        aiMatch: _aiMatches[group.id],
                         onJoin: () => _join(group),
                       ),
                   ],
@@ -2231,6 +2368,7 @@ class _FindFriendsPage extends StatefulWidget {
     required this.publicProfiles,
     required this.usersCollection,
     required this.currentFriendUids,
+    required this.aiSuggestionContext,
     required this.onProfileDetails,
     required this.onAddFriend,
   });
@@ -2239,6 +2377,7 @@ class _FindFriendsPage extends StatefulWidget {
   final CollectionReference<Map<String, dynamic>> publicProfiles;
   final CollectionReference<Map<String, dynamic>> usersCollection;
   final Set<String> currentFriendUids;
+  final Map<String, dynamic> aiSuggestionContext;
   final ValueChanged<_PublicProfile> onProfileDetails;
   final Future<void> Function(_PublicProfile profile) onAddFriend;
 
@@ -2248,8 +2387,13 @@ class _FindFriendsPage extends StatefulWidget {
 
 class _FindFriendsPageState extends State<_FindFriendsPage> {
   final TextEditingController _searchController = TextEditingController();
+  final Map<String, _AiSuggestionMatch> _aiMatches = {};
   String _query = '';
   bool _adding = false;
+  String? _aiRankKey;
+  bool _aiRanking = false;
+  bool _aiRankFailed = false;
+  int _aiRankSerial = 0;
   late final Stream<List<_PublicProfile>> _profileStream;
 
   @override
@@ -2288,6 +2432,91 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
         .where((profile) => !widget.currentFriendUids.contains(profile.uid))
         .where((profile) => profile.matchesQuery(q))
         .toList();
+  }
+
+  void _queueAiRanking(List<_PublicProfile> profiles) {
+    final candidates = profiles
+        .where((profile) => !widget.currentFriendUids.contains(profile.uid))
+        .take(50)
+        .toList();
+    final key = _aiRankKeyFor(
+      'friends',
+      candidates.map((profile) => profile.uid),
+      widget.aiSuggestionContext,
+    );
+
+    if (_aiRankKey == key) return;
+
+    _aiRankKey = key;
+    _aiRanking = candidates.isNotEmpty;
+    _aiRankFailed = false;
+
+    if (candidates.isEmpty) {
+      _aiMatches.clear();
+      return;
+    }
+
+    final serial = ++_aiRankSerial;
+    final ai = context.read<GenkitService>();
+    final request = SocialSuggestionRequest(
+      kind: 'friends',
+      userContext: widget.aiSuggestionContext,
+      candidates: [
+        for (final profile in candidates)
+          SocialSuggestionCandidate(
+            id: profile.uid,
+            title: profile.displayName,
+            subtitle: profile.username,
+            description: '${profile.streak} day streak',
+            streak: profile.streak,
+            searchText:
+                '${profile.displayName} ${profile.username} ${profile.searchText}',
+          ),
+      ],
+    );
+
+    unawaited(ai.socialSuggestions.rank(request).then((response) {
+      if (!mounted || serial != _aiRankSerial) return;
+      setState(() {
+        _aiMatches
+          ..clear()
+          ..addEntries(response.matches.map(
+            (match) => MapEntry(
+              match.id,
+              _AiSuggestionMatch(
+                score: match.score,
+                reason: match.reason,
+                degraded: response.degraded,
+              ),
+            ),
+          ));
+        _aiRanking = false;
+        _aiRankFailed = false;
+      });
+    }).catchError((Object error) {
+      if (!mounted || serial != _aiRankSerial) return;
+      setState(() {
+        _aiRanking = false;
+        _aiRankFailed = true;
+      });
+    }));
+  }
+
+  List<_PublicProfile> _sortByAiFit(List<_PublicProfile> profiles) {
+    final sorted = List<_PublicProfile>.from(profiles);
+    sorted.sort((a, b) {
+      final aMatch = _aiMatches[a.uid];
+      final bMatch = _aiMatches[b.uid];
+      if (aMatch != null || bMatch != null) {
+        final scoreCompare =
+            (bMatch?.score ?? -1).compareTo(aMatch?.score ?? -1);
+        if (scoreCompare != 0) return scoreCompare;
+      }
+      final streakCompare = b.streak.compareTo(a.streak);
+      if (streakCompare != 0) return streakCompare;
+      return a.displayName.compareTo(b.displayName);
+    });
+    return sorted;
   }
 
   Future<void> _add(_PublicProfile profile) async {
@@ -2401,7 +2630,7 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Search real public profile documents from Firestore. Adding someone stores their uid in your users/{uid}.friends list.',
+                      'Live public profiles, ranked by AI fit for your goals and activity.',
                       style: TextStyle(
                           color: gdMuted, fontWeight: FontWeight.w700),
                     ),
@@ -2420,6 +2649,8 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
               ),
             ),
             const SizedBox(height: 16),
+            SectionTitle(title: 'AI friend suggestions'),
+            const SizedBox(height: 10),
             StreamBuilder<List<_PublicProfile>>(
               stream: _profileStream,
               builder: (context, snapshot) {
@@ -2440,7 +2671,10 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                   );
                 }
 
-                final profiles = _visibleProfiles(snapshot.data ?? const []);
+                final loadedProfiles =
+                    snapshot.data ?? const <_PublicProfile>[];
+                _queueAiRanking(loadedProfiles);
+                final profiles = _sortByAiFit(_visibleProfiles(loadedProfiles));
                 if (profiles.isEmpty) {
                   return const HelpfulErrorBox(
                     title: 'No profiles found',
@@ -2453,10 +2687,21 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
 
                 return Column(
                   children: [
+                    if (_aiRanking)
+                      const _AiSuggestionStatus(
+                        message: 'AI is ranking best-fit friends...',
+                      ),
+                    if (_aiRankFailed)
+                      const _AiSuggestionStatus(
+                        message:
+                            'AI ranking is unavailable. Showing live profiles.',
+                        loading: false,
+                      ),
                     for (final profile in profiles)
                       AppCard(
                         margin: const EdgeInsets.only(bottom: 10),
                         child: ListTile(
+                          isThreeLine: _aiMatches[profile.uid] != null,
                           leading: InkResponse(
                             onTap: () => widget.onProfileDetails(profile),
                             radius: 28,
@@ -2465,9 +2710,18 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                               label: profile.displayName,
                             ),
                           ),
-                          title: Text(profile.displayName,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w900)),
+                          title: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(profile.displayName,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w900)),
+                              if (_aiMatches[profile.uid] != null) ...[
+                                const SizedBox(height: 4),
+                                _AiFitLine(match: _aiMatches[profile.uid]!),
+                              ],
+                            ],
+                          ),
                           subtitle: Text(
                             '${profile.username} · ${profile.streak} day streak',
                             style: TextStyle(
@@ -2990,7 +3244,7 @@ class _CommunityListCard extends StatelessWidget {
         title: Text(group.name,
             style: const TextStyle(fontWeight: FontWeight.w900)),
         subtitle: Text(
-          '${group.members} members · ${group.tag} · code ${group.joinCode}',
+          '${group.communityStreak} day streak · ${group.members} members · ${group.tag} · code ${group.joinCode}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
@@ -3333,6 +3587,12 @@ class _CommunityDetailPage extends StatelessWidget {
                         ),
                         const Divider(height: 20),
                         _CommunityInfoRow(
+                          icon: Icons.local_fire_department_rounded,
+                          label: 'Community streak',
+                          value: '${group.communityStreak} days',
+                        ),
+                        const Divider(height: 20),
+                        _CommunityInfoRow(
                           icon: Icons.calendar_month_rounded,
                           label: 'Created',
                           value: _formatTimestamp(group.createdAt),
@@ -3445,10 +3705,7 @@ class _UserDetailPage extends StatelessWidget {
   FirebaseFirestore get _db => FirebaseFirestore.instance;
 
   Stream<DocumentSnapshot<Map<String, dynamic>>> _profileStream() {
-    return _db
-        .collection('users')
-        .doc(initialProfile.uid)
-        .snapshots();
+    return _db.collection('users').doc(initialProfile.uid).snapshots();
   }
 
   _FriendProfile _profileFromSnapshot(
@@ -4854,15 +5111,13 @@ class _CommunityLeaderboardTile extends StatelessWidget {
         ),
       ),
       subtitle: Text(
-        '${group.members} members · ${group.tag}',
+        '${group.activeMemberCountToday}/${group.requiredActiveMembersToday} active today · ${group.members} members · ${group.tag}',
         style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Chip(
-              label:
-                  Text(group.joined ? 'Joined' : '${group.similarity}% fit')),
+          Chip(label: Text('${group.communityStreak} day streak')),
           if (onTap != null) ...[
             const SizedBox(width: 6),
             Icon(Icons.chevron_right_rounded, color: gdMuted),
@@ -5126,6 +5381,10 @@ class _DbCommunity {
     required this.joined,
     required this.isOwner,
     required this.similarity,
+    required this.communityStreak,
+    required this.lastCommunityStreakDateKey,
+    required this.activeMemberCountToday,
+    required this.requiredActiveMembersToday,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -5142,6 +5401,10 @@ class _DbCommunity {
   final bool joined;
   final bool isOwner;
   final int similarity;
+  final int communityStreak;
+  final String? lastCommunityStreakDateKey;
+  final int activeMemberCountToday;
+  final int requiredActiveMembersToday;
   final Timestamp? createdAt;
   final Timestamp? updatedAt;
 
@@ -5175,6 +5438,15 @@ class _DbCommunity {
     ).toUpperCase();
     final createdAt = data['createdAt'];
     final updatedAt = data['updatedAt'];
+    final lastCommunityStreakDateKey = _readNullableString(
+      data,
+      const ['lastCommunityStreakDateKey', 'lastStreakDateKey'],
+    );
+    final activityDateKey = _readNullableString(
+      data,
+      const ['lastCommunityActivityDateKey', 'activityDateKey'],
+    );
+    final visibleMemberCount = max(memberCount, members.length);
 
     return _DbCommunity(
       id: doc.id,
@@ -5190,6 +5462,19 @@ class _DbCommunity {
       joined: members.contains(currentUid),
       isOwner: ownerUid == currentUid,
       similarity: _readInt(data, const ['similarity', 'match'], 80),
+      communityStreak: _streakForToday(
+        _readInt(data, const ['communityStreak', 'streak'], 0),
+        lastCommunityStreakDateKey,
+      ),
+      lastCommunityStreakDateKey: lastCommunityStreakDateKey,
+      activeMemberCountToday: activityDateKey == _dateKey(DateTime.now())
+          ? _readInt(data, const ['activeMemberCountToday'], 0)
+          : 0,
+      requiredActiveMembersToday: _readInt(
+        data,
+        const ['requiredActiveMembersToday'],
+        max(1, (visibleMemberCount / 2).ceil()),
+      ),
       createdAt: createdAt is Timestamp ? createdAt : null,
       updatedAt: updatedAt is Timestamp ? updatedAt : null,
     );
@@ -5203,17 +5488,135 @@ class _DbCommunity {
       description: description,
       similarity: similarity,
       joined: joined ?? this.joined,
+      backendId: id,
+      communityStreak: communityStreak,
+      lastCommunityStreakDateKey: lastCommunityStreakDateKey,
+      activeMemberCountToday: activeMemberCountToday,
+      requiredActiveMembersToday: requiredActiveMembersToday,
     );
   }
+}
+
+int _compareDbCommunitiesByStreak(_DbCommunity a, _DbCommunity b) {
+  final streakCompare = b.communityStreak.compareTo(a.communityStreak);
+  if (streakCompare != 0) return streakCompare;
+
+  final activeCompare =
+      b.activeMemberCountToday.compareTo(a.activeMemberCountToday);
+  if (activeCompare != 0) return activeCompare;
+
+  final memberCompare = b.members.compareTo(a.members);
+  if (memberCompare != 0) return memberCompare;
+
+  return a.name.compareTo(b.name);
+}
+
+class _AiSuggestionMatch {
+  const _AiSuggestionMatch({
+    required this.score,
+    required this.reason,
+    this.degraded = false,
+  });
+
+  final int score;
+  final String reason;
+  final bool degraded;
+}
+
+class _AiSuggestionStatus extends StatelessWidget {
+  const _AiSuggestionStatus({
+    required this.message,
+    this.loading = true,
+  });
+
+  final String message;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          if (loading)
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: gdPrimary,
+              ),
+            )
+          else
+            Icon(Icons.info_outline_rounded, size: 18, color: gdMuted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiFitLine extends StatelessWidget {
+  const _AiFitLine({required this.match});
+
+  final _AiSuggestionMatch match;
+
+  @override
+  Widget build(BuildContext context) {
+    final reason = match.reason.trim();
+    final prefix = match.degraded ? 'Smart' : 'AI';
+    final label = reason.isEmpty
+        ? '$prefix ${match.score}% fit'
+        : '$prefix ${match.score}% fit - $reason';
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.auto_awesome_rounded, size: 16, color: gdPrimary),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: gdPrimary,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String _aiRankKeyFor(
+  String kind,
+  Iterable<String> candidateIds,
+  Map<String, dynamic> context,
+) {
+  final ids = candidateIds.toList()..sort();
+  return jsonEncode({
+    'kind': kind,
+    'ids': ids,
+    'context': context,
+  });
 }
 
 class _DbCommunityMatchCard extends StatelessWidget {
   const _DbCommunityMatchCard({
     required this.group,
+    this.aiMatch,
     required this.onJoin,
   });
 
   final _DbCommunity group;
+  final _AiSuggestionMatch? aiMatch;
   final VoidCallback onJoin;
 
   @override
@@ -5232,7 +5635,7 @@ class _DbCommunityMatchCard extends StatelessWidget {
                       style: const TextStyle(
                           fontWeight: FontWeight.w900, fontSize: 16)),
                 ),
-                Chip(label: Text('${group.similarity}% match')),
+                Chip(label: Text('${group.communityStreak} day streak')),
               ],
             ),
             const SizedBox(height: 6),
@@ -5243,6 +5646,10 @@ class _DbCommunityMatchCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(group.description,
                 style: TextStyle(color: gdMuted, fontWeight: FontWeight.w600)),
+            if (aiMatch != null) ...[
+              const SizedBox(height: 8),
+              _AiFitLine(match: aiMatch!),
+            ],
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -5294,13 +5701,6 @@ class _FriendProfile {
   bool get isChatOnly => hasChat && !isFriend;
 
   String get lastMessageText => lastMessage?.trim() ?? '';
-
-  String get chatLabel {
-    if (hasUnread) return 'New message';
-    if (isChatOnly) return 'Chat request';
-    if (hasChat) return 'Last chat';
-    return username;
-  }
 
   factory _FriendProfile.fromUserDoc(
     DocumentSnapshot<Map<String, dynamic>> doc, {
@@ -5495,7 +5895,7 @@ class _PublicProfile {
       displayName: displayName,
       username: username,
       photoUrl: photoUrl,
-      streak: 0,
+      streak: streak,
       searchText: searchText.toLowerCase(),
     );
   }
@@ -5636,12 +6036,12 @@ class CommunityMatchCard extends StatelessWidget {
                       style: const TextStyle(
                           fontWeight: FontWeight.w900, fontSize: 16)),
                 ),
-                Chip(label: Text('${group.similarity}% match')),
+                Chip(label: Text('${group.communityStreak} day streak')),
               ],
             ),
             const SizedBox(height: 6),
             Text(
-              '${group.members} members · ${group.tag}',
+              '${group.members} members · ${group.tag} · ${group.activeMemberCountToday}/${group.requiredActiveMembersToday} active today',
               style: TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
@@ -5717,6 +6117,12 @@ int _readInt(
 }
 
 DateTime _dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
+
+String _dateKey(DateTime date) {
+  final d = _dateOnly(date);
+  String two(int value) => value.toString().padLeft(2, '0');
+  return '${d.year}-${two(d.month)}-${two(d.day)}';
+}
 
 DateTime? _dateFromKey(String? key) {
   if (key == null || key.trim().isEmpty) return null;

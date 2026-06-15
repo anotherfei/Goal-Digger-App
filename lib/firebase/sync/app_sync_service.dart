@@ -65,8 +65,19 @@ class AppSyncService {
 
   Future<void> deleteGoal(String goalId) => _goalRepo.deleteGoal(uid, goalId);
 
-  Future<void> toggleTask(String goalId, String taskId, bool done) =>
-      _goalRepo.toggleTask(uid, goalId, taskId, done);
+  Future<void> toggleTask(
+    String goalId,
+    String taskId,
+    bool done, {
+    DateTime? completedAt,
+  }) =>
+      _goalRepo.toggleTask(
+        uid,
+        goalId,
+        taskId,
+        done,
+        completedAt: completedAt,
+      );
 
   Future<void> upsertTask(String goalId, MicroTask task) =>
       _goalRepo.upsertTask(uid, goalId, task);
@@ -143,6 +154,9 @@ class AppSyncService {
 
   Future<CommunityGroup> createCommunity(CommunityGroup group) =>
       _communityRepo.createCommunity(group, uid);
+
+  Future<int> markCommunityTaskCompleted(DateTime completedAt) =>
+      _communityRepo.markTaskCompleted(uid, completedAt);
 
   // Routines
   Future<RoutineItem> createRoutine(RoutineItem routine) =>
