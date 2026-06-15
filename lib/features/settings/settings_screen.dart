@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/gd_design.dart';
 import '../../core/theme/theme_controller.dart';
+import '../../firebase/auth/auth_service.dart';
 import '../notifications/models/notification_models.dart';
 import '../../shared/widgets/shared_widgets.dart';
 
@@ -56,11 +57,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late bool goalReminders;
   late bool friendProgressSharing;
   late NotificationSettings notificationSettings;
+  String? _googleCalendarEmail;
+  bool _googleCalendarLoading = true;
 
   @override
   void initState() {
     super.initState();
     _syncFromWidget();
+    _loadGoogleCalendarConnection();
   }
 
   @override
@@ -79,6 +83,74 @@ class _SettingsScreenState extends State<SettingsScreen> {
     notificationSettings = widget.notificationSettings;
   }
 
+  Future<void> _loadGoogleCalendarConnection() async {
+    try {
+      final email = widget.isGuest
+          ? null
+          : await context.read<AuthService>().googleCalendarAccountEmail();
+      if (!mounted) return;
+      setState(() {
+        _googleCalendarEmail = email;
+        _googleCalendarLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _googleCalendarEmail = null;
+        _googleCalendarLoading = false;
+      });
+    }
+  }
+
+  Future<void> _connectGoogleCalendar() async {
+    if (widget.isGuest) {
+      _showInfo(
+        title: 'Connect Google Calendar',
+        message:
+            'Sign in or create an account before connecting Google Calendar.',
+      );
+      return;
+    }
+
+    setState(() => _googleCalendarLoading = true);
+
+    try {
+      final email = await context.read<AuthService>().connectGoogleCalendar();
+      if (!mounted) return;
+      setState(() {
+        _googleCalendarEmail = email;
+        _googleCalendarLoading = false;
+      });
+      _showSnack('Google Calendar connected. Sync tasks from Calendar.');
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      setState(() => _googleCalendarLoading = false);
+      _showSnack(e.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _googleCalendarLoading = false);
+      _showSnack('Could not connect Google Calendar.');
+    }
+  }
+
+  Future<void> _disconnectGoogleCalendar() async {
+    setState(() => _googleCalendarLoading = true);
+
+    try {
+      await context.read<AuthService>().disconnectGoogleCalendar();
+      if (!mounted) return;
+      setState(() {
+        _googleCalendarEmail = null;
+        _googleCalendarLoading = false;
+      });
+      _showSnack('Google Calendar disconnected.');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _googleCalendarLoading = false);
+      _showSnack('Could not disconnect Google Calendar.');
+    }
+  }
+
   void onGoalRemindersChanged(bool value) {
     setState(() {
       goalReminders = value;
@@ -95,11 +167,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void onNotificationSettingsChanged(NotificationSettings value) {
+    final normalizedValue = value.inAppNotificationsEnabled
+        ? value
+        : value.copyWith(importantInAppEnabled: false);
+
     setState(() {
-      notificationSettings = value;
-      goalReminders = value.systemNotificationsEnabled;
+      notificationSettings = normalizedValue;
+      goalReminders = normalizedValue.systemNotificationsEnabled;
     });
-    widget.onNotificationSettingsChanged(value);
+    widget.onNotificationSettingsChanged(normalizedValue);
   }
 
   VoidCallback get onTestNotification => widget.onTestNotification;
@@ -311,6 +387,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onUnavailable: _showInfo,
             ),
             const SizedBox(height: 14),
+            _GoogleCalendarSettingsCard(
+              email: _googleCalendarEmail,
+              isGuest: widget.isGuest,
+              isLoading: _googleCalendarLoading,
+              onConnect: _connectGoogleCalendar,
+              onDisconnect: _disconnectGoogleCalendar,
+            ),
+            const SizedBox(height: 14),
             AppCard(
               child: Column(
                 children: [
@@ -370,16 +454,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _NotificationSwitch(
                     value: notificationSettings.inAppNotificationsEnabled,
                     title: 'In-app notifications',
-                    subtitle: 'AI nudges, rewards, and community updates.',
+                    subtitle:
+                        'Bottom bars, AI nudges, rewards, and inbox updates.',
                     onChanged: (value) => onNotificationSettingsChanged(
                       notificationSettings.copyWith(
                         inAppNotificationsEnabled: value,
+                        importantInAppEnabled: value
+                            ? notificationSettings.importantInAppEnabled
+                            : false,
                       ),
                     ),
                   ),
                   const Divider(height: 1),
                   _NotificationSwitch(
-                    value: notificationSettings.importantInAppEnabled,
+                    value: notificationSettings.inAppNotificationsEnabled &&
+                        notificationSettings.importantInAppEnabled,
                     enabled: notificationSettings.inAppNotificationsEnabled,
                     title: 'Important inbox alerts',
                     subtitle: 'Keep crucial messages pinned and unread.',
@@ -396,8 +485,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _DangerZoneSettingsCard(
               isGuest: widget.isGuest,
               onSignOut: onSignOut,
-              onDeleteAccount:
-                  widget.isGuest ? null : _confirmDeleteAccount,
+              onDeleteAccount: widget.isGuest ? null : _confirmDeleteAccount,
             ),
           ],
         ),
@@ -405,7 +493,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 }
-
 
 class _AccountSecuritySettingsCard extends StatelessWidget {
   const _AccountSecuritySettingsCard({
@@ -446,7 +533,8 @@ class _AccountSecuritySettingsCard extends StatelessWidget {
           ),
           const Divider(height: 1),
           _SettingsActionTile(
-            icon: emailVerified ? Icons.verified_rounded : Icons.mark_email_read,
+            icon:
+                emailVerified ? Icons.verified_rounded : Icons.mark_email_read,
             title: emailVerified ? 'Email verified' : 'Verify email',
             subtitle: isGuest
                 ? 'Guest accounts do not have an email to verify.'
@@ -507,6 +595,84 @@ class _AccountSecuritySettingsCard extends StatelessWidget {
                 ? 'Email/password'
                 : id)
         .join(', ');
+  }
+}
+
+class _GoogleCalendarSettingsCard extends StatelessWidget {
+  const _GoogleCalendarSettingsCard({
+    required this.email,
+    required this.isGuest,
+    required this.isLoading,
+    required this.onConnect,
+    required this.onDisconnect,
+  });
+
+  final String? email;
+  final bool isGuest;
+  final bool isLoading;
+  final VoidCallback onConnect;
+  final VoidCallback onDisconnect;
+
+  bool get _isConnected => email?.trim().isNotEmpty == true;
+
+  @override
+  Widget build(BuildContext context) {
+    final connectedEmail = email?.trim();
+
+    return AppCard(
+      child: Column(
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(18, 18, 18, 8),
+            child: _SettingsSectionHeader(
+              icon: Icons.event_available_rounded,
+              title: 'Google Calendar',
+              subtitle: 'Connect once, then sync tasks from Calendar.',
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            enabled: !isGuest && !isLoading,
+            leading: CircleAvatar(
+              backgroundColor: gdPrimarySoft,
+              child: Icon(
+                _isConnected
+                    ? Icons.check_circle_rounded
+                    : Icons.calendar_month_rounded,
+                color: gdPrimary,
+              ),
+            ),
+            title: Text(
+              _isConnected ? 'Calendar connected' : 'Connect Calendar',
+              style: TextStyle(color: gdInk, fontWeight: FontWeight.w900),
+            ),
+            subtitle: Text(
+              isGuest
+                  ? 'Sign in before connecting Google Calendar.'
+                  : _isConnected
+                      ? 'Connected as $connectedEmail. Sync stays manual on the Calendar page.'
+                      : 'Grant Calendar permission without syncing anything now.',
+              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+            ),
+            trailing: isLoading
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.4),
+                  )
+                : TextButton(
+                    onPressed: isGuest
+                        ? null
+                        : (_isConnected ? onDisconnect : onConnect),
+                    child: Text(_isConnected ? 'Disconnect' : 'Connect'),
+                  ),
+            onTap: isGuest || isLoading
+                ? null
+                : (_isConnected ? onDisconnect : onConnect),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -926,8 +1092,8 @@ class _AppearanceCard extends StatelessWidget {
                     color: gdPrimarySoft,
                     borderRadius: BorderRadius.circular(GdRadius.sm),
                   ),
-                  child: Icon(Icons.dark_mode_rounded,
-                      color: gdPrimary, size: 21),
+                  child:
+                      Icon(Icons.dark_mode_rounded, color: gdPrimary, size: 21),
                 ),
                 const SizedBox(width: 12),
                 Expanded(

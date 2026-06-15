@@ -1140,9 +1140,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
     if (user == null || user.isAnonymous) {
       _showHelpfulError(
-        title: 'Google sign-in required',
-        message:
-            'Please sign in with Google before syncing to Google Calendar.',
+        title: 'Account required',
+        message: 'Sign in before syncing tasks to Google Calendar.',
         actionLabel: 'OK',
         onAction: () {},
       );
@@ -1152,6 +1151,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     try {
       await context.read<GoogleCalendarService>().createTaskEvent(task, goal);
       _showMessage('Task synced to Google Calendar.');
+    } on AuthException catch (e) {
+      _showHelpfulError(
+        title: 'Connect Google Calendar',
+        message: e.message,
+        actionLabel: 'OK',
+        onAction: () {},
+      );
     } catch (e) {
       _showHelpfulError(
         title: 'Calendar sync failed',
@@ -1167,9 +1173,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
     if (user == null || user.isAnonymous) {
       _showHelpfulError(
-        title: 'Google sign-in required',
-        message:
-            'Please sign in with Google before syncing to Google Calendar.',
+        title: 'Account required',
+        message: 'Sign in before syncing tasks to Google Calendar.',
         actionLabel: 'OK',
         onAction: () {},
       );
@@ -1188,6 +1193,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
       _showMessage(
         'Calendar sync complete: ${result.created} created, ${result.skipped} already synced, ${result.failed} failed.',
+      );
+    } on AuthException catch (e) {
+      _showHelpfulError(
+        title: 'Connect Google Calendar',
+        message: e.message,
+        actionLabel: 'OK',
+        onAction: () {},
       );
     } catch (e) {
       _showHelpfulError(
@@ -1394,7 +1406,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
               ? syncedDisplayName
               : _profileDisplayName;
           _goalReminders = profile.goalReminders;
-          _notificationSettings = profile.notificationSettings;
+          _notificationSettings =
+              _normalizedNotificationSettings(profile.notificationSettings);
           _friendProgressSharing = profile.friendProgressSharing;
           _friends = profile.friends.isEmpty
               ? ['Maya Chen', 'Leo Tan', 'Ari Putra']
@@ -1529,11 +1542,26 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     unawaited(_persistPreferences());
   }
 
+  NotificationSettings _normalizedNotificationSettings(
+    NotificationSettings settings,
+  ) {
+    return settings.inAppNotificationsEnabled
+        ? settings
+        : settings.copyWith(importantInAppEnabled: false);
+  }
+
   void _setNotificationSettings(NotificationSettings settings) {
+    final normalizedSettings = _normalizedNotificationSettings(settings);
+
     setState(() {
-      _notificationSettings = settings;
-      _goalReminders = settings.systemNotificationsEnabled;
+      _notificationSettings = normalizedSettings;
+      _goalReminders = normalizedSettings.systemNotificationsEnabled;
     });
+
+    if (!normalizedSettings.inAppNotificationsEnabled) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+    }
+
     unawaited(_persistPreferences());
     _queueNotificationScheduleSync();
   }
@@ -1726,6 +1754,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   void _showMessage(String message) {
     if (!mounted) return;
+    if (!_notificationSettings.inAppNotificationsEnabled) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
@@ -2089,7 +2119,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     String? sourceId,
     Map<String, dynamic>? payload,
   }) {
-    if (!important && !_notificationSettings.inAppNotificationsEnabled) {
+    if (!_notificationSettings.inAppNotificationsEnabled) {
       return false;
     }
     if (important && !_notificationSettings.importantInAppEnabled) {
@@ -3482,28 +3512,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   Future<void> _deleteGoalEverywhere(GoalProject goal) async {
-    final user = context.read<AuthService>().currentUser;
-
-    if (user != null && !user.isAnonymous) {
-      try {
-        final deletedEvents = await context
-            .read<GoogleCalendarService>()
-            .deleteTaskEventsForGoal(goal);
-
-        debugPrint(
-          'Deleted $deletedEvents Google Calendar events for goal ${goal.title}.',
-        );
-      } catch (e) {
-        debugPrint('Google Calendar goal cleanup failed: $e');
-
-        if (mounted) {
-          _showMessage(
-            'Goal removed, but Google Calendar cleanup failed.',
-          );
-        }
-      }
-    }
-
     final sync = _sync;
 
     if (sync != null) {
@@ -4247,6 +4255,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   void _openSettings() {
+    final authState = context.read<AuthState>();
+    final user = context.read<AuthService>().currentUser ?? authState.user;
+    final email = user?.email ?? '';
+
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
@@ -4260,6 +4272,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           onTestNotification: () => unawaited(_sendTestNotification()),
           onOpenNotificationSettings: _openAndroidNotificationSettings,
           onSignOut: () => unawaited(_handleSignOut()),
+          email: email,
+          signedInWith: _signedInWith,
+          isGuest: user?.isAnonymous ?? authState.isGuest,
+          emailVerified: authState.emailVerified,
+          providerIds: authState.providerIds,
+          onSendEmailVerification: authState.sendEmailVerification,
+          onRefreshEmailVerification: authState.reloadUser,
+          onSendPasswordReset: () => authState.sendPasswordResetEmail(email),
+          onDeleteAccount: _deleteCurrentAccount,
         ),
       ),
     );

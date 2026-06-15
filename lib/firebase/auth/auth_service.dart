@@ -11,6 +11,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Thin wrapper around [FirebaseAuth] and [GoogleSignIn].
 ///
@@ -20,41 +21,109 @@ class AuthService {
     FirebaseAuth? auth,
     GoogleSignIn? googleSignIn,
   })  : _auth = auth ?? FirebaseAuth.instance,
-        _googleSignIn = googleSignIn ?? 
-        GoogleSignIn(
-          scopes: const [
-            'email',
-            'https://www.googleapis.com/auth/calendar.events'
-          ],
-        );
+        _googleSignIn = googleSignIn ??
+            GoogleSignIn(
+              scopes: const [
+                'email',
+              ],
+            );
 
   final FirebaseAuth _auth;
   final GoogleSignIn _googleSignIn;
+  static const String _googleCalendarScope =
+      'https://www.googleapis.com/auth/calendar.events';
+  static const List<String> _googleCalendarScopes = <String>[
+    _googleCalendarScope,
+  ];
+  static const String _googleCalendarEmailKeyPrefix =
+      'google_calendar_connected_email_';
+
+  String? get _googleCalendarEmailKey {
+    final user = currentUser;
+    if (user == null || user.isAnonymous) return null;
+    return '$_googleCalendarEmailKeyPrefix${user.uid}';
+  }
 
   // Calendar
-  Future<Map<String, String>> getGoogleCalendarAuthHeaders() async {
-  var account = _googleSignIn.currentUser;
-
-  account ??= await _googleSignIn.signInSilently();
-
-  if (account == null) {
-    account = await _googleSignIn.signIn();
+  Future<String?> googleCalendarAccountEmail() async {
+    final key = _googleCalendarEmailKey;
+    if (key == null) return null;
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(key);
   }
 
-  if (account == null) {
-    throw const AuthException('Google sign-in is required to sync Calendar.');
+  Future<String> connectGoogleCalendar() async {
+    var account =
+        _googleSignIn.currentUser ?? await _googleSignIn.signInSilently();
+    account ??= await _googleSignIn.signIn();
+
+    if (account == null) {
+      throw const AuthException('Google sign-in was cancelled by the user.');
+    }
+
+    final granted = await _googleSignIn.requestScopes(_googleCalendarScopes);
+
+    if (!granted) {
+      throw const AuthException('Google Calendar permission was not granted.');
+    }
+
+    final key = _googleCalendarEmailKey;
+    if (key != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(key, account.email);
+    }
+
+    return account.email;
   }
 
-  final granted = await _googleSignIn.requestScopes(const [
-    'https://www.googleapis.com/auth/calendar.events',
-  ]);
+  Future<void> disconnectGoogleCalendar() async {
+    final key = _googleCalendarEmailKey;
+    if (key != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(key);
+    }
 
-  if (!granted) {
-    throw const AuthException('Google Calendar permission was not granted.');
+    try {
+      await _googleSignIn.disconnect();
+    } catch (e) {
+      debugPrint('Google Calendar disconnect failed, signing out instead: $e');
+      try {
+        await _googleSignIn.signOut();
+      } catch (signOutError) {
+        debugPrint('Google Calendar sign-out fallback failed: $signOutError');
+      }
+    }
   }
 
-  return account.authHeaders;
-}
+  Future<Map<String, String>> getGoogleCalendarAuthHeaders({
+    bool allowInteractiveSignIn = false,
+  }) async {
+    final connectedEmail = await googleCalendarAccountEmail();
+    if (connectedEmail == null) {
+      throw const AuthException('Connect Google Calendar from Settings first.');
+    }
+
+    var account =
+        _googleSignIn.currentUser ?? await _googleSignIn.signInSilently();
+
+    if (account == null && allowInteractiveSignIn) {
+      account = await _googleSignIn.signIn();
+    }
+
+    if (account == null) {
+      throw const AuthException(
+        'Google Calendar connection expired. Open Settings and connect again.',
+      );
+    }
+
+    if (account.email != connectedEmail) {
+      throw AuthException(
+        'Google Calendar is connected as $connectedEmail. Disconnect it in Settings to use ${account.email}.',
+      );
+    }
+
+    return account.authHeaders;
+  }
 
   // ── Streams ─────────────────────────────────────────────────────────────────
 

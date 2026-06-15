@@ -135,7 +135,7 @@ class _TodayGoalTaskSectionState extends State<_TodayGoalTaskSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionTitle(
-          title: 'Goals for today',
+          title: 'Tasks for today',
           trailing: widget.tasks.isEmpty ? null : '${widget.tasks.length}',
         ),
         const SizedBox(height: 8),
