@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import '../core/theme/gd_design.dart';
@@ -119,8 +121,9 @@ class CommunityGroup {
     this.communityStreak = 0,
     this.lastCommunityStreakDateKey,
     this.activeMemberCountToday = 0,
-    this.requiredActiveMembersToday = 1,
-  });
+    int? requiredActiveMembersToday,
+  }) : requiredActiveMembersToday =
+            requiredActiveMembersToday ?? max(1, members);
 
   final String name;
   final int members;

@@ -205,6 +205,7 @@ class CommunityRepository {
     try {
       final d = doc.data()!;
       final totalMembers = max(1, _memberCount(d));
+      final requiredActiveMembers = max(1, totalMembers);
       final lastCommunityStreakDateKey = _readOptionalString(
         d,
         const ['lastCommunityStreakDateKey', 'lastStreakDateKey'],
@@ -231,11 +232,7 @@ class CommunityRepository {
         ),
         lastCommunityStreakDateKey: lastCommunityStreakDateKey,
         activeMemberCountToday: activeMemberCountToday,
-        requiredActiveMembersToday: _readInt(
-          d,
-          const ['requiredActiveMembersToday'],
-          max(1, (totalMembers / 2).ceil()),
-        ),
+        requiredActiveMembersToday: requiredActiveMembers,
       );
     } catch (e) {
       debugPrint('Failed to parse community ${doc.id}: $e');
@@ -299,7 +296,7 @@ class CommunityRepository {
       if (hasExplicitMemberList && !memberUids.contains(uid)) return;
 
       final totalMembers = max(1, max(_memberCount(data), memberUids.length));
-      final requiredActiveMembers = max(1, (totalMembers / 2).ceil());
+      final requiredActiveMembers = max(1, totalMembers);
       final activitySnap = await transaction.get(activityRef);
       final activeMemberUids = _stringListFromRaw(
         activitySnap.data()?['activeMemberUids'],

@@ -5250,7 +5250,7 @@ class _CommunityLeaderboardTile extends StatelessWidget {
         ),
       ),
       subtitle: Text(
-        '${group.activeMemberCountToday}/${group.requiredActiveMembersToday} active today · ${group.members} members · ${group.tag}',
+        '${group.members} members · ${group.tag}',
         style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
       ),
       trailing: Row(
@@ -5709,6 +5709,7 @@ class _DbCommunity {
       const ['lastCommunityActivityDateKey', 'activityDateKey'],
     );
     final visibleMemberCount = max(memberCount, members.length);
+    final requiredActiveMembers = max(1, visibleMemberCount);
 
     return _DbCommunity(
       id: doc.id,
@@ -5732,11 +5733,7 @@ class _DbCommunity {
       activeMemberCountToday: activityDateKey == _dateKey(DateTime.now())
           ? _readInt(data, const ['activeMemberCountToday'], 0)
           : 0,
-      requiredActiveMembersToday: _readInt(
-        data,
-        const ['requiredActiveMembersToday'],
-        max(1, (visibleMemberCount / 2).ceil()),
-      ),
+      requiredActiveMembersToday: requiredActiveMembers,
       createdAt: createdAt is Timestamp ? createdAt : null,
       updatedAt: updatedAt is Timestamp ? updatedAt : null,
     );
