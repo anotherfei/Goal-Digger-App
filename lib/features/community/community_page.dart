@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:uuid/uuid.dart';
@@ -12,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../firebase/auth/auth_state.dart';
+import '../../genkit/genkit_service.dart';
 import '../onboarding/onboarding_screen.dart';
 
 import '../../core/theme/gd_design.dart';
@@ -29,6 +31,7 @@ class CommunityPage extends StatefulWidget {
     required this.friendSuggestions,
     required this.streak,
     required this.lastStreakDateKey,
+    required this.aiSuggestionContext,
     required this.onAddCommunity,
     required this.onJoinCommunity,
     required this.onDeleteCommunity,
@@ -42,6 +45,7 @@ class CommunityPage extends StatefulWidget {
   final List<String> friendSuggestions;
   final int streak;
   final String? lastStreakDateKey;
+  final Map<String, dynamic> aiSuggestionContext;
   final VoidCallback onAddCommunity;
   final ValueChanged<CommunityGroup> onJoinCommunity;
   final ValueChanged<CommunityGroup> onDeleteCommunity;
@@ -854,12 +858,11 @@ class _CommunityPageState extends State<CommunityPage> {
                 ),
               )
             else if (friends.isEmpty)
-              const HelpfulErrorBox(
+              const _GentleEmptyNotice(
+                icon: Icons.people_outline_rounded,
                 title: 'No friends or chats yet',
                 message:
                     'Find real users or start a chat. Any direct chat room will appear here too.',
-                actionLabel: 'Got it',
-                showAction: false,
               )
             else ...[
               for (final friend in friendPreview)
@@ -889,7 +892,7 @@ class _CommunityPageState extends State<CommunityPage> {
               const SizedBox(height: 8),
             ],
             if (friends.isEmpty) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -960,6 +963,11 @@ class _CommunityPageState extends State<CommunityPage> {
         'ownerName': displayName,
         'members': [user.uid],
         'memberCount': 1,
+        'communityStreak': 0,
+        'lastCommunityStreakDateKey': null,
+        'activeMemberCountToday': 0,
+        'requiredActiveMembersToday': 1,
+        'lastCommunityActivityDateKey': null,
         'joinCode': joinCode,
         'searchText': _communitySearchText(
             name, tag, 'A community for people working on $name.', joinCode),
@@ -970,6 +978,14 @@ class _CommunityPageState extends State<CommunityPage> {
       await _usersCollection.doc(user.uid).set({
         'communityIds': FieldValue.arrayUnion([docRef.id]),
         'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      await _usersCollection
+          .doc(user.uid)
+          .collection('communities')
+          .doc(docRef.id)
+          .set({
+        'communityId': docRef.id,
+        'joinedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
       widget.controller.clear();
@@ -1129,6 +1145,14 @@ class _CommunityPageState extends State<CommunityPage> {
         'communityIds': FieldValue.arrayUnion([community.id]),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      await _usersCollection
+          .doc(user.uid)
+          .collection('communities')
+          .doc(community.id)
+          .set({
+        'communityId': community.id,
+        'joinedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
       if (didJoin) {
         await _addCommunitySystemMessage(
@@ -1259,6 +1283,11 @@ class _CommunityPageState extends State<CommunityPage> {
         'communityIds': FieldValue.arrayRemove([community.id]),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      await _usersCollection
+          .doc(user.uid)
+          .collection('communities')
+          .doc(community.id)
+          .delete();
 
       _showSnack(
           isOwner ? '${community.name} deleted.' : 'Left ${community.name}.');
@@ -1285,8 +1314,7 @@ class _CommunityPageState extends State<CommunityPage> {
 
         final groups = snapshot.data ?? const <_DbCommunity>[];
         final joined = groups.where((group) => group.joined).toList();
-        final leaderboard = [...groups]
-          ..sort((a, b) => b.members.compareTo(a.members));
+        final leaderboard = [...groups]..sort(_compareDbCommunitiesByStreak);
         final topThree = leaderboard.take(3).toList();
         final communityPreview = joined.take(5).toList();
 
@@ -1406,14 +1434,13 @@ class _CommunityPageState extends State<CommunityPage> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const HelpfulErrorBox(
+                  const _GentleEmptyNotice(
+                    icon: Icons.groups_2_outlined,
                     title: 'No joined communities yet',
                     message:
                         'Find a real Firestore community or create your own group.',
-                    actionLabel: 'Got it',
-                    showAction: false,
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
@@ -1467,6 +1494,7 @@ class _CommunityPageState extends State<CommunityPage> {
         builder: (_) => _FindCommunitiesPage(
           communitiesCollection: _communitiesCollection,
           currentUid: user.uid,
+          aiSuggestionContext: widget.aiSuggestionContext,
           onJoin: (group) => unawaited(_joinCommunity(group)),
         ),
       ),
@@ -1519,6 +1547,7 @@ class _CommunityPageState extends State<CommunityPage> {
           usersCollection: _usersCollection,
           currentFriendUids:
               Set<String>.from(currentFriendUids ?? const <String>{}),
+          aiSuggestionContext: widget.aiSuggestionContext,
           onProfileDetails: (profile) =>
               _openPublicUserDetailsPage(context, profile),
           onAddFriend: _addFriend,
@@ -1805,7 +1834,7 @@ class _FriendListCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final subtitle = friend.lastMessageText.isNotEmpty
-        ? '${friend.chatLabel} · ${friend.lastMessageText}'
+        ? friend.lastMessageText
         : '${friend.username} · ${friend.streak} day streak';
 
     return AppCard(
@@ -2062,11 +2091,13 @@ class _FindCommunitiesPage extends StatefulWidget {
   const _FindCommunitiesPage({
     required this.communitiesCollection,
     required this.currentUid,
+    required this.aiSuggestionContext,
     required this.onJoin,
   });
 
   final CollectionReference<Map<String, dynamic>> communitiesCollection;
   final String currentUid;
+  final Map<String, dynamic> aiSuggestionContext;
   final ValueChanged<_DbCommunity> onJoin;
 
   @override
@@ -2076,7 +2107,12 @@ class _FindCommunitiesPage extends StatefulWidget {
 class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
   final TextEditingController _searchController = TextEditingController();
   final Set<String> _joiningCommunityIds = <String>{};
+  final Map<String, _AiSuggestionMatch> _aiMatches = {};
   String _query = '';
+  String? _aiRankKey;
+  bool _aiRanking = false;
+  bool _aiRankFailed = false;
+  int _aiRankSerial = 0;
   late final Stream<List<_DbCommunity>> _communitiesStream;
 
   @override
@@ -2093,7 +2129,7 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
 
       communities.sort((a, b) {
         if (a.joined != b.joined) return a.joined ? 1 : -1;
-        return b.similarity.compareTo(a.similarity);
+        return _compareDbCommunitiesByStreak(a, b);
       });
 
       return communities;
@@ -2117,6 +2153,93 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
           group.description.toLowerCase().contains(q) ||
           group.joinCode.toLowerCase().contains(q);
     }).toList();
+  }
+
+  void _queueAiRanking(List<_DbCommunity> communities) {
+    final candidates = communities
+        .where((group) =>
+            !group.joined && !_joiningCommunityIds.contains(group.id))
+        .take(40)
+        .toList();
+    final key = _aiRankKeyFor(
+      'communities',
+      candidates.map((group) => group.id),
+      widget.aiSuggestionContext,
+    );
+
+    if (_aiRankKey == key) return;
+
+    _aiRankKey = key;
+    _aiRanking = candidates.isNotEmpty;
+    _aiRankFailed = false;
+
+    if (candidates.isEmpty) {
+      _aiMatches.clear();
+      return;
+    }
+
+    final serial = ++_aiRankSerial;
+    final ai = context.read<GenkitService>();
+    final request = SocialSuggestionRequest(
+      kind: 'communities',
+      userContext: widget.aiSuggestionContext,
+      candidates: [
+        for (final group in candidates)
+          SocialSuggestionCandidate(
+            id: group.id,
+            title: group.name,
+            subtitle:
+                '${group.members} members ${group.communityStreak} day streak',
+            description: group.description,
+            category: group.tag,
+            streak: group.communityStreak,
+            memberCount: group.members,
+            activeToday: group.activeMemberCountToday,
+            searchText: '${group.name} ${group.tag} ${group.description}',
+          ),
+      ],
+    );
+
+    unawaited(ai.socialSuggestions.rank(request).then((response) {
+      if (!mounted || serial != _aiRankSerial) return;
+      setState(() {
+        _aiMatches
+          ..clear()
+          ..addEntries(response.matches.map(
+            (match) => MapEntry(
+              match.id,
+              _AiSuggestionMatch(
+                score: match.score,
+                reason: match.reason,
+                degraded: response.degraded,
+              ),
+            ),
+          ));
+        _aiRanking = false;
+        _aiRankFailed = false;
+      });
+    }).catchError((Object error) {
+      if (!mounted || serial != _aiRankSerial) return;
+      setState(() {
+        _aiRanking = false;
+        _aiRankFailed = true;
+      });
+    }));
+  }
+
+  List<_DbCommunity> _sortByAiFit(List<_DbCommunity> communities) {
+    final sorted = List<_DbCommunity>.from(communities);
+    sorted.sort((a, b) {
+      final aMatch = _aiMatches[a.id];
+      final bMatch = _aiMatches[b.id];
+      if (aMatch != null || bMatch != null) {
+        final scoreCompare =
+            (bMatch?.score ?? -1).compareTo(aMatch?.score ?? -1);
+        if (scoreCompare != 0) return scoreCompare;
+      }
+      return _compareDbCommunitiesByStreak(a, b);
+    });
+    return sorted;
   }
 
   void _join(_DbCommunity group) {
@@ -2148,7 +2271,7 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'These are live documents from Firestore communities.',
+                      'Live Firestore communities, ranked by AI fit for your current goals.',
                       style: TextStyle(
                           color: gdMuted, fontWeight: FontWeight.w700),
                     ),
@@ -2167,7 +2290,7 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
               ),
             ),
             const SizedBox(height: 16),
-            SectionTitle(title: 'Community suggestions'),
+            SectionTitle(title: 'AI community suggestions'),
             const SizedBox(height: 10),
             StreamBuilder<List<_DbCommunity>>(
               stream: _communitiesStream,
@@ -2193,7 +2316,8 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
                 }
 
                 final communities = snapshot.data ?? const <_DbCommunity>[];
-                final filtered = _filterCommunities(communities);
+                _queueAiRanking(communities);
+                final filtered = _sortByAiFit(_filterCommunities(communities));
                 final joinedCount =
                     communities.where((group) => group.joined).length;
 
@@ -2209,9 +2333,20 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
 
                 return Column(
                   children: [
+                    if (_aiRanking)
+                      const _AiSuggestionStatus(
+                        message: 'AI is ranking best-fit communities...',
+                      ),
+                    if (_aiRankFailed)
+                      const _AiSuggestionStatus(
+                        message:
+                            'AI ranking is unavailable. Showing live suggestions.',
+                        loading: false,
+                      ),
                     for (final group in filtered)
                       _DbCommunityMatchCard(
                         group: group,
+                        aiMatch: _aiMatches[group.id],
                         onJoin: () => _join(group),
                       ),
                   ],
@@ -2231,6 +2366,7 @@ class _FindFriendsPage extends StatefulWidget {
     required this.publicProfiles,
     required this.usersCollection,
     required this.currentFriendUids,
+    required this.aiSuggestionContext,
     required this.onProfileDetails,
     required this.onAddFriend,
   });
@@ -2239,6 +2375,7 @@ class _FindFriendsPage extends StatefulWidget {
   final CollectionReference<Map<String, dynamic>> publicProfiles;
   final CollectionReference<Map<String, dynamic>> usersCollection;
   final Set<String> currentFriendUids;
+  final Map<String, dynamic> aiSuggestionContext;
   final ValueChanged<_PublicProfile> onProfileDetails;
   final Future<void> Function(_PublicProfile profile) onAddFriend;
 
@@ -2248,8 +2385,13 @@ class _FindFriendsPage extends StatefulWidget {
 
 class _FindFriendsPageState extends State<_FindFriendsPage> {
   final TextEditingController _searchController = TextEditingController();
+  final Map<String, _AiSuggestionMatch> _aiMatches = {};
   String _query = '';
   bool _adding = false;
+  String? _aiRankKey;
+  bool _aiRanking = false;
+  bool _aiRankFailed = false;
+  int _aiRankSerial = 0;
   late final Stream<List<_PublicProfile>> _profileStream;
 
   @override
@@ -2288,6 +2430,91 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
         .where((profile) => !widget.currentFriendUids.contains(profile.uid))
         .where((profile) => profile.matchesQuery(q))
         .toList();
+  }
+
+  void _queueAiRanking(List<_PublicProfile> profiles) {
+    final candidates = profiles
+        .where((profile) => !widget.currentFriendUids.contains(profile.uid))
+        .take(50)
+        .toList();
+    final key = _aiRankKeyFor(
+      'friends',
+      candidates.map((profile) => profile.uid),
+      widget.aiSuggestionContext,
+    );
+
+    if (_aiRankKey == key) return;
+
+    _aiRankKey = key;
+    _aiRanking = candidates.isNotEmpty;
+    _aiRankFailed = false;
+
+    if (candidates.isEmpty) {
+      _aiMatches.clear();
+      return;
+    }
+
+    final serial = ++_aiRankSerial;
+    final ai = context.read<GenkitService>();
+    final request = SocialSuggestionRequest(
+      kind: 'friends',
+      userContext: widget.aiSuggestionContext,
+      candidates: [
+        for (final profile in candidates)
+          SocialSuggestionCandidate(
+            id: profile.uid,
+            title: profile.displayName,
+            subtitle: profile.username,
+            description: '${profile.streak} day streak',
+            streak: profile.streak,
+            searchText:
+                '${profile.displayName} ${profile.username} ${profile.searchText}',
+          ),
+      ],
+    );
+
+    unawaited(ai.socialSuggestions.rank(request).then((response) {
+      if (!mounted || serial != _aiRankSerial) return;
+      setState(() {
+        _aiMatches
+          ..clear()
+          ..addEntries(response.matches.map(
+            (match) => MapEntry(
+              match.id,
+              _AiSuggestionMatch(
+                score: match.score,
+                reason: match.reason,
+                degraded: response.degraded,
+              ),
+            ),
+          ));
+        _aiRanking = false;
+        _aiRankFailed = false;
+      });
+    }).catchError((Object error) {
+      if (!mounted || serial != _aiRankSerial) return;
+      setState(() {
+        _aiRanking = false;
+        _aiRankFailed = true;
+      });
+    }));
+  }
+
+  List<_PublicProfile> _sortByAiFit(List<_PublicProfile> profiles) {
+    final sorted = List<_PublicProfile>.from(profiles);
+    sorted.sort((a, b) {
+      final aMatch = _aiMatches[a.uid];
+      final bMatch = _aiMatches[b.uid];
+      if (aMatch != null || bMatch != null) {
+        final scoreCompare =
+            (bMatch?.score ?? -1).compareTo(aMatch?.score ?? -1);
+        if (scoreCompare != 0) return scoreCompare;
+      }
+      final streakCompare = b.streak.compareTo(a.streak);
+      if (streakCompare != 0) return streakCompare;
+      return a.displayName.compareTo(b.displayName);
+    });
+    return sorted;
   }
 
   Future<void> _add(_PublicProfile profile) async {
@@ -2401,7 +2628,7 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Search real public profile documents from Firestore. Adding someone stores their uid in your users/{uid}.friends list.',
+                      'Live public profiles, ranked by AI fit for your goals and activity.',
                       style: TextStyle(
                           color: gdMuted, fontWeight: FontWeight.w700),
                     ),
@@ -2420,6 +2647,33 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
               ),
             ),
             const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.only(left: 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'AI friend suggestions',
+                    style: TextStyle(
+                      color: gdInk,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      height: 1.05,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Ranked by goal fit and streak momentum.',
+                    style: TextStyle(
+                      color: gdMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
             StreamBuilder<List<_PublicProfile>>(
               stream: _profileStream,
               builder: (context, snapshot) {
@@ -2440,7 +2694,10 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                   );
                 }
 
-                final profiles = _visibleProfiles(snapshot.data ?? const []);
+                final loadedProfiles =
+                    snapshot.data ?? const <_PublicProfile>[];
+                _queueAiRanking(loadedProfiles);
+                final profiles = _sortByAiFit(_visibleProfiles(loadedProfiles));
                 if (profiles.isEmpty) {
                   return const HelpfulErrorBox(
                     title: 'No profiles found',
@@ -2453,38 +2710,126 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
 
                 return Column(
                   children: [
+                    if (_aiRanking)
+                      const _AiSuggestionStatus(
+                        message: 'AI is ranking best-fit friends...',
+                      ),
+                    if (_aiRankFailed)
+                      const _AiSuggestionStatus(
+                        message:
+                            'AI ranking is unavailable. Showing live profiles.',
+                        loading: false,
+                      ),
                     for (final profile in profiles)
-                      AppCard(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        child: ListTile(
-                          leading: InkResponse(
-                            onTap: () => widget.onProfileDetails(profile),
-                            radius: 28,
-                            child: _Avatar(
-                              photoUrl: profile.photoUrl,
-                              label: profile.displayName,
-                            ),
-                          ),
-                          title: Text(profile.displayName,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w900)),
-                          subtitle: Text(
-                            '${profile.username} · ${profile.streak} day streak',
-                            style: TextStyle(
-                                color: gdMuted, fontWeight: FontWeight.w700),
-                          ),
-                          trailing: FilledButton(
-                            onPressed:
-                                _adding ? null : () => unawaited(_add(profile)),
-                            child: const Text('Add'),
-                          ),
-                        ),
+                      _FriendSuggestionCard(
+                        profile: profile,
+                        aiMatch: _aiMatches[profile.uid],
+                        isAdding: _adding,
+                        onOpenProfile: () => widget.onProfileDetails(profile),
+                        onAdd: () => unawaited(_add(profile)),
                       ),
                   ],
                 );
               },
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FriendSuggestionCard extends StatelessWidget {
+  const _FriendSuggestionCard({
+    required this.profile,
+    required this.aiMatch,
+    required this.isAdding,
+    required this.onOpenProfile,
+    required this.onAdd,
+  });
+
+  final _PublicProfile profile;
+  final _AiSuggestionMatch? aiMatch;
+  final bool isAdding;
+  final VoidCallback onOpenProfile;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    final streakLabel =
+        profile.streak == 1 ? '1 day streak' : '${profile.streak} day streak';
+    final metadata = '${profile.username} - $streakLabel';
+
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onOpenProfile,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _Avatar(
+                  photoUrl: profile.photoUrl,
+                  label: profile.displayName,
+                  radius: 21,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        profile.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: gdInk,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      if (aiMatch != null) ...[
+                        const SizedBox(height: 4),
+                        _AiFitLine(match: aiMatch!),
+                      ],
+                      const SizedBox(height: 5),
+                      Text(
+                        metadata,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: gdMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton(
+                  onPressed: isAdding ? null : onAdd,
+                  style: FilledButton.styleFrom(
+                    fixedSize: const Size(76, 48),
+                    minimumSize: const Size(76, 48),
+                    padding: EdgeInsets.zero,
+                    textStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: const Text('Add'),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -2990,7 +3335,7 @@ class _CommunityListCard extends StatelessWidget {
         title: Text(group.name,
             style: const TextStyle(fontWeight: FontWeight.w900)),
         subtitle: Text(
-          '${group.members} members · ${group.tag} · code ${group.joinCode}',
+          '${group.communityStreak} day streak · ${group.members} members · ${group.tag} · code ${group.joinCode}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
@@ -3106,14 +3451,6 @@ class _CommunityDetailPage extends StatelessWidget {
   String _shortId(String value) {
     if (value.length <= 8) return value;
     return '${value.substring(0, 6)}...${value.substring(value.length - 2)}';
-  }
-
-  String _formatTimestamp(Timestamp? timestamp) {
-    if (timestamp == null) return 'Not saved yet';
-    final date = timestamp.toDate().toLocal();
-    String two(int value) => value.toString().padLeft(2, '0');
-    return '${date.year}-${two(date.month)}-${two(date.day)} '
-        '${two(date.hour)}:${two(date.minute)}';
   }
 
   void _openMemberDetails(
@@ -3262,6 +3599,23 @@ class _CommunityDetailPage extends StatelessWidget {
                             height: 1.4,
                           ),
                         ),
+                        const SizedBox(height: 14),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            _CommunityDetailPill(
+                              icon: Icons.confirmation_number_rounded,
+                              label: 'Join code',
+                              value: group.joinCode,
+                            ),
+                            _CommunityDetailPill(
+                              icon: Icons.person_rounded,
+                              label: 'Owner',
+                              value: group.ownerName,
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 16),
                         Row(
                           children: [
@@ -3303,50 +3657,7 @@ class _CommunityDetailPage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
-                AppCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        _CommunityInfoRow(
-                          icon: Icons.confirmation_number_rounded,
-                          label: 'Join code',
-                          value: group.joinCode,
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.person_rounded,
-                          label: 'Owner',
-                          value: group.ownerName,
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.badge_rounded,
-                          label: 'Owner UID',
-                          value: _shortId(group.ownerUid),
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.people_rounded,
-                          label: 'Members',
-                          value: '${group.members}',
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.calendar_month_rounded,
-                          label: 'Created',
-                          value: _formatTimestamp(group.createdAt),
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.update_rounded,
-                          label: 'Updated',
-                          value: _formatTimestamp(group.updatedAt),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                _CommunityOverviewSection(group: group),
                 const SizedBox(height: 18),
                 SectionTitle(title: 'Members', trailing: '${group.members}'),
                 const SizedBox(height: 10),
@@ -3424,6 +3735,142 @@ class _CommunityDetailPage extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _CommunityDetailPill extends StatelessWidget {
+  const _CommunityDetailPill({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 160,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: gdCardLight,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: gdBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: gdPrimarySoft,
+            child: Icon(icon, color: gdPrimary, size: 17),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: gdMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: gdInk,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommunityOverviewSection extends StatelessWidget {
+  const _CommunityOverviewSection({required this.group});
+
+  final _DbCommunity group;
+
+  @override
+  Widget build(BuildContext context) {
+    final requiredActiveMembers = max(1, group.requiredActiveMembersToday);
+    final activeMembers =
+        max(0, min(group.activeMemberCountToday, requiredActiveMembers));
+
+    return AppCard(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const spacing = 12.0;
+            final tileWidth =
+                ((constraints.maxWidth - spacing) / 2).clamp(150.0, 190.0);
+
+            return Wrap(
+              alignment: WrapAlignment.center,
+              spacing: spacing,
+              runSpacing: spacing,
+              children: [
+                _CommunityMetricTile(
+                  icon: Icons.local_fire_department_rounded,
+                  label: 'Streak',
+                  value: _daysLabel(group.communityStreak),
+                  width: tileWidth,
+                  minHeight: 126,
+                ),
+                _CommunityMetricTile(
+                  icon: Icons.people_rounded,
+                  label: 'Members',
+                  value: _membersLabel(group.members),
+                  width: tileWidth,
+                  minHeight: 126,
+                ),
+                _CommunityMetricTile(
+                  icon: Icons.task_alt_rounded,
+                  label: 'Active today',
+                  value: '$activeMembers/$requiredActiveMembers',
+                  width: tileWidth,
+                  minHeight: 126,
+                ),
+                _CommunityMetricTile(
+                  icon: group.joined
+                      ? Icons.verified_user_rounded
+                      : Icons.group_add_rounded,
+                  label: 'Status',
+                  value: group.isOwner
+                      ? 'Owner'
+                      : group.joined
+                          ? 'Joined'
+                          : 'Open',
+                  width: tileWidth,
+                  minHeight: 126,
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  String _daysLabel(int days) => days == 1 ? '1 day' : '$days days';
+
+  String _membersLabel(int members) {
+    return members == 1 ? '1 member' : '$members members';
   }
 }
 
@@ -4348,16 +4795,21 @@ class _CommunityMetricTile extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    this.width = 132,
+    this.minHeight,
   });
 
   final IconData icon;
   final String label;
   final String value;
+  final double width;
+  final double? minHeight;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 132,
+      width: width,
+      constraints: BoxConstraints(minHeight: minHeight ?? 0),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: gdCardLight,
@@ -4385,55 +4837,6 @@ class _CommunityMetricTile extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _CommunityInfoRow extends StatelessWidget {
-  const _CommunityInfoRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        CircleAvatar(
-          radius: 18,
-          backgroundColor: gdPrimarySoft,
-          child: Icon(icon, color: gdPrimary, size: 18),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  color: gdMuted,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 2),
-              SelectableText(
-                value.isEmpty ? '-' : value,
-                style: TextStyle(
-                  color: gdInk,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }
@@ -4851,15 +5254,13 @@ class _CommunityLeaderboardTile extends StatelessWidget {
         ),
       ),
       subtitle: Text(
-        '${group.members} members · ${group.tag}',
+        '${group.activeMemberCountToday}/${group.requiredActiveMembersToday} active today · ${group.members} members · ${group.tag}',
         style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Chip(
-              label:
-                  Text(group.joined ? 'Joined' : '${group.similarity}% fit')),
+          _StreakFireBadge(streak: group.communityStreak),
           if (onTap != null) ...[
             const SizedBox(width: 6),
             Icon(Icons.chevron_right_rounded, color: gdMuted),
@@ -4943,11 +5344,134 @@ class _LeaderboardTile extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Chip(label: Text('${entry.streak} day streak')),
+          _StreakFireBadge(streak: entry.streak),
           if (onTap != null) ...[
             const SizedBox(width: 6),
             Icon(Icons.chevron_right_rounded, color: gdMuted),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _StreakFireBadge extends StatelessWidget {
+  const _StreakFireBadge({required this.streak});
+
+  final int streak;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = '$streak day streak';
+
+    return Semantics(
+      label: label,
+      child: ExcludeSemantics(
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 76),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: gdPrimarySoft,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ShaderMask(
+                blendMode: BlendMode.srcIn,
+                shaderCallback: (bounds) => const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFFFF3D1F),
+                    Color(0xFFFF9F2E),
+                    Color(0xFFFFE66D),
+                  ],
+                ).createShader(bounds),
+                child: const Icon(
+                  Icons.local_fire_department_rounded,
+                  size: 24,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '$streak',
+                style: TextStyle(
+                  color: gdInk,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GentleEmptyNotice extends StatelessWidget {
+  const _GentleEmptyNotice({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: GdColors.tintOf(gdPrimary, 0.06),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: gdBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: gdCardLight,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: gdPrimary.withValues(alpha: 0.12)),
+            ),
+            child: Icon(icon, color: gdPrimary, size: 23),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: gdInk,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  message,
+                  style: TextStyle(
+                    color: gdMuted,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -5123,6 +5647,10 @@ class _DbCommunity {
     required this.joined,
     required this.isOwner,
     required this.similarity,
+    required this.communityStreak,
+    required this.lastCommunityStreakDateKey,
+    required this.activeMemberCountToday,
+    required this.requiredActiveMembersToday,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -5139,6 +5667,10 @@ class _DbCommunity {
   final bool joined;
   final bool isOwner;
   final int similarity;
+  final int communityStreak;
+  final String? lastCommunityStreakDateKey;
+  final int activeMemberCountToday;
+  final int requiredActiveMembersToday;
   final Timestamp? createdAt;
   final Timestamp? updatedAt;
 
@@ -5172,6 +5704,15 @@ class _DbCommunity {
     ).toUpperCase();
     final createdAt = data['createdAt'];
     final updatedAt = data['updatedAt'];
+    final lastCommunityStreakDateKey = _readNullableString(
+      data,
+      const ['lastCommunityStreakDateKey', 'lastStreakDateKey'],
+    );
+    final activityDateKey = _readNullableString(
+      data,
+      const ['lastCommunityActivityDateKey', 'activityDateKey'],
+    );
+    final visibleMemberCount = max(memberCount, members.length);
 
     return _DbCommunity(
       id: doc.id,
@@ -5187,6 +5728,19 @@ class _DbCommunity {
       joined: members.contains(currentUid),
       isOwner: ownerUid == currentUid,
       similarity: _readInt(data, const ['similarity', 'match'], 80),
+      communityStreak: _streakForToday(
+        _readInt(data, const ['communityStreak', 'streak'], 0),
+        lastCommunityStreakDateKey,
+      ),
+      lastCommunityStreakDateKey: lastCommunityStreakDateKey,
+      activeMemberCountToday: activityDateKey == _dateKey(DateTime.now())
+          ? _readInt(data, const ['activeMemberCountToday'], 0)
+          : 0,
+      requiredActiveMembersToday: _readInt(
+        data,
+        const ['requiredActiveMembersToday'],
+        max(1, (visibleMemberCount / 2).ceil()),
+      ),
       createdAt: createdAt is Timestamp ? createdAt : null,
       updatedAt: updatedAt is Timestamp ? updatedAt : null,
     );
@@ -5200,17 +5754,138 @@ class _DbCommunity {
       description: description,
       similarity: similarity,
       joined: joined ?? this.joined,
+      backendId: id,
+      communityStreak: communityStreak,
+      lastCommunityStreakDateKey: lastCommunityStreakDateKey,
+      activeMemberCountToday: activeMemberCountToday,
+      requiredActiveMembersToday: requiredActiveMembersToday,
     );
   }
+}
+
+int _compareDbCommunitiesByStreak(_DbCommunity a, _DbCommunity b) {
+  final streakCompare = b.communityStreak.compareTo(a.communityStreak);
+  if (streakCompare != 0) return streakCompare;
+
+  final activeCompare =
+      b.activeMemberCountToday.compareTo(a.activeMemberCountToday);
+  if (activeCompare != 0) return activeCompare;
+
+  final memberCompare = b.members.compareTo(a.members);
+  if (memberCompare != 0) return memberCompare;
+
+  return a.name.compareTo(b.name);
+}
+
+class _AiSuggestionMatch {
+  const _AiSuggestionMatch({
+    required this.score,
+    required this.reason,
+    this.degraded = false,
+  });
+
+  final int score;
+  final String reason;
+  final bool degraded;
+}
+
+class _AiSuggestionStatus extends StatelessWidget {
+  const _AiSuggestionStatus({
+    required this.message,
+    this.loading = true,
+  });
+
+  final String message;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          if (loading)
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: gdPrimary,
+              ),
+            )
+          else
+            Icon(Icons.info_outline_rounded, size: 18, color: gdMuted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiFitLine extends StatelessWidget {
+  const _AiFitLine({required this.match});
+
+  final _AiSuggestionMatch match;
+
+  @override
+  Widget build(BuildContext context) {
+    final reason = match.reason.trim();
+    final prefix = match.degraded ? 'Smart' : 'AI';
+    final label = reason.isEmpty
+        ? '$prefix ${match.score}% fit'
+        : '$prefix ${match.score}% fit - $reason';
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.auto_awesome_rounded, size: 14, color: gdPrimary),
+        const SizedBox(width: 5),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: gdPrimary,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+              height: 1.18,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String _aiRankKeyFor(
+  String kind,
+  Iterable<String> candidateIds,
+  Map<String, dynamic> context,
+) {
+  final ids = candidateIds.toList()..sort();
+  return jsonEncode({
+    'kind': kind,
+    'ids': ids,
+    'context': context,
+  });
 }
 
 class _DbCommunityMatchCard extends StatelessWidget {
   const _DbCommunityMatchCard({
     required this.group,
+    this.aiMatch,
     required this.onJoin,
   });
 
   final _DbCommunity group;
+  final _AiSuggestionMatch? aiMatch;
   final VoidCallback onJoin;
 
   @override
@@ -5229,7 +5904,7 @@ class _DbCommunityMatchCard extends StatelessWidget {
                       style: const TextStyle(
                           fontWeight: FontWeight.w900, fontSize: 16)),
                 ),
-                Chip(label: Text('${group.similarity}% match')),
+                Chip(label: Text('${group.communityStreak} day streak')),
               ],
             ),
             const SizedBox(height: 6),
@@ -5240,6 +5915,10 @@ class _DbCommunityMatchCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(group.description,
                 style: TextStyle(color: gdMuted, fontWeight: FontWeight.w600)),
+            if (aiMatch != null) ...[
+              const SizedBox(height: 8),
+              _AiFitLine(match: aiMatch!),
+            ],
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -5291,13 +5970,6 @@ class _FriendProfile {
   bool get isChatOnly => hasChat && !isFriend;
 
   String get lastMessageText => lastMessage?.trim() ?? '';
-
-  String get chatLabel {
-    if (hasUnread) return 'New message';
-    if (isChatOnly) return 'Chat request';
-    if (hasChat) return 'Last chat';
-    return username;
-  }
 
   factory _FriendProfile.fromUserDoc(
     DocumentSnapshot<Map<String, dynamic>> doc, {
@@ -5667,12 +6339,12 @@ class CommunityMatchCard extends StatelessWidget {
                       style: const TextStyle(
                           fontWeight: FontWeight.w900, fontSize: 16)),
                 ),
-                Chip(label: Text('${group.similarity}% match')),
+                Chip(label: Text('${group.communityStreak} day streak')),
               ],
             ),
             const SizedBox(height: 6),
             Text(
-              '${group.members} members · ${group.tag}',
+              '${group.members} members · ${group.tag} · ${group.activeMemberCountToday}/${group.requiredActiveMembersToday} active today',
               style: TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
@@ -5748,6 +6420,12 @@ int _readInt(
 }
 
 DateTime _dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
+
+String _dateKey(DateTime date) {
+  final d = _dateOnly(date);
+  String two(int value) => value.toString().padLeft(2, '0');
+  return '${d.year}-${two(d.month)}-${two(d.day)}';
+}
 
 DateTime? _dateFromKey(String? key) {
   if (key == null || key.trim().isEmpty) return null;

@@ -16,11 +16,12 @@ class GoalCoachFlow {
 
   Future<GoalCoachResponse> ask(GoalCoachRequest request) async {
     final response = await _client.callFlow(
-      GenkitConfig.fnGoalCoach,   // ← Firebase Function name
+      GenkitConfig.fnGoalCoach, // ← Firebase Function name
       request.toJson(),
     );
     if (!response.isSuccess) {
-      throw GenkitFlowException(flow: 'goalCoach', message: response.error ?? 'Unknown error');
+      throw GenkitFlowException(
+          flow: 'goalCoach', message: response.error ?? 'Unknown error');
     }
     return GoalCoachResponse.fromJson(response.result!);
   }
@@ -42,7 +43,8 @@ class TaskGeneratorFlow {
       request.toJson(),
     );
     if (!response.isSuccess) {
-      throw GenkitFlowException(flow: 'taskGenerator', message: response.error ?? 'Unknown error');
+      throw GenkitFlowException(
+          flow: 'taskGenerator', message: response.error ?? 'Unknown error');
     }
     return TaskGeneratorResponse.fromJson(response.result!);
   }
@@ -60,7 +62,8 @@ class MoodAdvisorFlow {
       request.toJson(),
     );
     if (!response.isSuccess) {
-      throw GenkitFlowException(flow: 'moodAdvisor', message: response.error ?? 'Unknown error');
+      throw GenkitFlowException(
+          flow: 'moodAdvisor', message: response.error ?? 'Unknown error');
     }
     return MoodAdvisorResponse.fromJson(response.result!);
   }
@@ -78,14 +81,32 @@ class FocusInsightFlow {
       request.toJson(),
     );
     if (!response.isSuccess) {
-      throw GenkitFlowException(flow: 'focusInsight', message: response.error ?? 'Unknown error');
+      throw GenkitFlowException(
+          flow: 'focusInsight', message: response.error ?? 'Unknown error');
     }
     return FocusInsightResponse.fromJson(response.result!);
   }
 }
 
-
 // ── Agent Planner ────────────────────────────────────────────────────────────
+
+class SocialSuggestionFlow {
+  const SocialSuggestionFlow(this._client);
+  final GenkitClient _client;
+
+  Future<SocialSuggestionResponse> rank(SocialSuggestionRequest request) async {
+    final response = await _client.callFlow(
+      GenkitConfig.fnSocialSuggestions,
+      request.toJson(),
+    );
+    if (!response.isSuccess) {
+      throw GenkitFlowException(
+          flow: 'socialSuggestions',
+          message: response.error ?? 'Unknown error');
+    }
+    return SocialSuggestionResponse.fromJson(response.result!);
+  }
+}
 
 class AgentPlannerFlow {
   const AgentPlannerFlow(this._client);
@@ -97,7 +118,8 @@ class AgentPlannerFlow {
       request.toJson(),
     );
     if (!response.isSuccess) {
-      throw GenkitFlowException(flow: 'agentPlanner', message: response.error ?? 'Unknown error');
+      throw GenkitFlowException(
+          flow: 'agentPlanner', message: response.error ?? 'Unknown error');
     }
     return AgentPlannerResponse.fromJson(response.result!);
   }

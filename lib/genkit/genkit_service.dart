@@ -13,6 +13,7 @@ export 'flows/goal_coach_flow.dart'
         TaskGeneratorFlow,
         MoodAdvisorFlow,
         FocusInsightFlow,
+        SocialSuggestionFlow,
         AgentPlannerFlow,
         AgentModifyFlow,
         AgentReassignFlow,
@@ -28,6 +29,7 @@ class GenkitService {
     taskGenerator = TaskGeneratorFlow(_client);
     moodAdvisor = MoodAdvisorFlow(_client);
     focusInsight = FocusInsightFlow(_client);
+    socialSuggestions = SocialSuggestionFlow(_client);
     agentPlanner = AgentPlannerFlow(_client);
     agentModify = AgentModifyFlow(_client);
     agentReassign = AgentReassignFlow(_client);
@@ -39,6 +41,7 @@ class GenkitService {
   late final TaskGeneratorFlow taskGenerator;
   late final MoodAdvisorFlow moodAdvisor;
   late final FocusInsightFlow focusInsight;
+  late final SocialSuggestionFlow socialSuggestions;
   late final AgentPlannerFlow agentPlanner;
   late final AgentModifyFlow agentModify;
   late final AgentReassignFlow agentReassign;

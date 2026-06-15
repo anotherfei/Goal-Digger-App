@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -1299,6 +1300,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
           members: 89,
           tag: 'Exam prep',
           similarity: 94,
+          communityStreak: 5,
           description:
               'Short daily sprints for students who want accountability.',
         ),
@@ -1307,6 +1309,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
           members: 142,
           tag: 'Career',
           similarity: 88,
+          communityStreak: 2,
           description:
               'Share portfolio progress and get feedback from builders.',
         ),
@@ -1315,6 +1318,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
           members: 76,
           tag: 'Wellness',
           similarity: 81,
+          communityStreak: 1,
           description:
               'Build low-pressure routines around sleep, movement, and reflection.',
         ),
@@ -1886,6 +1890,41 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
   int get _remainingMinutes => _todayTasks
       .where((task) => !task.done)
       .fold(0, (sum, task) => sum + task.durationMinutes);
+
+  Map<String, dynamic> _socialSuggestionContext() {
+    final activeGoals = _goals
+        .where((goal) => goal.progress < 1)
+        .take(8)
+        .map((goal) => goal.title)
+        .toList();
+    final categories = _goals
+        .map((goal) => goal.category)
+        .where((category) => category.trim().isNotEmpty)
+        .toSet()
+        .take(8)
+        .toList();
+    final todayTasks = _todayTasks
+        .take(10)
+        .map((task) => task.title)
+        .where((title) => title.trim().isNotEmpty)
+        .toList();
+    final taskLoads = _todayTasks
+        .map((task) => task.load.label.toLowerCase())
+        .toSet()
+        .toList();
+
+    return {
+      'mood': _selectedMood,
+      'streak': _streak,
+      'completedToday': _todayCompleted,
+      'totalToday': _todayTasks.length,
+      'remainingMinutes': _remainingMinutes,
+      'goals': activeGoals,
+      'categories': categories,
+      'todayTasks': todayTasks,
+      'taskLoads': taskLoads,
+    };
+  }
 
   DateTime? _dateFromKey(String? key) {
     if (key == null || key.trim().isEmpty) return null;
@@ -3780,9 +3819,11 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
   void _completeTask(MicroTask task) {
     if (task.done) return;
     final goal = _goalForTask(task);
+    final completedAt = DateTime.now();
     var streakAwarded = false;
     setState(() {
       task.done = true;
+      task.completedAt = completedAt;
       _coins += task.points;
       _adjustActiveCompanionHappiness(5);
       streakAwarded = _awardTaskCompletionStreak();
@@ -3794,6 +3835,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
           : 'for completing "${task.title}"',
     );
     unawaited(_persistTaskToggle(goal, task));
+    unawaited(_markCommunityTaskCompleted(completedAt));
     _syncStreakFromCompletedTasks();
     unawaited(_persistProfileStats());
     _queueNotificationScheduleSync();
@@ -3807,6 +3849,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
         goal.id.toString(),
         task.id.toString(),
         task.done,
+        completedAt: task.completedAt,
       );
       await sync.updateGoal(goal);
     } catch (e) {
@@ -3814,24 +3857,42 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     }
   }
 
+  Future<void> _markCommunityTaskCompleted(DateTime completedAt) async {
+    final sync = _sync;
+    if (sync == null) return;
+
+    try {
+      await sync.markCommunityTaskCompleted(completedAt);
+    } on FirebaseException catch (e) {
+      final details = e.message ?? e.code;
+      debugPrint('Community streak sync failed: ${e.code} $details');
+      if (mounted) {
+        _showMessage('Community streak sync failed: $details');
+      }
+    } catch (e) {
+      debugPrint('Community streak sync failed: $e');
+      if (mounted) {
+        _showMessage(
+          'Task saved, but community streak sync failed. Check Firestore rules.',
+        );
+      }
+    }
+  }
+
   void _deleteGoal(GoalProject goal) {
     setState(() => _goals.removeWhere((item) => item.id == goal.id));
-
     unawaited(_deleteGoalEverywhere(goal));
-
     _queueNotificationScheduleSync();
     _showMessage('Removed ${goal.title}.');
   }
 
   Future<void> _deleteGoalEverywhere(GoalProject goal) async {
     final sync = _sync;
-
     if (sync != null) {
       try {
         await sync.deleteGoal(goal.id.toString());
       } catch (e) {
         debugPrint('Delete goal sync failed: $e');
-
         if (mounted) {
           _showMessage('Goal removed locally, but Firebase delete failed.');
         }
@@ -4258,6 +4319,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
         );
       }
     }
+    _syncStreakFromCompletedTasks();
     _queueNotificationScheduleSync();
 
     // §6.4: always explain WHY the schedule changed.
@@ -4965,6 +5027,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
         friendSuggestions: _friendSuggestions,
         streak: _streak,
         lastStreakDateKey: _lastStreakDateKey,
+        aiSuggestionContext: _socialSuggestionContext(),
         onAddCommunity: _addCommunity,
         onJoinCommunity: _joinCommunity,
         onDeleteCommunity: _deleteCommunity,

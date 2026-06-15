@@ -254,6 +254,101 @@ class FocusInsightResponse {
 
 // ── Chat history helper ───────────────────────────────────────────────────────
 
+class SocialSuggestionCandidate {
+  const SocialSuggestionCandidate({
+    required this.id,
+    required this.title,
+    this.subtitle = '',
+    this.description = '',
+    this.category = '',
+    this.streak = 0,
+    this.memberCount = 0,
+    this.activeToday = 0,
+    this.searchText = '',
+  });
+
+  final String id;
+  final String title;
+  final String subtitle;
+  final String description;
+  final String category;
+  final int streak;
+  final int memberCount;
+  final int activeToday;
+  final String searchText;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'subtitle': subtitle,
+        'description': description,
+        'category': category,
+        'streak': streak,
+        'memberCount': memberCount,
+        'activeToday': activeToday,
+        'searchText': searchText,
+      };
+}
+
+class SocialSuggestionRequest {
+  const SocialSuggestionRequest({
+    required this.kind,
+    required this.userContext,
+    required this.candidates,
+  });
+
+  final String kind; // 'communities' | 'friends'
+  final Map<String, dynamic> userContext;
+  final List<SocialSuggestionCandidate> candidates;
+
+  Map<String, dynamic> toJson() => {
+        'kind': kind,
+        'userContext': userContext,
+        'candidates':
+            candidates.map((candidate) => candidate.toJson()).toList(),
+      };
+}
+
+class SocialSuggestionMatch {
+  const SocialSuggestionMatch({
+    required this.id,
+    required this.score,
+    required this.reason,
+  });
+
+  final String id;
+  final int score;
+  final String reason;
+
+  factory SocialSuggestionMatch.fromJson(Map<String, dynamic> json) =>
+      SocialSuggestionMatch(
+        id: json['id']?.toString() ?? '',
+        score: ((json['score'] as num?)?.round().clamp(0, 100) ?? 0).toInt(),
+        reason: json['reason']?.toString() ?? '',
+      );
+}
+
+class SocialSuggestionResponse {
+  const SocialSuggestionResponse({
+    required this.matches,
+    this.degraded = false,
+  });
+
+  final List<SocialSuggestionMatch> matches;
+  final bool degraded;
+
+  factory SocialSuggestionResponse.fromJson(Map<String, dynamic> json) =>
+      SocialSuggestionResponse(
+        matches: (json['matches'] as List<dynamic>? ?? [])
+            .whereType<Map<dynamic, dynamic>>()
+            .map((match) => SocialSuggestionMatch.fromJson(
+                match.map((key, value) => MapEntry(key.toString(), value))))
+            .where((match) => match.id.isNotEmpty)
+            .toList(),
+        degraded: json['degraded'] as bool? ?? false,
+      );
+}
+
 class ChatMessage {
   const ChatMessage({required this.role, required this.content});
 

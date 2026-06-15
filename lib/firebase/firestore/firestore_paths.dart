@@ -51,6 +51,11 @@ class FirestorePaths {
   /// Global community groups (not per-user)
   static const String communitiesCol = 'communities';
   static String communityDoc(String communityId) => 'communities/$communityId';
+  static String communityDailyActivityDoc(
+    String communityId,
+    String dateKey,
+  ) =>
+      'communities/$communityId/dailyActivity/$dateKey';
 
   /// Which communities a user has joined
   static String userCommunitiesCol(String uid) => 'users/$uid/communities';

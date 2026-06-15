@@ -64,6 +64,7 @@ class MicroTask {
     required this.scheduledDate,
     this.done = false,
     this.points = 15,
+    this.completedAt,
   });
 
   final int id;
@@ -74,6 +75,7 @@ class MicroTask {
   DateTime scheduledDate;
   bool done;
   final int points;
+  DateTime? completedAt;
 }
 
 class GoalProject {
@@ -114,6 +116,10 @@ class CommunityGroup {
     this.similarity = 82,
     this.joined = false,
     this.backendId,
+    this.communityStreak = 0,
+    this.lastCommunityStreakDateKey,
+    this.activeMemberCountToday = 0,
+    this.requiredActiveMembersToday = 1,
   });
 
   final String name;
@@ -122,6 +128,10 @@ class CommunityGroup {
   final String description;
   final int similarity;
   bool joined;
+  final int communityStreak;
+  final String? lastCommunityStreakDateKey;
+  final int activeMemberCountToday;
+  final int requiredActiveMembersToday;
 
   /// Firestore document id for persisted community groups.
   /// Seed/demo communities may keep this null and still work locally.

@@ -67,11 +67,9 @@ class GoalRepository {
     // int.tryParse() and also serves as the Firestore document path.
     // Previously a UUID was used as the doc path but an incompatible hashCode
     // int was stored in the model — making update/delete silently fail.
-    final id = goal.id != 0
-        ? goal.id
-        : DateTime.now().microsecondsSinceEpoch;
+    final id = goal.id != 0 ? goal.id : DateTime.now().microsecondsSinceEpoch;
     final docPath = FirestorePaths.goalDoc(uid, id.toString());
-    final data    = _goalToMap(goal, id: id);
+    final data = _goalToMap(goal, id: id);
     await _svc.setDoc(docPath, data);
     return _copyGoalWithId(goal, id);
   }
@@ -82,12 +80,12 @@ class GoalRepository {
     await _svc.updateDoc(
       FirestorePaths.goalDoc(uid, goal.id.toString()),
       {
-        'title':     goal.title,
+        'title': goal.title,
         'importance': goal.importance,
-        'category':  goal.category,
-        'deadline':  Timestamp.fromDate(goal.deadline),
+        'category': goal.category,
+        'deadline': Timestamp.fromDate(goal.deadline),
         // FIX: persist progress so watchGoals reads the correct value
-        'progress':  goal.progress,
+        'progress': goal.progress,
         'updatedAt': FirestoreService.serverTimestamp,
       },
     );
@@ -112,7 +110,7 @@ class GoalRepository {
     await _svc.updateDoc(
       FirestorePaths.goalDoc(uid, goalId),
       {
-        'progress':  progress.clamp(0.0, 1.0),
+        'progress': progress.clamp(0.0, 1.0),
         'updatedAt': FirestoreService.serverTimestamp,
       },
     );
@@ -132,18 +130,27 @@ class GoalRepository {
   }
 
   Future<void> toggleTask(
-      String uid, String goalId, String taskId, bool done) async {
+    String uid,
+    String goalId,
+    String taskId,
+    bool done, {
+    DateTime? completedAt,
+  }) async {
     await _svc.updateDoc(
       FirestorePaths.goalDoc(uid, goalId),
       {
         'tasksMap.$taskId.done': done,
+        'tasksMap.$taskId.completedAt': done
+            ? (completedAt == null
+                ? FirestoreService.serverTimestamp
+                : Timestamp.fromDate(completedAt))
+            : FieldValue.delete(),
         'updatedAt': FirestoreService.serverTimestamp,
       },
     );
   }
 
-  Future<void> deleteTask(
-      String uid, String goalId, String taskId) async {
+  Future<void> deleteTask(String uid, String goalId, String taskId) async {
     await _svc.updateDoc(
       FirestorePaths.goalDoc(uid, goalId),
       {
@@ -162,30 +169,33 @@ class GoalRepository {
     }
 
     return {
-      'id':         id,                            // FIX: always an int
-      'title':      goal.title,
+      'id': id, // FIX: always an int
+      'title': goal.title,
       'importance': goal.importance,
-      'category':   goal.category,
-      'deadline':   Timestamp.fromDate(goal.deadline),
-      'colorFrom':  goal.from.toARGB32(),
-      'colorTo':    goal.to.toARGB32(),
+      'category': goal.category,
+      'deadline': Timestamp.fromDate(goal.deadline),
+      'colorFrom': goal.from.toARGB32(),
+      'colorTo': goal.to.toARGB32(),
       // FIX: persist progress so it survives a reload
-      'progress':   goal.progress.clamp(0.0, 1.0),
-      'tasksMap':   tasksMap,
-      'createdAt':  FirestoreService.serverTimestamp,
-      'updatedAt':  FirestoreService.serverTimestamp,
+      'progress': goal.progress.clamp(0.0, 1.0),
+      'tasksMap': tasksMap,
+      'createdAt': FirestoreService.serverTimestamp,
+      'updatedAt': FirestoreService.serverTimestamp,
     };
   }
 
   Map<String, dynamic> _taskToMap(MicroTask task) => {
-        'id':              task.id,
-        'goalId':          task.goalId,
-        'title':           task.title,
+        'id': task.id,
+        'goalId': task.goalId,
+        'title': task.title,
         'durationMinutes': task.durationMinutes,
-        'load':            task.load.name,
-        'scheduledDate':   Timestamp.fromDate(task.scheduledDate),
-        'done':            task.done,
-        'points':          task.points,
+        'load': task.load.name,
+        'scheduledDate': Timestamp.fromDate(task.scheduledDate),
+        'done': task.done,
+        'points': task.points,
+        'completedAt': task.completedAt == null
+            ? null
+            : Timestamp.fromDate(task.completedAt!),
       };
 
   GoalProject? _goalFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -194,26 +204,25 @@ class GoalRepository {
 
       // FIX: 'id' is now always an int — int.tryParse never falls back to
       // hashCode, so the parsed ID matches the Firestore document path.
-      final id = (d['id'] as num?)?.toInt()
-          ?? int.tryParse(doc.id)
-          ?? doc.id.hashCode;
+      final id =
+          (d['id'] as num?)?.toInt() ?? int.tryParse(doc.id) ?? doc.id.hashCode;
 
       final tasksMap = (d['tasksMap'] as Map<String, dynamic>? ?? {});
-      final tasks    = tasksMap.values
+      final tasks = tasksMap.values
           .map((v) => _taskFromMap(v as Map<String, dynamic>))
           .toList();
 
       return GoalProject(
-        id:         id,
-        title:      d['title'] as String,
+        id: id,
+        title: d['title'] as String,
         importance: (d['importance'] as num).toInt(),
-        category:   d['category'] as String,
-        deadline:   (d['deadline'] as Timestamp).toDate(),
-        from:       Color(d['colorFrom'] as int),
-        to:         Color(d['colorTo'] as int),
+        category: d['category'] as String,
+        deadline: (d['deadline'] as Timestamp).toDate(),
+        from: Color(d['colorFrom'] as int),
+        to: Color(d['colorTo'] as int),
         // FIX: read progress field so the UI shows the correct value
-        progress:   (d['progress'] as num?)?.toDouble() ?? 0.0,
-        tasks:      tasks,
+        progress: (d['progress'] as num?)?.toDouble() ?? 0.0,
+        tasks: tasks,
       );
     } catch (e) {
       debugPrint('⚠️  Failed to parse goal ${doc.id}: $e');
@@ -221,26 +230,30 @@ class GoalRepository {
     }
   }
 
-  MicroTask _taskFromMap(Map<String, dynamic> m) => MicroTask(
-        id:              (m['id'] as num).toInt(),
-        goalId:          (m['goalId'] as num).toInt(),
-        title:           m['title'] as String,
-        durationMinutes: (m['durationMinutes'] as num).toInt(),
-        load:            TaskLoad.values.byName(m['load'] as String),
-        scheduledDate:   (m['scheduledDate'] as Timestamp).toDate(),
-        done:            m['done'] as bool? ?? false,
-        points:          (m['points'] as num?)?.toInt() ?? 15,
-      );
+  MicroTask _taskFromMap(Map<String, dynamic> m) {
+    final completedAt = m['completedAt'];
+    return MicroTask(
+      id: (m['id'] as num).toInt(),
+      goalId: (m['goalId'] as num).toInt(),
+      title: m['title'] as String,
+      durationMinutes: (m['durationMinutes'] as num).toInt(),
+      load: TaskLoad.values.byName(m['load'] as String),
+      scheduledDate: (m['scheduledDate'] as Timestamp).toDate(),
+      done: m['done'] as bool? ?? false,
+      points: (m['points'] as num?)?.toInt() ?? 15,
+      completedAt: completedAt is Timestamp ? completedAt.toDate() : null,
+    );
+  }
 
   GoalProject _copyGoalWithId(GoalProject goal, int id) => GoalProject(
-        id:         id,
-        title:      goal.title,
+        id: id,
+        title: goal.title,
         importance: goal.importance,
-        category:   goal.category,
-        deadline:   goal.deadline,
-        from:       goal.from,
-        to:         goal.to,
-        progress:   goal.progress,
-        tasks:      goal.tasks,
+        category: goal.category,
+        deadline: goal.deadline,
+        from: goal.from,
+        to: goal.to,
+        progress: goal.progress,
+        tasks: goal.tasks,
       );
 }

@@ -15,6 +15,7 @@ class GenkitConfig {
   static const String fnTaskGenerator = 'taskGenerator';
   static const String fnMoodAdvisor = 'moodAdvisor';
   static const String fnFocusInsight = 'focusInsight';
+  static const String fnSocialSuggestions = 'socialSuggestions';
   static const String fnAgentPlanner = 'agentPlanner';
   static const String fnAgentModify = 'agentModify';
   static const String fnAgentReassign = 'agentReassign';
