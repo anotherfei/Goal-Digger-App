@@ -2649,8 +2649,33 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
               ),
             ),
             const SizedBox(height: 16),
-            SectionTitle(title: 'AI friend suggestions'),
-            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.only(left: 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'AI friend suggestions',
+                    style: TextStyle(
+                      color: gdInk,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      height: 1.05,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Ranked by goal fit and streak momentum.',
+                    style: TextStyle(
+                      color: gdMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
             StreamBuilder<List<_PublicProfile>>(
               stream: _profileStream,
               builder: (context, snapshot) {
@@ -2698,47 +2723,115 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                         loading: false,
                       ),
                     for (final profile in profiles)
-                      AppCard(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        child: ListTile(
-                          isThreeLine: _aiMatches[profile.uid] != null,
-                          leading: InkResponse(
-                            onTap: () => widget.onProfileDetails(profile),
-                            radius: 28,
-                            child: _Avatar(
-                              photoUrl: profile.photoUrl,
-                              label: profile.displayName,
-                            ),
-                          ),
-                          title: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(profile.displayName,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w900)),
-                              if (_aiMatches[profile.uid] != null) ...[
-                                const SizedBox(height: 4),
-                                _AiFitLine(match: _aiMatches[profile.uid]!),
-                              ],
-                            ],
-                          ),
-                          subtitle: Text(
-                            '${profile.username} · ${profile.streak} day streak',
-                            style: TextStyle(
-                                color: gdMuted, fontWeight: FontWeight.w700),
-                          ),
-                          trailing: FilledButton(
-                            onPressed:
-                                _adding ? null : () => unawaited(_add(profile)),
-                            child: const Text('Add'),
-                          ),
-                        ),
+                      _FriendSuggestionCard(
+                        profile: profile,
+                        aiMatch: _aiMatches[profile.uid],
+                        isAdding: _adding,
+                        onOpenProfile: () => widget.onProfileDetails(profile),
+                        onAdd: () => unawaited(_add(profile)),
                       ),
                   ],
                 );
               },
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FriendSuggestionCard extends StatelessWidget {
+  const _FriendSuggestionCard({
+    required this.profile,
+    required this.aiMatch,
+    required this.isAdding,
+    required this.onOpenProfile,
+    required this.onAdd,
+  });
+
+  final _PublicProfile profile;
+  final _AiSuggestionMatch? aiMatch;
+  final bool isAdding;
+  final VoidCallback onOpenProfile;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    final streakLabel =
+        profile.streak == 1 ? '1 day streak' : '${profile.streak} day streak';
+    final metadata = '${profile.username} - $streakLabel';
+
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onOpenProfile,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _Avatar(
+                  photoUrl: profile.photoUrl,
+                  label: profile.displayName,
+                  radius: 21,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        profile.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: gdInk,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      if (aiMatch != null) ...[
+                        const SizedBox(height: 4),
+                        _AiFitLine(match: aiMatch!),
+                      ],
+                      const SizedBox(height: 5),
+                      Text(
+                        metadata,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: gdMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton(
+                  onPressed: isAdding ? null : onAdd,
+                  style: FilledButton.styleFrom(
+                    fixedSize: const Size(76, 48),
+                    minimumSize: const Size(76, 48),
+                    padding: EdgeInsets.zero,
+                    textStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: const Text('Add'),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -5578,15 +5671,18 @@ class _AiFitLine extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(Icons.auto_awesome_rounded, size: 16, color: gdPrimary),
-        const SizedBox(width: 6),
+        Icon(Icons.auto_awesome_rounded, size: 14, color: gdPrimary),
+        const SizedBox(width: 5),
         Expanded(
           child: Text(
             label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: gdPrimary,
               fontWeight: FontWeight.w800,
               fontSize: 12,
+              height: 1.18,
             ),
           ),
         ),
