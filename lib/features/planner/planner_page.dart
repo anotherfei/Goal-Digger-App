@@ -884,6 +884,7 @@ class _ActiveGoalTile extends StatelessWidget {
     final dueSoon = !overdue && daysLeft <= 2;
     final complete = goal.progress >= 1;
     final previewTasks = goal.tasks.take(5).toList();
+    final hiddenTasks = goal.tasks.skip(previewTasks.length).toList();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -1014,18 +1015,8 @@ class _ActiveGoalTile extends StatelessWidget {
                       children: [
                         for (final task in previewTasks)
                           _GoalTaskPreviewRow(task: task),
-                        if (goal.tasks.length > previewTasks.length)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              '+${goal.tasks.length - previewTasks.length} more tasks',
-                              style: TextStyle(
-                                color: gdMuted,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
+                        if (hiddenTasks.isNotEmpty)
+                          _MoreGoalTasksExpansionTile(tasks: hiddenTasks),
                       ],
                     ),
                 ],
@@ -1034,6 +1025,71 @@ class _ActiveGoalTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _MoreGoalTasksExpansionTile extends StatefulWidget {
+  const _MoreGoalTasksExpansionTile({required this.tasks});
+
+  final List<MicroTask> tasks;
+
+  @override
+  State<_MoreGoalTasksExpansionTile> createState() =>
+      _MoreGoalTasksExpansionTileState();
+}
+
+class _MoreGoalTasksExpansionTileState
+    extends State<_MoreGoalTasksExpansionTile> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final taskLabel = 'task${widget.tasks.length == 1 ? '' : 's'}';
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: _expanded
+          ? Column(
+              children: [
+                for (final task in widget.tasks)
+                  _GoalTaskPreviewRow(task: task),
+                Align(
+                  alignment: Alignment.center,
+                  child: TextButton.icon(
+                    onPressed: () => setState(() => _expanded = false),
+                    icon: const Icon(Icons.keyboard_arrow_up_rounded),
+                    label: const Text('Show fewer tasks'),
+                  ),
+                ),
+              ],
+            )
+          : SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                style: TextButton.styleFrom(
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  foregroundColor: gdPrimary,
+                ),
+                onPressed: () => setState(() => _expanded = true),
+                child: Row(
+                  children: [
+                    Text(
+                      '+${widget.tasks.length} more $taskLabel',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const Spacer(),
+                    const Icon(Icons.keyboard_arrow_down_rounded),
+                  ],
+                ),
+              ),
+            ),
     );
   }
 }
