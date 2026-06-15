@@ -655,17 +655,38 @@ class _ActiveGoalsSection extends StatefulWidget {
 
 class _ActiveGoalsSectionState extends State<_ActiveGoalsSection> {
   static const _collapsedCount = 4;
+  final TextEditingController _searchController = TextEditingController();
   bool _showAll = false;
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  bool _matchesGoalSearch(GoalProject goal, String query) {
+    final normalizedQuery = query.trim().toLowerCase();
+    if (normalizedQuery.isEmpty) return true;
+    return goal.title.toLowerCase().contains(normalizedQuery) ||
+        goal.category.toLowerCase().contains(normalizedQuery);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final goals = [...widget.goals]..sort((a, b) {
+    final allGoals = [...widget.goals]..sort((a, b) {
         final aDone = a.progress >= 1;
         final bDone = b.progress >= 1;
         if (aDone != bDone) return aDone ? 1 : -1;
         return a.deadline.compareTo(b.deadline);
       });
-    final activeCount = goals.where((goal) => goal.progress < 1).length;
+    final query = _searchQuery.trim().toLowerCase();
+    final goals = query.isEmpty
+        ? allGoals
+        : allGoals
+            .where((goal) => _matchesGoalSearch(goal, query))
+            .toList(growable: false);
+    final activeCount = allGoals.where((goal) => goal.progress < 1).length;
     final visibleCount = _showAll || goals.length <= _collapsedCount
         ? goals.length
         : _collapsedCount;
@@ -696,7 +717,7 @@ class _ActiveGoalsSectionState extends State<_ActiveGoalsSection> {
         ),
         const SizedBox(height: 6),
         Text(
-          goals.length <= _collapsedCount
+          allGoals.length <= _collapsedCount
               ? 'Tap a goal to review its schedule.'
               : 'Showing the nearest goals first. Expand only the ones you need.',
           style: TextStyle(
@@ -706,7 +727,35 @@ class _ActiveGoalsSectionState extends State<_ActiveGoalsSection> {
           ),
         ),
         const SizedBox(height: 12),
-        if (goals.isEmpty)
+        TextField(
+          controller: _searchController,
+          textInputAction: TextInputAction.search,
+          onChanged: (value) {
+            setState(() {
+              _searchQuery = value;
+              _showAll = false;
+            });
+          },
+          decoration: InputDecoration(
+            hintText: 'Search goals',
+            prefixIcon: const Icon(Icons.search_rounded),
+            suffixIcon: _searchQuery.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear search',
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() {
+                        _searchQuery = '';
+                        _showAll = false;
+                      });
+                    },
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (allGoals.isEmpty)
           EmptyStateCard(
             icon: Icons.flag_circle_rounded,
             title: 'No goals yet',
@@ -714,6 +763,38 @@ class _ActiveGoalsSectionState extends State<_ActiveGoalsSection> {
                 'Create your first project and Goal Digger will turn it into small, scheduled actions.',
             cta: 'Create your first project',
             onPressed: widget.onCreateFirstGoal,
+          )
+        else if (goals.isEmpty)
+          AppCard(
+            color: gdCardLight,
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: gdPrimarySoft,
+                    child: Icon(Icons.search_off_rounded, color: gdPrimary),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('No matching goals', style: GdText.titleMedium),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Try a different goal title or category.',
+                          style: TextStyle(
+                            color: gdMuted,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           )
         else ...[
           AnimatedSize(
@@ -770,6 +851,30 @@ class _ActiveGoalTile extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onEditDeadline;
   final VoidCallback onEditPriority;
+
+  String get _priorityLabel {
+    if (goal.importance >= 4) return 'High priority';
+    if (goal.importance <= 2) return 'Low priority';
+    return 'Medium priority';
+  }
+
+  IconData get _priorityIcon {
+    if (goal.importance >= 4) return Icons.priority_high_rounded;
+    if (goal.importance <= 2) return Icons.low_priority_rounded;
+    return Icons.star_half_rounded;
+  }
+
+  Color get _priorityColor {
+    if (goal.importance >= 4) return gdWarning;
+    if (goal.importance <= 2) return gdMuted;
+    return gdPrimary;
+  }
+
+  Color get _prioritySurface {
+    if (goal.importance >= 4) return gdWarningSoft;
+    if (goal.importance <= 2) return gdCardLight;
+    return gdPrimarySoft;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -848,6 +953,12 @@ class _ActiveGoalTile extends StatelessWidget {
                         label: goal.category,
                         color: gdPrimary,
                         surface: gdPrimarySoft,
+                      ),
+                      _GoalMetaPill(
+                        icon: _priorityIcon,
+                        label: _priorityLabel,
+                        color: _priorityColor,
+                        surface: _prioritySurface,
                       ),
                       _GoalMetaPill(
                         icon: overdue

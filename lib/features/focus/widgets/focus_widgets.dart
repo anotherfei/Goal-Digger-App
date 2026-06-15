@@ -63,15 +63,8 @@ class _FocusSetupSheetState extends State<FocusSetupSheet>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    final openTasks = _allOpenTasks();
-    final todayTasks = openTasks
-        .where((task) => dateOnly(task.scheduledDate) == dateOnly(widget.today))
-        .toList();
-    _selectedTask = todayTasks.isNotEmpty
-        ? todayTasks.first
-        : openTasks.isEmpty
-            ? null
-            : openTasks.first;
+    final todayTasks = _todayOpenTasks();
+    _selectedTask = todayTasks.isEmpty ? null : todayTasks.first;
     _selectedDuration = _selectedTask?.durationMinutes ?? 25;
     unawaited(_refreshAppBlockingStatus());
   }
@@ -97,21 +90,27 @@ class _FocusSetupSheetState extends State<FocusSetupSheet>
     return value.clamp(1, 240).toInt();
   }
 
-  List<MicroTask> _allOpenTasks() {
+  List<MicroTask> _todayOpenTasks() {
     return widget.goals
         .expand((goal) => goal.tasks)
-        .where((task) => !task.done)
-        .toList();
+        .where(
+          (task) =>
+              !task.done &&
+              dateOnly(task.scheduledDate) == dateOnly(widget.today),
+        )
+        .toList()
+      ..sort((a, b) => a.scheduledDate.compareTo(b.scheduledDate));
   }
 
   List<MicroTask> _openTasksForGoal(GoalProject goal) {
-    return goal.tasks.where((task) => !task.done).toList()
-      ..sort((a, b) {
-        final aToday = dateOnly(a.scheduledDate) == dateOnly(widget.today);
-        final bToday = dateOnly(b.scheduledDate) == dateOnly(widget.today);
-        if (aToday != bToday) return aToday ? -1 : 1;
-        return a.scheduledDate.compareTo(b.scheduledDate);
-      });
+    return goal.tasks
+        .where(
+          (task) =>
+              !task.done &&
+              dateOnly(task.scheduledDate) == dateOnly(widget.today),
+        )
+        .toList()
+      ..sort((a, b) => a.scheduledDate.compareTo(b.scheduledDate));
   }
 
   void _selectTask(MicroTask task) {
@@ -325,10 +324,10 @@ class _FocusSetupSheetState extends State<FocusSetupSheet>
                         ],
                       ),
                       const SizedBox(height: 10),
-                      if (_allOpenTasks().isEmpty) ...[
+                      if (_todayOpenTasks().isEmpty) ...[
                         const SizedBox(height: 10),
                         Text(
-                          'No unfinished subtasks yet, so this will start a custom focus session.',
+                          'No unfinished tasks scheduled for today, so this will start a custom focus session.',
                           style: TextStyle(
                               color: gdMuted, fontWeight: FontWeight.w700),
                         ),
@@ -339,7 +338,6 @@ class _FocusSetupSheetState extends State<FocusSetupSheet>
                           _GoalTaskExpansionTile(
                             goal: goal,
                             tasks: _openTasksForGoal(goal),
-                            today: widget.today,
                             selectedTask: _selectedTask,
                             onSelectTask: _selectTask,
                           ),
@@ -710,27 +708,24 @@ class _GoalTaskExpansionTile extends StatelessWidget {
   const _GoalTaskExpansionTile({
     required this.goal,
     required this.tasks,
-    required this.today,
     required this.selectedTask,
     required this.onSelectTask,
   });
 
   final GoalProject goal;
   final List<MicroTask> tasks;
-  final DateTime today;
   final MicroTask? selectedTask;
   final ValueChanged<MicroTask> onSelectTask;
 
   @override
   Widget build(BuildContext context) {
-    final todayCount = tasks
-        .where((task) => dateOnly(task.scheduledDate) == dateOnly(today))
-        .length;
     final selectedInGoal =
         selectedTask != null && selectedTask!.goalId == goal.id;
+    final taskCountLabel =
+        tasks.length == 1 ? '1 task today' : '${tasks.length} tasks today';
 
     return ExpansionTile(
-      initiallyExpanded: selectedInGoal || todayCount > 0,
+      initiallyExpanded: selectedInGoal,
       tilePadding: EdgeInsets.zero,
       childrenPadding: const EdgeInsets.only(bottom: 8),
       leading: CircleAvatar(
@@ -742,7 +737,7 @@ class _GoalTaskExpansionTile extends StatelessWidget {
         style: TextStyle(fontWeight: FontWeight.w900, color: gdInk),
       ),
       subtitle: Text(
-        '${tasks.length} open subtasks${todayCount == 0 ? '' : ' - $todayCount today'}',
+        taskCountLabel,
         style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
       ),
       children: [
