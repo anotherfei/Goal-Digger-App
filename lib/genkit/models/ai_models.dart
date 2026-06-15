@@ -75,7 +75,8 @@ class GoalCoachRequest {
         'goalTitle': goalTitle,
         'progressPercent': progressPercent,
         // Key must match the backend Zod schema field name exactly.
-        'conversationHistory': conversationHistory.map((m) => m.toJson()).toList(),
+        'conversationHistory':
+            conversationHistory.map((m) => m.toJson()).toList(),
       };
 }
 
@@ -199,10 +200,10 @@ class MoodAdvisorResponse {
 
   factory MoodAdvisorResponse.fromJson(Map<String, dynamic> json) =>
       MoodAdvisorResponse(
-        message:   json['message']    as String? ?? '',
-        emoji:     json['emoji']      as String? ?? '✨',
+        message: json['message'] as String? ?? '',
+        emoji: json['emoji'] as String? ?? '✨',
         suggestion: json['suggestion'] as String? ?? '',
-        intensity:  json['intensity']  as String? ?? 'medium',
+        intensity: json['intensity'] as String? ?? 'medium',
       );
 }
 
@@ -244,10 +245,10 @@ class FocusInsightResponse {
 
   factory FocusInsightResponse.fromJson(Map<String, dynamic> json) =>
       FocusInsightResponse(
-        insight:      json['insight']      as String? ?? '',
+        insight: json['insight'] as String? ?? '',
         nextStepHint: json['nextStepHint'] as String? ?? '',
-        coinsEarned:  (json['coinsEarned'] as num?)?.toInt() ?? 15,
-        badge:        json['badge']        as String? ?? '',
+        coinsEarned: (json['coinsEarned'] as num?)?.toInt() ?? 15,
+        badge: json['badge'] as String? ?? '',
       );
 }
 
@@ -296,6 +297,7 @@ class AgentPlannerResponse {
     this.suggestedDeadlineDays,
     this.deadlineSuggestionReason,
     this.milestones = const [],
+    this.milestoneTasks = const [],
     this.milestoneNote,
     this.milestoneNeedsConfirmation = false,
     this.habitInsight,
@@ -344,7 +346,14 @@ class AgentPlannerResponse {
   bool get hasDeadlineSuggestion => suggestedDeadlineDays != null;
 
   /// Ready-to-use milestone titles produced by the createMilestones tool.
+  /// Kept for backward compatibility; prefer [milestoneTasks] when present.
   final List<String> milestones;
+
+  /// Fully AI-decided tasks from the Task Generation Agent — each carries its
+  /// own duration, load, and day offset, so the client schedules them directly
+  /// instead of inferring those values. Empty when the backend returned only
+  /// titles (older builds or the milestone-titles fallback).
+  final List<GeneratedTask> milestoneTasks;
 
   /// Feasibility note when the requested milestone count was scaled back or
   /// flagged as demanding (null when the request was honored as-is).
@@ -407,6 +416,11 @@ class AgentPlannerResponse {
       milestones: (json['milestones'] as List<dynamic>? ?? [])
           .map((e) => e.toString())
           .where((s) => s.trim().isNotEmpty)
+          .toList(),
+      milestoneTasks: (json['milestoneTasks'] as List<dynamic>? ?? [])
+          .whereType<Map<dynamic, dynamic>>()
+          .map((e) => GeneratedTask.fromJson(_asStrMap(e)))
+          .where((t) => t.title.trim().isNotEmpty)
           .toList(),
       milestoneNote: json['milestoneNote']?.toString(),
       milestoneNeedsConfirmation:

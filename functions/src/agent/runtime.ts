@@ -29,6 +29,7 @@ import {
 import { plannerAgent } from "./planner";
 import { reflectionAgent } from "./reflection";
 import { toolRegistry } from "./tools/registry";
+import type { MilestoneTask } from "./tools/tool_create_milestones";
 
 interface AgentRunInput {
   userId: string;
@@ -58,6 +59,7 @@ interface ScheduleResult {
 
 interface MilestonesResult {
   milestones?: string[];
+  tasks?: MilestoneTask[];
   feasibilityNote?: string | null;
   requestedCount?: number | null;
   needsConfirmation?: boolean;
@@ -82,6 +84,9 @@ interface AgentRunResult {
   deadlineSuggestion: DeadlineSuggestion | null;
   // Structured, ready-to-consume outputs (the client reads these directly):
   milestones: string[];
+  // Fully AI-decided tasks (title + duration + load + day). The client uses
+  // these directly instead of inferring durations/loads/days itself.
+  milestoneTasks: MilestoneTask[];
   milestoneNote: string | null;
   milestoneNeedsConfirmation: boolean;
   habitInsight: string | null;
@@ -164,6 +169,7 @@ function rejectedGoalResult(
     positiveGoal: review.positiveGoal,
     deadlineSuggestion: null,
     milestones: [],
+    milestoneTasks: [],
     milestoneNote: message,
     milestoneNeedsConfirmation: false,
     habitInsight: null,
@@ -344,9 +350,12 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
 
   await saveMemory(userId, memoryUpdates);
 
+  const milestoneTasks = Array.isArray(milestonesResult?.tasks)
+    ? (milestonesResult!.tasks as MilestoneTask[])
+    : [];
   const milestones = Array.isArray(milestonesResult?.milestones)
     ? (milestonesResult!.milestones as string[])
-    : [];
+    : milestoneTasks.map((t) => t.title);
 
   return {
     strategy: plan.strategy,
@@ -360,6 +369,7 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
     positiveGoal: true,
     deadlineSuggestion: goalReview.deadlineSuggestion,
     milestones,
+    milestoneTasks,
     milestoneNote: milestonesResult?.feasibilityNote ?? null,
     milestoneNeedsConfirmation: milestonesResult?.needsConfirmation ?? false,
     habitInsight: analysis.productivityInsight ?? null,

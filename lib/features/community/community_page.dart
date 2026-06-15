@@ -28,6 +28,7 @@ class CommunityPage extends StatefulWidget {
     required this.friends,
     required this.friendSuggestions,
     required this.streak,
+    required this.lastStreakDateKey,
     required this.onAddCommunity,
     required this.onJoinCommunity,
     required this.onDeleteCommunity,
@@ -40,6 +41,7 @@ class CommunityPage extends StatefulWidget {
   final List<String> friends;
   final List<String> friendSuggestions;
   final int streak;
+  final String? lastStreakDateKey;
   final VoidCallback onAddCommunity;
   final ValueChanged<CommunityGroup> onJoinCommunity;
   final ValueChanged<CommunityGroup> onDeleteCommunity;
@@ -54,7 +56,8 @@ class _CommunityPageState extends State<CommunityPage> {
   int _tab = 0;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final NotificationRepository _notificationRepository = NotificationRepository();
+  final NotificationRepository _notificationRepository =
+      NotificationRepository();
   final Uuid _uuid = const Uuid();
   bool _profileReady = false;
   bool _allowFriendsError = false;
@@ -65,9 +68,9 @@ class _CommunityPageState extends State<CommunityPage> {
     super.initState();
 
     _friendsErrorTimer = Timer(const Duration(seconds: 2), () {
-        if (mounted) {
-            setState(() => _allowFriendsError = true);
-        }
+      if (mounted) {
+        setState(() => _allowFriendsError = true);
+      }
     });
 
     unawaited(_prepareSocialProfile());
@@ -75,18 +78,19 @@ class _CommunityPageState extends State<CommunityPage> {
 
   Future<void> _prepareSocialProfile() async {
     try {
-        await _ensurePublicProfile();
+      await _ensurePublicProfile();
     } finally {
-        if (mounted) {
-            setState(() => _profileReady = true);
-        }
+      if (mounted) {
+        setState(() => _profileReady = true);
+      }
     }
   }
 
   @override
   void didUpdateWidget(covariant CommunityPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.streak != widget.streak) {
+    if (oldWidget.streak != widget.streak ||
+        oldWidget.lastStreakDateKey != widget.lastStreakDateKey) {
       unawaited(_ensurePublicProfile());
     }
   }
@@ -135,9 +139,10 @@ class _CommunityPageState extends State<CommunityPage> {
 
     final userRef = _usersCollection.doc(user.uid);
     final userSnapshot = await userRef.get();
-    final hasFriendsField =
-        userSnapshot.exists && (userSnapshot.data()?.containsKey('friends') ?? false);
-    final invalidFriendEntries = _invalidFriendEntriesFromData(userSnapshot.data());
+    final hasFriendsField = userSnapshot.exists &&
+        (userSnapshot.data()?.containsKey('friends') ?? false);
+    final invalidFriendEntries =
+        _invalidFriendEntriesFromData(userSnapshot.data());
 
     final userData = <String, dynamic>{
       'uid': user.uid,
@@ -148,6 +153,7 @@ class _CommunityPageState extends State<CommunityPage> {
       'photoUrl': user.photoURL,
       'photoURL': user.photoURL,
       'streak': widget.streak,
+      'lastStreakDateKey': widget.lastStreakDateKey,
       'searchName': searchName,
       'updatedAt': FieldValue.serverTimestamp(),
     };
@@ -170,6 +176,7 @@ class _CommunityPageState extends State<CommunityPage> {
       'username': username,
       'photoUrl': user.photoURL,
       'streak': widget.streak,
+      'lastStreakDateKey': widget.lastStreakDateKey,
       'searchName': searchName,
       'updatedAt': FieldValue.serverTimestamp(),
       if (!userSnapshot.exists) 'createdAt': FieldValue.serverTimestamp(),
@@ -398,7 +405,7 @@ class _CommunityPageState extends State<CommunityPage> {
     final profilesByUid = <String, _FriendProfile>{};
 
     for (final chunk in _chunks(orderedUids, 10)) {
-      final snapshot = await _publicProfiles
+      final snapshot = await _usersCollection
           .where(FieldPath.documentId, whereIn: chunk)
           .get();
 
@@ -437,7 +444,7 @@ class _CommunityPageState extends State<CommunityPage> {
       }
 
       // This can happen when users/{currentUid}.friends contains a UID,
-      // but that user has not created public_profiles/{uid} yet.
+      // but that user document is not readable yet.
       // Do not crash the whole Friends page; show a safe fallback row instead.
       final shortUid = uid.substring(0, min(6, uid.length));
       final displayName = 'Friend $shortUid';
@@ -515,7 +522,8 @@ class _CommunityPageState extends State<CommunityPage> {
     if (uid.isEmpty) return false;
     if (uid.contains(RegExp(r'\s'))) return false;
     if (uid.startsWith('@')) return false;
-    return uid.length >= 6;
+    if (uid.length < 20 || uid.length > 128) return false;
+    return RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(uid);
   }
 
   List<List<T>> _chunks<T>(List<T> values, int size) {
@@ -562,35 +570,45 @@ class _CommunityPageState extends State<CommunityPage> {
 
     await _ensurePublicProfile();
 
-    await _usersCollection.doc(user.uid).set({
-      'friends': FieldValue.arrayUnion([friendUid]),
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    try {
+      await _usersCollection.doc(user.uid).set({
+        'friends': FieldValue.arrayUnion([friendUid]),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } on FirebaseException catch (error) {
+      _showSnack('Could not add friend: ${error.message ?? error.code}');
+      return;
+    }
 
+    // Best-effort: notifying the other user must never fail (or appear to fail)
+    // the friend add itself. A blocked notification write under Firestore rules
+    // should be logged, not thrown past this point.
     final actorName = _cleanDisplayName(user.displayName, user.email);
-
-    await _notificationRepository.addSocialNotification(
+    try {
+      await _notificationRepository.addSocialNotification(
         recipientUid: friendUid,
         actorUid: user.uid,
         notification: AppNotification(
-            id: _uuid.v4(),
-            title: 'New friend',
-            body: '$actorName added you as a friend.',
-            type: AppNotificationType.friend,
-            delivery: NotificationDelivery.inApp,
-            createdAt: DateTime.now(),
-            important: false,
-            sourceId: user.uid,
-            payload: {
-                'actorUid': user.uid,
-                'actorName': actorName,
-                'route': 'friends',
-                'friendUid': user.uid,
-            },
+          id: _uuid.v4(),
+          title: 'New friend',
+          body: '$actorName added you as a friend.',
+          type: AppNotificationType.friend,
+          delivery: NotificationDelivery.inApp,
+          createdAt: DateTime.now(),
+          important: false,
+          sourceId: user.uid,
+          payload: {
+            'actorUid': user.uid,
+            'actorName': actorName,
+            'route': 'friends',
+            'friendUid': user.uid,
+          },
         ),
-     );
+      );
+    } catch (error) {
+      debugPrint('Friend notification failed: $error');
+    }
 
-    widget.onAddFriend(displayName);
     _showSnack('$displayName added to your friends.');
   }
 
@@ -606,7 +624,6 @@ class _CommunityPageState extends State<CommunityPage> {
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
-    widget.onDeleteFriend(friend.displayName);
     _showSnack('${friend.displayName} removed.');
   }
 
@@ -616,7 +633,6 @@ class _CommunityPageState extends State<CommunityPage> {
       SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -729,10 +745,10 @@ class _CommunityPageState extends State<CommunityPage> {
 
   Widget _buildFriendsTab(BuildContext context) {
     if (!_profileReady) {
-    return const Center(
+      return const Center(
         child: Padding(
-        padding: EdgeInsets.all(24),
-        child: CircularProgressIndicator(),
+          padding: EdgeInsets.all(24),
+          child: CircularProgressIndicator(),
         ),
       );
     }
@@ -740,22 +756,22 @@ class _CommunityPageState extends State<CommunityPage> {
       stream: _friendsDataStream(),
       builder: (context, snapshot) {
         if (snapshot.hasError && !_allowFriendsError) {
-            return const Center(
-                child: Padding(
-                padding: EdgeInsets.all(24),
-                child: CircularProgressIndicator(),
-                ),
-            );
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            ),
+          );
         }
 
         if (snapshot.hasError) {
-            return HelpfulErrorBox(
-                title: 'Friends failed to load',
-                message:
-                    'Check Firestore rules for users/{uid}.friends and user profile reads. Details: ${snapshot.error}',
-                actionLabel: 'OK',
-                showAction: false,
-            );
+          return HelpfulErrorBox(
+            title: 'Friends failed to load',
+            message:
+                'Check Firestore rules for users/{uid}.friends and user profile reads. Details: ${snapshot.error}',
+            actionLabel: 'OK',
+            showAction: false,
+          );
         }
 
         final friendsData = snapshot.data ??
@@ -826,7 +842,8 @@ class _CommunityPageState extends State<CommunityPage> {
               ),
             ),
             const SizedBox(height: 18),
-            SectionTitle(title: 'Friends & chats', trailing: '${friends.length}'),
+            SectionTitle(
+                title: 'Friends & chats', trailing: '${friends.length}'),
             const SizedBox(height: 10),
             if (snapshot.connectionState == ConnectionState.waiting &&
                 snapshot.data == null)
@@ -897,17 +914,15 @@ class _CommunityPageState extends State<CommunityPage> {
     final user = _user;
     if (user == null) return Stream.value(const []);
 
-    return _communitiesCollection
-        .limit(100)
-        .snapshots()
-        .map((snapshot) {
+    return _communitiesCollection.limit(100).snapshots().map((snapshot) {
       final communities = snapshot.docs
           .map((doc) => _DbCommunity.fromDoc(doc, currentUid: user.uid))
           .toList();
 
       communities.sort((a, b) {
         if (a.joined != b.joined) return a.joined ? -1 : 1;
-        return _timestampMillis(b.updatedAt).compareTo(_timestampMillis(a.updatedAt));
+        return _timestampMillis(b.updatedAt)
+            .compareTo(_timestampMillis(a.updatedAt));
       });
       return communities;
     });
@@ -946,7 +961,8 @@ class _CommunityPageState extends State<CommunityPage> {
         'members': [user.uid],
         'memberCount': 1,
         'joinCode': joinCode,
-        'searchText': _communitySearchText(name, tag, 'A community for people working on $name.', joinCode),
+        'searchText': _communitySearchText(
+            name, tag, 'A community for people working on $name.', joinCode),
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -967,13 +983,19 @@ class _CommunityPageState extends State<CommunityPage> {
 
   String _communityTagForName(String name) {
     final cleaned = name.trim().toLowerCase();
-    if (cleaned.contains('exam') || cleaned.contains('study') || cleaned.contains('midterm')) {
+    if (cleaned.contains('exam') ||
+        cleaned.contains('study') ||
+        cleaned.contains('midterm')) {
       return 'Study';
     }
-    if (cleaned.contains('fit') || cleaned.contains('gym') || cleaned.contains('workout')) {
+    if (cleaned.contains('fit') ||
+        cleaned.contains('gym') ||
+        cleaned.contains('workout')) {
       return 'Fitness';
     }
-    if (cleaned.contains('code') || cleaned.contains('app') || cleaned.contains('project')) {
+    if (cleaned.contains('code') ||
+        cleaned.contains('app') ||
+        cleaned.contains('project')) {
       return 'Coding';
     }
     if (cleaned.contains('trade') || cleaned.contains('finance')) {
@@ -1206,7 +1228,8 @@ class _CommunityPageState extends State<CommunityPage> {
           final snapshot = await transaction.get(ref);
           if (!snapshot.exists) return;
 
-          final members = _stringListFromRaw(snapshot.data()?['members']).toSet();
+          final members =
+              _stringListFromRaw(snapshot.data()?['members']).toSet();
           if (!members.contains(user.uid)) return;
 
           members.remove(user.uid);
@@ -1237,7 +1260,8 @@ class _CommunityPageState extends State<CommunityPage> {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      _showSnack(isOwner ? '${community.name} deleted.' : 'Left ${community.name}.');
+      _showSnack(
+          isOwner ? '${community.name} deleted.' : 'Left ${community.name}.');
     } on FirebaseException catch (error) {
       _showSnack('Community update failed: ${error.message ?? error.code}');
     } catch (error) {
@@ -1278,7 +1302,9 @@ class _CommunityPageState extends State<CommunityPage> {
                     Text(
                       'Create or join community',
                       style: TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.w900, color: gdInk),
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: gdInk),
                     ),
                     const SizedBox(height: 10),
                     TextField(
@@ -1287,14 +1313,16 @@ class _CommunityPageState extends State<CommunityPage> {
                         labelText: 'Create a community',
                         hintText: 'Example: Midterm study group',
                       ),
-                      onSubmitted: (_) => unawaited(_createCommunityFromInput()),
+                      onSubmitted: (_) =>
+                          unawaited(_createCommunityFromInput()),
                     ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
                           child: FilledButton.icon(
-                            onPressed: () => unawaited(_createCommunityFromInput()),
+                            onPressed: () =>
+                                unawaited(_createCommunityFromInput()),
                             icon: const Icon(Icons.add_rounded),
                             label: const Text('Create'),
                           ),
@@ -1314,7 +1342,8 @@ class _CommunityPageState extends State<CommunityPage> {
               ),
             ),
             const SizedBox(height: 18),
-            SectionTitle(title: 'Community streak leaderboard', trailing: 'TOP 3'),
+            SectionTitle(
+                title: 'Community streak leaderboard', trailing: 'TOP 3'),
             const SizedBox(height: 10),
             AppCard(
               child: Padding(
@@ -1330,7 +1359,8 @@ class _CommunityPageState extends State<CommunityPage> {
                     else if (topThree.isEmpty)
                       const HelpfulErrorBox(
                         title: 'No communities yet',
-                        message: 'Create the first real community in Firestore.',
+                        message:
+                            'Create the first real community in Firestore.',
                         actionLabel: 'OK',
                         showAction: false,
                       )
@@ -1349,8 +1379,8 @@ class _CommunityPageState extends State<CommunityPage> {
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
-                          onPressed: () =>
-                              _openCommunityLeaderboardPage(context, leaderboard),
+                          onPressed: () => _openCommunityLeaderboardPage(
+                              context, leaderboard),
                           icon: const Icon(Icons.emoji_events_rounded),
                           label: const Text('View full leaderboard'),
                         ),
@@ -1361,7 +1391,8 @@ class _CommunityPageState extends State<CommunityPage> {
               ),
             ),
             const SizedBox(height: 18),
-            SectionTitle(title: 'My community list', trailing: '${joined.length}'),
+            SectionTitle(
+                title: 'My community list', trailing: '${joined.length}'),
             const SizedBox(height: 10),
             if (snapshot.connectionState == ConnectionState.waiting &&
                 snapshot.data == null)
@@ -1377,7 +1408,8 @@ class _CommunityPageState extends State<CommunityPage> {
                 children: [
                   const HelpfulErrorBox(
                     title: 'No joined communities yet',
-                    message: 'Find a real Firestore community or create your own group.',
+                    message:
+                        'Find a real Firestore community or create your own group.',
                     actionLabel: 'Got it',
                     showAction: false,
                   ),
@@ -1484,7 +1516,9 @@ class _CommunityPageState extends State<CommunityPage> {
         builder: (_) => _FindFriendsPage(
           currentUid: _user?.uid,
           publicProfiles: _publicProfiles,
-          currentFriendUids: Set<String>.from(currentFriendUids ?? const <String>{}),
+          usersCollection: _usersCollection,
+          currentFriendUids:
+              Set<String>.from(currentFriendUids ?? const <String>{}),
           onProfileDetails: (profile) =>
               _openPublicUserDetailsPage(context, profile),
           onAddFriend: _addFriend,
@@ -1504,7 +1538,10 @@ class _CommunityPageState extends State<CommunityPage> {
           onDelete: (friend) => unawaited(_deleteFriend(friend)),
           onFindFriends: () => _openFindFriendsPage(
             context,
-            friends.where((friend) => friend.isFriend).map((friend) => friend.uid).toSet(),
+            friends
+                .where((friend) => friend.isFriend)
+                .map((friend) => friend.uid)
+                .toSet(),
           ),
         ),
       ),
@@ -1605,7 +1642,8 @@ class _CommunityPageState extends State<CommunityPage> {
           currentUid: _user?.uid ?? '',
           onChat: (latestGroup) => _openCommunityChatPage(context, latestGroup),
           onJoin: (latestGroup) => unawaited(_joinCommunity(latestGroup)),
-          onDelete: (latestGroup) => unawaited(_deleteOrLeaveCommunity(latestGroup)),
+          onDelete: (latestGroup) =>
+              unawaited(_deleteOrLeaveCommunity(latestGroup)),
         ),
       ),
     );
@@ -1922,7 +1960,8 @@ class _AllFriendsPageState extends State<_AllFriendsPage> {
                 onDetails: () => widget.onDetails(friend),
                 onChat: () => widget.onChat(friend),
                 onAdd: () => widget.onAdd(friend),
-                onDelete: friend.isFriend ? () => widget.onDelete(friend) : null,
+                onDelete:
+                    friend.isFriend ? () => widget.onDelete(friend) : null,
               ),
           ],
         ),
@@ -2038,17 +2077,18 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
   final TextEditingController _searchController = TextEditingController();
   final Set<String> _joiningCommunityIds = <String>{};
   String _query = '';
+  late final Stream<List<_DbCommunity>> _communitiesStream;
 
   @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  Stream<List<_DbCommunity>> _communitiesStream() {
-    return widget.communitiesCollection.limit(100).snapshots().map((snapshot) {
+  void initState() {
+    super.initState();
+    // Subscribe once; the search query filters the cached snapshot in the
+    // builder (see _filterCommunities) so typing does not rebuild the stream.
+    _communitiesStream =
+        widget.communitiesCollection.limit(100).snapshots().map((snapshot) {
       final communities = snapshot.docs
-          .map((doc) => _DbCommunity.fromDoc(doc, currentUid: widget.currentUid))
+          .map(
+              (doc) => _DbCommunity.fromDoc(doc, currentUid: widget.currentUid))
           .toList();
 
       communities.sort((a, b) {
@@ -2058,6 +2098,12 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
 
       return communities;
     });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   List<_DbCommunity> _filterCommunities(List<_DbCommunity> communities) {
@@ -2124,7 +2170,7 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
             SectionTitle(title: 'Community suggestions'),
             const SizedBox(height: 10),
             StreamBuilder<List<_DbCommunity>>(
-              stream: _communitiesStream(),
+              stream: _communitiesStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting &&
                     snapshot.data == null) {
@@ -2148,7 +2194,8 @@ class _FindCommunitiesPageState extends State<_FindCommunitiesPage> {
 
                 final communities = snapshot.data ?? const <_DbCommunity>[];
                 final filtered = _filterCommunities(communities);
-                final joinedCount = communities.where((group) => group.joined).length;
+                final joinedCount =
+                    communities.where((group) => group.joined).length;
 
                 if (filtered.isEmpty) {
                   return HelpfulErrorBox(
@@ -2182,6 +2229,7 @@ class _FindFriendsPage extends StatefulWidget {
   const _FindFriendsPage({
     required this.currentUid,
     required this.publicProfiles,
+    required this.usersCollection,
     required this.currentFriendUids,
     required this.onProfileDetails,
     required this.onAddFriend,
@@ -2189,6 +2237,7 @@ class _FindFriendsPage extends StatefulWidget {
 
   final String? currentUid;
   final CollectionReference<Map<String, dynamic>> publicProfiles;
+  final CollectionReference<Map<String, dynamic>> usersCollection;
   final Set<String> currentFriendUids;
   final ValueChanged<_PublicProfile> onProfileDetails;
   final Future<void> Function(_PublicProfile profile) onAddFriend;
@@ -2201,6 +2250,31 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
   bool _adding = false;
+  late final Stream<List<_PublicProfile>> _profileStream;
+
+  @override
+  void initState() {
+    super.initState();
+    // Subscribe to Firestore once. Filtering by the search query happens in the
+    // builder (see _visibleProfiles) so typing does not recreate the stream,
+    // which would flash a spinner over the results on every keystroke.
+    _profileStream =
+        widget.publicProfiles.limit(80).snapshots().asyncMap((snapshot) async {
+      var profiles = snapshot.docs
+          .map((doc) => _PublicProfile.fromUserDoc(doc))
+          .where((profile) => profile.uid != widget.currentUid)
+          .toList();
+      final streaks =
+          await _fetchUserStreaks(profiles.map((profile) => profile.uid));
+      profiles = [
+        for (final profile in profiles)
+          profile.copyWith(streak: streaks[profile.uid] ?? profile.streak),
+      ];
+
+      profiles.sort((a, b) => a.displayName.compareTo(b.displayName));
+      return profiles;
+    });
+  }
 
   @override
   void dispose() {
@@ -2208,20 +2282,12 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
     super.dispose();
   }
 
-  Stream<List<_PublicProfile>> _profileStream() {
+  List<_PublicProfile> _visibleProfiles(List<_PublicProfile> profiles) {
     final q = _query.trim().toLowerCase().replaceAll('@', '');
-
-    return widget.publicProfiles.limit(80).snapshots().map((snapshot) {
-      final profiles = snapshot.docs
-          .map((doc) => _PublicProfile.fromUserDoc(doc))
-          .where((profile) => profile.uid != widget.currentUid)
-          .where((profile) => !widget.currentFriendUids.contains(profile.uid))
-          .where((profile) => profile.matchesQuery(q))
-          .toList();
-
-      profiles.sort((a, b) => a.displayName.compareTo(b.displayName));
-      return profiles;
-    });
+    return profiles
+        .where((profile) => !widget.currentFriendUids.contains(profile.uid))
+        .where((profile) => profile.matchesQuery(q))
+        .toList();
   }
 
   Future<void> _add(_PublicProfile profile) async {
@@ -2237,6 +2303,34 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
     } finally {
       if (mounted) setState(() => _adding = false);
     }
+  }
+
+  Future<Map<String, int>> _fetchUserStreaks(Iterable<String> uids) async {
+    final orderedUids = uids
+        .map((uid) => uid.trim())
+        .where((uid) => uid.isNotEmpty)
+        .toSet()
+        .toList();
+    final streaks = <String, int>{};
+
+    for (final chunk in _chunks(orderedUids, 10)) {
+      final snapshot = await widget.usersCollection
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+      for (final doc in snapshot.docs) {
+        streaks[doc.id] = _readInt(doc.data(), const ['streak'], 0);
+      }
+    }
+
+    return streaks;
+  }
+
+  List<List<T>> _chunks<T>(List<T> values, int size) {
+    final chunks = <List<T>>[];
+    for (var i = 0; i < values.length; i += size) {
+      chunks.add(values.sublist(i, min(i + size, values.length)));
+    }
+    return chunks;
   }
 
   @override
@@ -2327,7 +2421,7 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
             ),
             const SizedBox(height: 16),
             StreamBuilder<List<_PublicProfile>>(
-              stream: _profileStream(),
+              stream: _profileStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
@@ -2346,7 +2440,7 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
                   );
                 }
 
-                final profiles = snapshot.data ?? [];
+                final profiles = _visibleProfiles(snapshot.data ?? const []);
                 if (profiles.isEmpty) {
                   return const HelpfulErrorBox(
                     title: 'No profiles found',
@@ -2397,6 +2491,7 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
   }
 }
 
+// ignore: unused_element
 class _SuggestedFriendsPanel extends StatelessWidget {
   const _SuggestedFriendsPanel({
     required this.suggestions,
@@ -2439,8 +2534,7 @@ class _SuggestedFriendsPanel extends StatelessWidget {
                   ),
                   title: Text(
                     filtered[i],
-                    style: TextStyle(
-                        fontWeight: FontWeight.w900, color: gdInk),
+                    style: TextStyle(fontWeight: FontWeight.w900, color: gdInk),
                   ),
                   subtitle: Text(
                     'Suggested accountability friend',
@@ -2479,7 +2573,8 @@ class _DirectChatPageState extends State<_DirectChatPage> {
   final TextEditingController _controller = TextEditingController();
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final NotificationRepository _notificationRepository = NotificationRepository();
+  final NotificationRepository _notificationRepository =
+      NotificationRepository();
   final Uuid _uuid = const Uuid();
 
   bool _sending = false;
@@ -2602,32 +2697,41 @@ class _DirectChatPageState extends State<_DirectChatPage> {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      final senderName = _cleanDisplayName(user.displayName, user.email);
-    final preview = text.length > 120 ? '${text.substring(0, 117)}...' : text;
-
-    await _notificationRepository.addSocialNotification(
-    recipientUid: widget.friend.uid,
-    actorUid: user.uid,
-    notification: AppNotification(
-        id: _uuid.v4(),
-        title: senderName,
-        body: preview,
-        type: AppNotificationType.chat,
-        delivery: NotificationDelivery.inApp,
-        createdAt: DateTime.now(),
-        important: false,
-        sourceId: chatRef.id,
-        payload: {
-        'actorUid': user.uid,
-        'actorName': senderName,
-        'route': 'chat',
-        'chatId': chatRef.id,
-        'senderUid': user.uid,
-        },
-    ),
-    );
-
+      // Message is persisted — clear the input now so a later failure (e.g. a
+      // blocked notification write) can never cause the same text to send twice.
       _controller.clear();
+
+      // Best-effort chat notification: a failure here must not surface as a
+      // "Message failed" error, because the message itself already sent.
+      try {
+        final senderName = _cleanDisplayName(user.displayName, user.email);
+        final preview =
+            text.length > 120 ? '${text.substring(0, 117)}...' : text;
+
+        await _notificationRepository.addSocialNotification(
+          recipientUid: widget.friend.uid,
+          actorUid: user.uid,
+          notification: AppNotification(
+            id: _uuid.v4(),
+            title: senderName,
+            body: preview,
+            type: AppNotificationType.chat,
+            delivery: NotificationDelivery.inApp,
+            createdAt: DateTime.now(),
+            important: false,
+            sourceId: chatRef.id,
+            payload: {
+              'actorUid': user.uid,
+              'actorName': senderName,
+              'route': 'chat',
+              'chatId': chatRef.id,
+              'senderUid': user.uid,
+            },
+          ),
+        );
+      } catch (error) {
+        debugPrint('Chat notification failed: $error');
+      }
     } on FirebaseException catch (error) {
       _snack('Message failed: ${error.message ?? error.code}');
     } catch (error) {
@@ -2824,12 +2928,25 @@ class _DirectChatPageState extends State<_DirectChatPage> {
                     ),
                     const SizedBox(width: 8),
                     IconButton.filled(
+                      style: IconButton.styleFrom(
+                        backgroundColor: gdPrimary,
+                        foregroundColor: gdOnDark,
+                        disabledBackgroundColor:
+                            gdPrimary.withValues(alpha: 0.45),
+                        disabledForegroundColor:
+                            gdOnDark.withValues(alpha: 0.75),
+                        fixedSize: const Size(54, 54),
+                      ),
                       onPressed: _sending ? null : () => unawaited(_send()),
                       icon: _sending
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 18,
                               height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2))
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: gdOnDark,
+                              ),
+                            )
                           : const Icon(Icons.send_rounded),
                     ),
                   ],
@@ -3070,7 +3187,8 @@ class _CommunityDetailPage extends StatelessWidget {
                 padding: EdgeInsets.all(18),
                 child: HelpfulErrorBox(
                   title: 'Community no longer exists',
-                  message: 'This community document was deleted from Firestore.',
+                  message:
+                      'This community document was deleted from Firestore.',
                   actionLabel: 'OK',
                   showAction: false,
                 ),
@@ -3121,7 +3239,9 @@ class _CommunityDetailPage extends StatelessWidget {
                                       Chip(label: Text(group.tag)),
                                       Chip(
                                         label: Text(
-                                          group.joined ? 'Joined' : 'Not joined',
+                                          group.joined
+                                              ? 'Joined'
+                                              : 'Not joined',
                                         ),
                                       ),
                                       if (group.isOwner)
@@ -3171,7 +3291,8 @@ class _CommunityDetailPage extends StatelessWidget {
                                         ? Icons.delete_outline_rounded
                                         : Icons.logout_rounded,
                                   ),
-                                  label: Text(group.isOwner ? 'Delete' : 'Leave'),
+                                  label:
+                                      Text(group.isOwner ? 'Delete' : 'Leave'),
                                 ),
                               ),
                             ],
@@ -3260,7 +3381,8 @@ class _CommunityDetailPage extends StatelessWidget {
                             child: ListTile(
                               onTap: () => _openMemberDetails(context, member),
                               leading: InkResponse(
-                                onTap: () => _openMemberDetails(context, member),
+                                onTap: () =>
+                                    _openMemberDetails(context, member),
                                 radius: 28,
                                 child: _Avatar(
                                   photoUrl: member.photoUrl,
@@ -3305,7 +3427,6 @@ class _CommunityDetailPage extends StatelessWidget {
   }
 }
 
-
 class _UserDetailPage extends StatelessWidget {
   const _UserDetailPage({
     required this.initialProfile,
@@ -3324,7 +3445,7 @@ class _UserDetailPage extends StatelessWidget {
   FirebaseFirestore get _db => FirebaseFirestore.instance;
 
   Stream<DocumentSnapshot<Map<String, dynamic>>> _profileStream() {
-    return _db.collection('public_profiles').doc(initialProfile.uid).snapshots();
+    return _db.collection('users').doc(initialProfile.uid).snapshots();
   }
 
   _FriendProfile _profileFromSnapshot(
@@ -3347,23 +3468,60 @@ class _UserDetailPage extends StatelessWidget {
     );
   }
 
-  String _shortId(String value) {
-    if (value.length <= 12) return value;
-    return '${value.substring(0, 8)}...${value.substring(value.length - 4)}';
+  String _profileTitle(_FriendProfile profile) {
+    if (profile.streak >= 30) return 'Goal Crusher';
+    if (profile.streak >= 14) return 'Sprint Builder';
+    if (profile.streak >= 7) return 'Focused Starter';
+    if (profile.streak > 0) return 'Momentum Maker';
+    return 'Goal Explorer';
   }
 
-  String _formatTimestamp(Timestamp? timestamp) {
-    if (timestamp == null) return 'Not saved yet';
-    final date = timestamp.toDate().toLocal();
-    String two(int value) => value.toString().padLeft(2, '0');
-    return '${date.year}-${two(date.month)}-${two(date.day)} '
-        '${two(date.hour)}:${two(date.minute)}';
+  int _nextStreakMilestone(int streak) {
+    for (final milestone in const [7, 14, 30, 60, 100]) {
+      if (streak < milestone) return milestone;
+    }
+    return ((streak ~/ 50) + 1) * 50;
+  }
+
+  Stream<List<_DbCommunity>> _sharedCommunitiesStream(String profileUid) {
+    final uid = currentUid;
+    if (uid == null || uid.trim().isEmpty) return Stream.value(const []);
+
+    return _db
+        .collection('communities')
+        .where('members', arrayContains: uid)
+        .limit(80)
+        .snapshots()
+        .map((snapshot) {
+      final communities = snapshot.docs
+          .map((doc) => _DbCommunity.fromDoc(doc, currentUid: uid))
+          .where((group) => group.membersList.contains(profileUid))
+          .toList();
+
+      communities.sort((a, b) {
+        final tagCompare = a.tag.toLowerCase().compareTo(b.tag.toLowerCase());
+        if (tagCompare != 0) return tagCompare;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+
+      return communities;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    GdColors.setBrightness(Theme.of(context).brightness);
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile info')),
+      backgroundColor: gdBackground,
+      appBar: AppBar(
+        centerTitle: true,
+        title: const Text('Profile'),
+        leading: IconButton(
+          tooltip: 'Back',
+          onPressed: () => Navigator.of(context).pop(),
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
+      ),
       body: PageScaffold(
         child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           stream: _profileStream(),
@@ -3374,7 +3532,7 @@ class _UserDetailPage extends StatelessWidget {
                 child: HelpfulErrorBox(
                   title: 'Profile failed to load',
                   message:
-                      'Check Firestore rules for public_profiles reads. Details: ${snapshot.error}',
+                      'Check Firestore rules for users reads. Details: ${snapshot.error}',
                   actionLabel: 'OK',
                   showAction: false,
                 ),
@@ -3387,158 +3545,53 @@ class _UserDetailPage extends StatelessWidget {
             }
 
             final doc = snapshot.data;
-            final data = doc?.data() ?? const <String, dynamic>{};
             final profile = _profileFromSnapshot(doc);
             final isMe = currentUid != null && currentUid == profile.uid;
-            final createdAt = data['createdAt'];
-            final updatedAt = data['updatedAt'];
             final hasPublicProfile = doc?.exists ?? false;
             final canShowActions = !isMe &&
                 (onChat != null ||
                     (!profile.isFriend && onAdd != null) ||
                     (profile.isFriend && onDelete != null));
+            final nextMilestone = _nextStreakMilestone(profile.streak);
 
             return ListView(
-              padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 36),
               children: [
-                AppCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(22),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 980),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _Avatar(
-                          photoUrl: profile.photoUrl,
-                          label: profile.displayName,
-                          radius: 44,
+                        _CommunityProfileHeader(
+                          profile: profile,
+                          title: _profileTitle(profile),
+                          isMe: isMe,
+                          hasPublicProfile: hasPublicProfile,
+                          canShowActions: canShowActions,
+                          onChat: onChat,
+                          onAdd: onAdd,
+                          onDelete: onDelete,
                         ),
                         const SizedBox(height: 14),
-                        Text(
-                          profile.displayName,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w900,
-                            color: gdInk,
-                          ),
+                        _CommunityProgressSection(
+                          profile: profile,
+                          isMe: isMe,
+                          hasPublicProfile: hasPublicProfile,
+                          nextMilestone: nextMilestone,
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          profile.username,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: gdMuted,
-                            fontWeight: FontWeight.w800,
-                          ),
+                        const SizedBox(height: 14),
+                        _CommunityAchievementsSection(
+                          profile: profile,
+                          isMe: isMe,
+                          hasPublicProfile: hasPublicProfile,
                         ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          alignment: WrapAlignment.center,
-                          children: [
-                            if (isMe) const Chip(label: Text('You')),
-                            if (profile.isFriend)
-                              const Chip(label: Text('Friend')),
-                            if (profile.isChatOnly)
-                              const Chip(label: Text('Chat request')),
-                            if (!hasPublicProfile)
-                              const Chip(label: Text('Fallback profile')),
-                          ],
-                        ),
-                        if (canShowActions) ...[
-                          const SizedBox(height: 18),
-                          Row(
-                            children: [
-                              if (onChat != null) ...[
-                                Expanded(
-                                  child: FilledButton.icon(
-                                    onPressed: () => onChat!(profile),
-                                    icon: const Icon(Icons.chat_bubble_rounded),
-                                    label: const Text('Message'),
-                                  ),
-                                ),
-                              ],
-                              if (!profile.isFriend && onAdd != null) ...[
-                                if (onChat != null) const SizedBox(width: 10),
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: () => onAdd!(profile),
-                                    icon: const Icon(Icons.person_add_alt_1_rounded),
-                                    label: const Text('Add friend'),
-                                  ),
-                                ),
-                              ],
-                              if (profile.isFriend && onDelete != null) ...[
-                                if (onChat != null) const SizedBox(width: 10),
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: () => onDelete!(profile),
-                                    icon: const Icon(Icons.delete_outline_rounded),
-                                    label: const Text('Remove'),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                AppCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        _CommunityInfoRow(
-                          icon: Icons.badge_rounded,
-                          label: 'User UID',
-                          value: _shortId(profile.uid),
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.alternate_email_rounded,
-                          label: 'Username',
-                          value: profile.username,
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.local_fire_department_rounded,
-                          label: 'Streak',
-                          value: '${profile.streak} day streak',
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.verified_user_rounded,
-                          label: 'Profile source',
-                          value: hasPublicProfile
-                              ? 'public_profiles/${profile.uid}'
-                              : 'Fallback from chat/member data',
-                        ),
-                        if (profile.lastMessageText.isNotEmpty) ...[
-                          const Divider(height: 20),
-                          _CommunityInfoRow(
-                            icon: Icons.chat_bubble_rounded,
-                            label: 'Last chat',
-                            value: profile.lastMessageText,
-                          ),
-                        ],
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.calendar_month_rounded,
-                          label: 'Created',
-                          value: _formatTimestamp(
-                            createdAt is Timestamp ? createdAt : null,
-                          ),
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.update_rounded,
-                          label: 'Updated',
-                          value: _formatTimestamp(
-                            updatedAt is Timestamp ? updatedAt : null,
-                          ),
+                        const SizedBox(height: 14),
+                        _SharedCommunitiesSection(
+                          isMe: isMe,
+                          profileName: profile.displayName,
+                          communitiesStream:
+                              _sharedCommunitiesStream(profile.uid),
                         ),
                       ],
                     ),
@@ -3548,6 +3601,789 @@ class _UserDetailPage extends StatelessWidget {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+class _CommunityProfileHeader extends StatelessWidget {
+  const _CommunityProfileHeader({
+    required this.profile,
+    required this.title,
+    required this.isMe,
+    required this.hasPublicProfile,
+    required this.canShowActions,
+    required this.onChat,
+    required this.onAdd,
+    required this.onDelete,
+  });
+
+  final _FriendProfile profile;
+  final String title;
+  final bool isMe;
+  final bool hasPublicProfile;
+  final bool canShowActions;
+  final ValueChanged<_FriendProfile>? onChat;
+  final ValueChanged<_FriendProfile>? onAdd;
+  final ValueChanged<_FriendProfile>? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _Avatar(
+                  photoUrl: profile.photoUrl,
+                  label: profile.displayName,
+                  radius: 40,
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(profile.displayName, style: GdText.headlineMedium),
+                      const SizedBox(height: 6),
+                      Text(
+                        profile.username,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: gdMuted,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (isMe)
+                            _CommunityStatusChip(
+                              icon: Icons.person_rounded,
+                              label: 'You',
+                              color: gdPrimary,
+                            ),
+                          if (profile.isFriend)
+                            _CommunityStatusChip(
+                              icon: Icons.group_rounded,
+                              label: 'Friend',
+                              color: gdPrimary,
+                            ),
+                          if (profile.isChatOnly)
+                            _CommunityStatusChip(
+                              icon: Icons.chat_bubble_rounded,
+                              label: 'Chat request',
+                              color: gdInfo,
+                            ),
+                          _CommunityStatusChip(
+                            icon: hasPublicProfile
+                                ? Icons.verified_rounded
+                                : Icons.info_outline_rounded,
+                            label: hasPublicProfile
+                                ? 'Public profile'
+                                : 'Limited profile',
+                            color: hasPublicProfile ? gdSuccess : gdWarning,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: gdPrimarySoft,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: gdBorder),
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: gdSurface,
+                    child: Icon(
+                      Icons.workspace_premium_rounded,
+                      color: gdPrimary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: GdText.titleMedium),
+                        const SizedBox(height: 3),
+                        Text(
+                          _subtitle,
+                          style: TextStyle(
+                            color: gdMuted,
+                            fontWeight: FontWeight.w700,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (canShowActions) ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  if (onChat != null) ...[
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => onChat!(profile),
+                        icon: const Icon(Icons.chat_bubble_rounded),
+                        label: const Text('Message'),
+                      ),
+                    ),
+                  ],
+                  if (!profile.isFriend && onAdd != null) ...[
+                    if (onChat != null) const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => onAdd!(profile),
+                        icon: const Icon(Icons.person_add_alt_1_rounded),
+                        label: const Text('Add friend'),
+                      ),
+                    ),
+                  ],
+                  if (profile.isFriend && onDelete != null) ...[
+                    if (onChat != null) const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => onDelete!(profile),
+                        icon: const Icon(Icons.person_remove_rounded),
+                        label: const Text('Remove'),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String get _subtitle {
+    if (isMe) return 'This is your public community profile.';
+    if (profile.isFriend) return 'You are connected in the community.';
+    if (profile.isChatOnly) return 'You have an active chat with this member.';
+    return 'View their public momentum and connect when you are ready.';
+  }
+}
+
+class _CommunityProgressSection extends StatelessWidget {
+  const _CommunityProgressSection({
+    required this.profile,
+    required this.isMe,
+    required this.hasPublicProfile,
+    required this.nextMilestone,
+  });
+
+  final _FriendProfile profile;
+  final bool isMe;
+  final bool hasPublicProfile;
+  final int nextMilestone;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = (profile.streak / nextMilestone).clamp(0.0, 1.0);
+
+    return AppCard(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _CommunitySectionHeader(
+              icon: Icons.insights_rounded,
+              title: 'Progress',
+              subtitle:
+                  'A quick read on ${isMe ? 'your' : 'their'} current momentum.',
+            ),
+            const SizedBox(height: 16),
+            LinearProgressIndicator(
+              value: progress,
+              minHeight: 10,
+              backgroundColor: gdPrimarySoft,
+              color: gdPrimary,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              profile.streak >= nextMilestone
+                  ? '${profile.streak} day streak'
+                  : '${profile.streak}/$nextMilestone days to the next milestone',
+              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                _CommunityMetricTile(
+                  icon: Icons.local_fire_department_rounded,
+                  label: 'Streak',
+                  value: '${profile.streak} days',
+                ),
+                _CommunityMetricTile(
+                  icon: Icons.group_rounded,
+                  label: 'Connection',
+                  value: isMe
+                      ? 'You'
+                      : profile.isFriend
+                          ? 'Friend'
+                          : 'Member',
+                ),
+                _CommunityMetricTile(
+                  icon: Icons.chat_bubble_rounded,
+                  label: 'Chat',
+                  value: profile.hasUnread
+                      ? 'Unread'
+                      : profile.hasChat
+                          ? 'Active'
+                          : 'None',
+                ),
+                _CommunityMetricTile(
+                  icon: Icons.verified_user_rounded,
+                  label: 'Profile',
+                  value: hasPublicProfile ? 'Public' : 'Limited',
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CommunityAchievementsSection extends StatelessWidget {
+  const _CommunityAchievementsSection({
+    required this.profile,
+    required this.isMe,
+    required this.hasPublicProfile,
+  });
+
+  final _FriendProfile profile;
+  final bool isMe;
+  final bool hasPublicProfile;
+
+  @override
+  Widget build(BuildContext context) {
+    final achievements = [
+      _CommunityAchievementData(
+        icon: Icons.local_fire_department_rounded,
+        title: _streakTitle,
+        subtitle: _streakSubtitle,
+        color: gdAccent,
+      ),
+      _CommunityAchievementData(
+        icon: Icons.handshake_rounded,
+        title: isMe
+            ? 'Community host'
+            : profile.isFriend
+                ? 'Accountability friend'
+                : 'Community member',
+        subtitle: isMe
+            ? 'Showing up in social spaces.'
+            : profile.isFriend
+                ? 'Connected with you.'
+                : 'Open to connect.',
+        color: gdPrimary,
+      ),
+      _CommunityAchievementData(
+        icon: Icons.chat_bubble_rounded,
+        title: profile.hasChat ? 'Chat active' : 'Conversation ready',
+        subtitle: profile.hasUnread
+            ? 'You have a new message.'
+            : profile.hasChat
+                ? 'Recent accountability chat.'
+                : 'Start with a quick check-in.',
+        color: gdInfo,
+      ),
+      _CommunityAchievementData(
+        icon: hasPublicProfile
+            ? Icons.verified_rounded
+            : Icons.info_outline_rounded,
+        title: hasPublicProfile ? 'Public profile' : 'Limited profile',
+        subtitle: hasPublicProfile
+            ? 'Visible in friend search.'
+            : 'Using available chat details.',
+        color: hasPublicProfile ? gdSuccess : gdWarning,
+      ),
+    ];
+
+    return AppCard(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _CommunitySectionHeader(
+              icon: Icons.emoji_events_rounded,
+              title: 'Achievements',
+              subtitle: 'Badges from momentum and community activity.',
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final achievement in achievements)
+                  _CommunityAchievementTile(data: achievement),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String get _streakTitle {
+    if (profile.streak >= 30) return '30-day fire';
+    if (profile.streak >= 14) return 'Two-week run';
+    if (profile.streak >= 7) return 'Week streak';
+    if (profile.streak > 0) return 'Streak starter';
+    return 'Fresh start';
+  }
+
+  String get _streakSubtitle {
+    if (profile.streak > 0) return '${profile.streak} days in motion.';
+    return 'Ready for the first streak.';
+  }
+}
+
+class _SharedCommunitiesSection extends StatelessWidget {
+  const _SharedCommunitiesSection({
+    required this.isMe,
+    required this.profileName,
+    required this.communitiesStream,
+  });
+
+  final bool isMe;
+  final String profileName;
+  final Stream<List<_DbCommunity>> communitiesStream;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: StreamBuilder<List<_DbCommunity>>(
+          stream: communitiesStream,
+          builder: (context, snapshot) {
+            final communities = snapshot.data ?? const <_DbCommunity>[];
+            final tags = _interestTags(communities);
+            final visibleCommunities = communities.take(3).toList();
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _CommunitySectionHeader(
+                  icon: Icons.diversity_3_rounded,
+                  title: isMe ? 'Communities' : 'Shared communities',
+                  subtitle: isMe
+                      ? 'Groups and interests on your profile.'
+                      : 'Mutual groups and interests you have in common.',
+                ),
+                const SizedBox(height: 16),
+                if (snapshot.hasError)
+                  HelpfulErrorBox(
+                    title: 'Shared communities unavailable',
+                    message:
+                        'Could not load mutual communities right now. Details: ${snapshot.error}',
+                    actionLabel: 'OK',
+                    showAction: false,
+                  )
+                else if (snapshot.connectionState == ConnectionState.waiting &&
+                    snapshot.data == null)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: LinearProgressIndicator(),
+                  )
+                else if (communities.isEmpty)
+                  _CommunityEmptyInsight(
+                    icon: Icons.group_add_rounded,
+                    title: isMe
+                        ? 'No communities yet'
+                        : 'No shared communities yet',
+                    message: isMe
+                        ? 'Join a community to show interests here.'
+                        : 'Join the same community as $profileName to build a shared accountability space.',
+                  )
+                else ...[
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final tag in tags)
+                        _CommunityInterestChip(label: tag),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  for (var i = 0; i < visibleCommunities.length; i++) ...[
+                    _SharedCommunityTile(community: visibleCommunities[i]),
+                    if (i != visibleCommunities.length - 1)
+                      const Divider(height: 18),
+                  ],
+                  if (communities.length > 3) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      '+${communities.length - 3} more shared communities',
+                      style: TextStyle(
+                        color: gdMuted,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ],
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  List<String> _interestTags(List<_DbCommunity> communities) {
+    final tags = <String>[];
+    final seen = <String>{};
+    for (final community in communities) {
+      final tag = community.tag.trim();
+      if (tag.isEmpty) continue;
+      if (seen.add(tag.toLowerCase())) tags.add(tag);
+    }
+    return tags.take(6).toList();
+  }
+}
+
+class _CommunityAchievementData {
+  const _CommunityAchievementData({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+}
+
+class _CommunityAchievementTile extends StatelessWidget {
+  const _CommunityAchievementTile({required this.data});
+
+  final _CommunityAchievementData data;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 148,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: gdCardLight,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: gdBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 17,
+            backgroundColor: data.color.withValues(alpha: 0.12),
+            child: Icon(data.icon, color: data.color, size: 19),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            data.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: gdInk,
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            data.subtitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: gdMuted,
+              fontSize: 12,
+              height: 1.25,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommunityInterestChip extends StatelessWidget {
+  const _CommunityInterestChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: gdPrimarySoft,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: gdBorder),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: gdPrimary,
+          fontWeight: FontWeight.w900,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+}
+
+class _SharedCommunityTile extends StatelessWidget {
+  const _SharedCommunityTile({required this.community});
+
+  final _DbCommunity community;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          radius: 20,
+          backgroundColor: gdPrimarySoft,
+          child: Icon(Icons.groups_rounded, color: gdPrimary, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                community.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: gdInk,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                '${community.tag} - ${community.members} members',
+                style: TextStyle(
+                  color: gdMuted,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CommunityEmptyInsight extends StatelessWidget {
+  const _CommunityEmptyInsight({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: gdCardLight,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: gdBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            backgroundColor: gdPrimarySoft,
+            child: Icon(icon, color: gdPrimary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: GdText.titleMedium),
+                const SizedBox(height: 4),
+                Text(
+                  message,
+                  style: TextStyle(
+                    color: gdMuted,
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommunitySectionHeader extends StatelessWidget {
+  const _CommunitySectionHeader({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          backgroundColor: gdPrimarySoft,
+          child: Icon(icon, color: gdPrimary),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: GdText.titleLarge),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: gdMuted,
+                  fontWeight: FontWeight.w700,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CommunityStatusChip extends StatelessWidget {
+  const _CommunityStatusChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: gdInk,
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommunityMetricTile extends StatelessWidget {
+  const _CommunityMetricTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 132,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: gdCardLight,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: gdBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: gdPrimary),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: gdInk,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          Text(
+            label,
+            style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+          ),
+        ],
       ),
     );
   }
@@ -3837,8 +4673,7 @@ class _CommunityChatPageState extends State<_CommunityChatPage> {
                                 const SizedBox(height: 14),
                                 Text(
                                   widget.group.name,
-                                  style:
-                                      GdText.headlineMedium,
+                                  style: GdText.headlineMedium,
                                   textAlign: TextAlign.center,
                                 ),
                                 const SizedBox(height: 8),
@@ -3914,13 +4749,26 @@ class _CommunityChatPageState extends State<_CommunityChatPage> {
                     ),
                     const SizedBox(width: 8),
                     IconButton.filled(
-                      onPressed:
-                          !_isMember || _sending ? null : () => unawaited(_send()),
+                      style: IconButton.styleFrom(
+                        backgroundColor: gdPrimary,
+                        foregroundColor: gdOnDark,
+                        disabledBackgroundColor:
+                            gdPrimary.withValues(alpha: 0.45),
+                        disabledForegroundColor:
+                            gdOnDark.withValues(alpha: 0.75),
+                        fixedSize: const Size(54, 54),
+                      ),
+                      onPressed: !_isMember || _sending
+                          ? null
+                          : () => unawaited(_send()),
                       icon: _sending
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 18,
                               height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: gdOnDark,
+                              ),
                             )
                           : const Icon(Icons.send_rounded),
                     ),
@@ -4009,7 +4857,9 @@ class _CommunityLeaderboardTile extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Chip(label: Text(group.joined ? 'Joined' : '${group.similarity}% fit')),
+          Chip(
+              label:
+                  Text(group.joined ? 'Joined' : '${group.similarity}% fit')),
           if (onTap != null) ...[
             const SizedBox(width: 6),
             Icon(Icons.chevron_right_rounded, color: gdMuted),
@@ -4259,7 +5109,6 @@ class _UnreadAvatar extends StatelessWidget {
   }
 }
 
-
 class _DbCommunity {
   const _DbCommunity({
     required this.id,
@@ -4300,7 +5149,8 @@ class _DbCommunity {
     required String currentUid,
   }) {
     final data = doc.data() ?? {};
-    final name = _readString(data, const ['name', 'title'], 'Untitled community');
+    final name =
+        _readString(data, const ['name', 'title'], 'Untitled community');
     final tag = _readString(data, const ['tag', 'category'], 'General');
     final description = _readString(
       data,
@@ -4313,7 +5163,8 @@ class _DbCommunity {
       const ['memberCount', 'membersCount', 'members'],
       members.length,
     );
-    final ownerUid = _readString(data, const ['ownerUid', 'createdByUid', 'creatorUid']);
+    final ownerUid =
+        _readString(data, const ['ownerUid', 'createdByUid', 'creatorUid']);
     final joinCode = _readString(
       data,
       const ['joinCode', 'code'],
@@ -4328,7 +5179,8 @@ class _DbCommunity {
       tag: tag,
       description: description,
       ownerUid: ownerUid,
-      ownerName: _readString(data, const ['ownerName', 'createdByName'], 'Owner'),
+      ownerName:
+          _readString(data, const ['ownerName', 'createdByName'], 'Owner'),
       joinCode: joinCode,
       membersList: members,
       memberCount: memberCount,
@@ -4383,13 +5235,11 @@ class _DbCommunityMatchCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               '${group.members} members · ${group.tag} · code ${group.joinCode}',
-              style:
-                  TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
+              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
             Text(group.description,
-                style: TextStyle(
-                    color: gdMuted, fontWeight: FontWeight.w600)),
+                style: TextStyle(color: gdMuted, fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -4467,8 +5317,7 @@ class _FriendProfile {
     final displayName = _readString(
       data,
       const ['displayName', 'name', 'fullName'],
-      fallbackName ??
-          (email.contains('@') ? email.split('@').first : 'Friend'),
+      fallbackName ?? (email.contains('@') ? email.split('@').first : 'Friend'),
     );
     final username = _readString(
       data,
@@ -4480,11 +5329,7 @@ class _FriendProfile {
           const ['photoUrl', 'photoURL', 'avatarUrl', 'avatarURL'],
         ) ??
         fallbackPhotoUrl;
-    final streak = _readInt(
-      data,
-      const ['streak', 'currentStreak', 'streakCount'],
-      fallbackStreak,
-    );
+    final streak = _readStreak(data, fallbackStreak);
 
     return _FriendProfile(
       uid: _readString(data, const ['uid'], doc.id),
@@ -4617,7 +5462,8 @@ class _PublicProfile {
   final int streak;
   final String searchText;
 
-  factory _PublicProfile.fromUserDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+  factory _PublicProfile.fromUserDoc(
+      DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? {};
     final email = _readString(data, const ['email']);
     final displayName = _readString(
@@ -4634,11 +5480,7 @@ class _PublicProfile {
       data,
       const ['photoUrl', 'photoURL', 'avatarUrl', 'avatarURL'],
     );
-    final streak = _readInt(
-      data,
-      const ['streak', 'currentStreak', 'streakCount'],
-      0,
-    );
+    final streak = _readStreak(data);
     final searchText = _readString(
       data,
       const ['searchName', 'searchText'],
@@ -4652,6 +5494,51 @@ class _PublicProfile {
       photoUrl: photoUrl,
       streak: streak,
       searchText: searchText.toLowerCase(),
+    );
+  }
+
+  // ignore: unused_element
+  factory _PublicProfile.fromPublicDoc(
+      DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data() ?? {};
+    final displayName = _readString(
+      data,
+      const ['displayName', 'name', 'fullName'],
+      'Goal Digger User',
+    );
+    final username = _readString(
+      data,
+      const ['username', 'handle'],
+      _fallbackUsernameFor(displayName, '', doc.id),
+    );
+    final photoUrl = _readNullableString(
+      data,
+      const ['photoUrl', 'photoURL', 'avatarUrl', 'avatarURL'],
+    );
+    final searchText = _readString(
+      data,
+      const ['searchName', 'searchText'],
+      '${displayName.toLowerCase()} ${username.toLowerCase()} ${username.toLowerCase().replaceAll('@', '')}',
+    );
+
+    return _PublicProfile(
+      uid: _readString(data, const ['uid'], doc.id),
+      displayName: displayName,
+      username: username,
+      photoUrl: photoUrl,
+      streak: _readStreak(data),
+      searchText: searchText.toLowerCase(),
+    );
+  }
+
+  _PublicProfile copyWith({int? streak}) {
+    return _PublicProfile(
+      uid: uid,
+      displayName: displayName,
+      username: username,
+      photoUrl: photoUrl,
+      streak: streak ?? this.streak,
+      searchText: searchText,
     );
   }
 
@@ -4786,13 +5673,11 @@ class CommunityMatchCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               '${group.members} members · ${group.tag}',
-              style:
-                  TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
+              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
             Text(group.description,
-                style: TextStyle(
-                    color: gdMuted, fontWeight: FontWeight.w600)),
+                style: TextStyle(color: gdMuted, fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -4860,6 +5745,40 @@ int _readInt(
     }
   }
   return fallback;
+}
+
+DateTime _dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
+
+DateTime? _dateFromKey(String? key) {
+  if (key == null || key.trim().isEmpty) return null;
+  final parts = key.split('-');
+  if (parts.length != 3) return null;
+  final year = int.tryParse(parts[0]);
+  final month = int.tryParse(parts[1]);
+  final day = int.tryParse(parts[2]);
+  if (year == null || month == null || day == null) return null;
+  return _dateOnly(DateTime(year, month, day));
+}
+
+int _streakForToday(int streak, String? lastStreakDateKey) {
+  final lastStreakDay = _dateFromKey(lastStreakDateKey);
+  if (lastStreakDay == null) return streak;
+
+  final gap = _dateOnly(DateTime.now()).difference(lastStreakDay).inDays;
+  return gap > 1 ? 0 : streak;
+}
+
+int _readStreak(Map<String, dynamic> data, [int fallback = 0]) {
+  final storedStreak = _readInt(
+    data,
+    const ['streak', 'currentStreak', 'streakCount'],
+    fallback,
+  );
+  final lastStreakDateKey = _readString(
+    data,
+    const ['lastStreakDateKey', 'lastStreakDate', 'lastStreakDay'],
+  );
+  return _streakForToday(storedStreak, lastStreakDateKey);
 }
 
 String _fallbackUsernameFor(String displayName, String email, String uid) {

@@ -16,7 +16,7 @@ class TasksPage extends StatelessWidget {
     required this.remainingMinutes,
     required this.goalForTask,
     required this.onMoodChanged,
-    required this.onToggleTask,
+    required this.onCompleteTask,
     required this.onCreateGoal,
   });
 
@@ -28,8 +28,37 @@ class TasksPage extends StatelessWidget {
   final int remainingMinutes;
   final GoalProject Function(MicroTask task) goalForTask;
   final ValueChanged<String> onMoodChanged;
-  final ValueChanged<MicroTask> onToggleTask;
+  final ValueChanged<MicroTask> onCompleteTask;
   final VoidCallback onCreateGoal;
+
+  Future<void> _confirmAndCompleteTask(
+    BuildContext context,
+    MicroTask task,
+  ) async {
+    if (task.done) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Mark task done?'),
+        content: Text(
+          'Only confirm if you really finished "${task.title}". Once it is marked done, it cannot be changed back.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Yes, I did it'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      onCompleteTask(task);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -75,7 +104,7 @@ class TasksPage extends StatelessWidget {
               tasks: todayTasks,
               mood: mood,
               goalForTask: goalForTask,
-              onToggleTask: onToggleTask,
+              onCompleteTask: (task) => _confirmAndCompleteTask(context, task),
               onCreateGoal: onCreateGoal,
             ),
           ],
@@ -90,14 +119,14 @@ class _TodayGoalTaskSection extends StatefulWidget {
     required this.tasks,
     required this.mood,
     required this.goalForTask,
-    required this.onToggleTask,
+    required this.onCompleteTask,
     required this.onCreateGoal,
   });
 
   final List<MicroTask> tasks;
   final String mood;
   final GoalProject Function(MicroTask task) goalForTask;
-  final ValueChanged<MicroTask> onToggleTask;
+  final ValueChanged<MicroTask> onCompleteTask;
   final VoidCallback onCreateGoal;
 
   @override
@@ -169,7 +198,7 @@ class _TodayGoalTaskSectionState extends State<_TodayGoalTaskSection> {
                     group: groups[i],
                     mood: widget.mood,
                     initiallyExpanded: i == 0,
-                    onToggleTask: widget.onToggleTask,
+                    onCompleteTask: widget.onCompleteTask,
                   ),
               ],
             ),
@@ -204,13 +233,13 @@ class _TodayGoalTaskCard extends StatelessWidget {
     required this.group,
     required this.mood,
     required this.initiallyExpanded,
-    required this.onToggleTask,
+    required this.onCompleteTask,
   });
 
   final _GoalTaskGroup group;
   final String mood;
   final bool initiallyExpanded;
-  final ValueChanged<MicroTask> onToggleTask;
+  final ValueChanged<MicroTask> onCompleteTask;
 
   @override
   Widget build(BuildContext context) {
@@ -308,7 +337,7 @@ class _TodayGoalTaskCard extends StatelessWidget {
                     _CompactTodayTaskRow(
                       task: task,
                       mood: mood,
-                      onToggle: () => onToggleTask(task),
+                      onComplete: () => onCompleteTask(task),
                     ),
                 ],
               ),
@@ -364,12 +393,12 @@ class _CompactTodayTaskRow extends StatelessWidget {
   const _CompactTodayTaskRow({
     required this.task,
     required this.mood,
-    required this.onToggle,
+    required this.onComplete,
   });
 
   final MicroTask task;
   final String mood;
-  final VoidCallback onToggle;
+  final VoidCallback onComplete;
 
   String get _title {
     if (mood == 'Tired' && task.durationMinutes > 15) {
@@ -391,7 +420,7 @@ class _CompactTodayTaskRow extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: done ? null : onToggle,
+        onTap: done ? null : onComplete,
         child: Container(
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
@@ -419,7 +448,7 @@ class _CompactTodayTaskRow extends StatelessWidget {
               const SizedBox(width: 8),
               Checkbox(
                 value: done,
-                onChanged: done ? null : (_) => onToggle(),
+                onChanged: done ? null : (_) => onComplete(),
               ),
               const SizedBox(width: 4),
               Expanded(

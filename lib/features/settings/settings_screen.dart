@@ -286,8 +286,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (deleted) {
       _showSnack('Account deleted.');
       Navigator.pop(context);
-    } else {
-      _showSnack('Could not delete account.');
     }
   }
 

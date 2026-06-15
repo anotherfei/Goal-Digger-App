@@ -55,7 +55,7 @@ class FirebaseInitializer {
   }
 
   static Future<void> _activateAppCheck() async {
-    final useDebugProvider = !kReleaseMode || _forceAppCheckDebugProvider;
+    const useDebugProvider = !kReleaseMode || _forceAppCheckDebugProvider;
 
     const recaptchaSiteKey = String.fromEnvironment('RECAPTCHA_SITE_KEY');
 
