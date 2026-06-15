@@ -5210,7 +5210,7 @@ class _CommunityLeaderboardTile extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Chip(label: Text('${group.communityStreak} day streak')),
+          _StreakFireBadge(streak: group.communityStreak),
           if (onTap != null) ...[
             const SizedBox(width: 6),
             Icon(Icons.chevron_right_rounded, color: gdMuted),
@@ -5294,12 +5294,69 @@ class _LeaderboardTile extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Chip(label: Text('${entry.streak} day streak')),
+          _StreakFireBadge(streak: entry.streak),
           if (onTap != null) ...[
             const SizedBox(width: 6),
             Icon(Icons.chevron_right_rounded, color: gdMuted),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _StreakFireBadge extends StatelessWidget {
+  const _StreakFireBadge({required this.streak});
+
+  final int streak;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = '$streak day streak';
+
+    return Semantics(
+      label: label,
+      child: ExcludeSemantics(
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 76),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: gdPrimarySoft,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ShaderMask(
+                blendMode: BlendMode.srcIn,
+                shaderCallback: (bounds) => const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFFFF3D1F),
+                    Color(0xFFFF9F2E),
+                    Color(0xFFFFE66D),
+                  ],
+                ).createShader(bounds),
+                child: const Icon(
+                  Icons.local_fire_department_rounded,
+                  size: 24,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '$streak',
+                style: TextStyle(
+                  color: gdInk,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
