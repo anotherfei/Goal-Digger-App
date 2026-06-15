@@ -10,6 +10,7 @@
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -143,31 +144,38 @@ class AuthService {
   /// Google credential to the anonymous account so that local data is
   /// preserved after the upgrade.
   Future<UserCredential> signInWithGoogle() async {
-    final googleUser = await _googleSignIn.signIn();
-    if (googleUser == null) {
-      throw const AuthException('Google sign-in was cancelled by the user.');
-    }
-
-    final googleAuth = await googleUser.authentication;
-    final credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth.accessToken,
-      idToken: googleAuth.idToken,
-    );
-
-    // Upgrade anonymous account → real account (links data, avoids orphans)
-    if (currentUser != null && currentUser!.isAnonymous) {
-      try {
-        return await currentUser!.linkWithCredential(credential);
-      } on FirebaseAuthException catch (e) {
-        // Credential already in use on another account – just sign in normally
-        if (e.code == 'credential-already-in-use') {
-          return _auth.signInWithCredential(credential);
-        }
-        rethrow;
+    try {
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        throw const AuthException('Google sign-in was cancelled by the user.');
       }
-    }
 
-    return _auth.signInWithCredential(credential);
+      final googleAuth = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      // Upgrade anonymous account → real account (links data, avoids orphans)
+      if (currentUser != null && currentUser!.isAnonymous) {
+        try {
+          return await currentUser!.linkWithCredential(credential);
+        } on FirebaseAuthException catch (e) {
+          if (e.code == 'credential-already-in-use') {
+            return _auth.signInWithCredential(credential);
+          }
+          rethrow;
+        }
+      }
+
+      return _auth.signInWithCredential(credential);
+    } on AuthException {
+      rethrow;
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_firebaseAuthMessage(e));
+    } on PlatformException catch (e) {
+      throw AuthException(_googleSignInMessage(e));
+    }
   }
 
   Future<UserCredential> signInWithEmail({
@@ -330,16 +338,64 @@ class AuthService {
     }
   }
 
-  Future<void> deleteCurrentUser() async {
+  Future<void> deleteCurrentUser({String? password}) async {
     try {
       final user = currentUser;
       if (user == null) {
         throw const AuthException('No signed-in account to delete.');
       }
-      await user.delete();
+      try {
+        await user.delete();
+      } on FirebaseAuthException catch (e) {
+        if (e.code != 'requires-recent-login') rethrow;
+        await _reauthenticateForDeletion(user, password: password);
+        await user.delete();
+      }
     } on FirebaseAuthException catch (e) {
       throw AuthException(_firebaseAuthMessage(e));
     }
+  }
+
+  Future<void> _reauthenticateForDeletion(
+    User user, {
+    String? password,
+  }) async {
+    final providerIds =
+        user.providerData.map((provider) => provider.providerId).toSet();
+
+    if (providerIds.contains('google.com')) {
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        throw const AuthException('Re-authentication was cancelled.');
+      }
+      final googleAuth = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      await user.reauthenticateWithCredential(credential);
+      return;
+    }
+
+    if (providerIds.contains('password')) {
+      final email = user.email;
+      if (email == null || email.isEmpty) {
+        throw const AuthException(
+          'Sign out, sign back in, then delete the account again.',
+        );
+      }
+      if (password == null || password.isEmpty) {
+        throw const ReauthPasswordRequiredException();
+      }
+      final credential =
+          EmailAuthProvider.credential(email: email, password: password);
+      await user.reauthenticateWithCredential(credential);
+      return;
+    }
+
+    throw const AuthException(
+      'Sign out, sign back in, then delete the account again.',
+    );
   }
 
   /// Creates an anonymous account so the user can start immediately and
@@ -373,6 +429,11 @@ class AuthException implements Exception {
   String toString() => 'AuthException: $message';
 }
 
+class ReauthPasswordRequiredException extends AuthException {
+  const ReauthPasswordRequiredException()
+      : super('Re-enter your password to confirm account deletion.');
+}
+
 String _firebaseAuthMessage(FirebaseAuthException e) {
   switch (e.code) {
     case 'invalid-email':
@@ -400,6 +461,20 @@ String _firebaseAuthMessage(FirebaseAuthException e) {
     default:
       return e.message ?? 'Authentication failed. Please try again.';
   }
+}
+
+String _googleSignInMessage(PlatformException e) {
+  final details = '${e.message ?? ''} ${e.details ?? ''}'.toLowerCase();
+  if (e.code == 'sign_in_canceled') {
+    return 'Google sign-in was cancelled by the user.';
+  }
+  if (e.code == 'network_error') {
+    return 'Network connection failed during Google sign-in. Try again.';
+  }
+  if (e.code == 'sign_in_failed' && details.contains('10')) {
+    return 'Google sign-in is not configured for this Android build. Check the Firebase Google provider and add this app signing SHA-1/SHA-256 fingerprint.';
+  }
+  return e.message ?? 'Google sign-in failed. Please try again.';
 }
 
 String _passwordResetAuthMessage(FirebaseAuthException e) {

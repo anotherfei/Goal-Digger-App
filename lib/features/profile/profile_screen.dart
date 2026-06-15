@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/gd_design.dart';
 import '../../models/models.dart';
 import '../../shared/widgets/shared_widgets.dart';
+import '../companion/companion_sprite.dart';
 
 typedef GuestUpgradeCallback = Future<bool> Function({
   required String displayName,
@@ -35,8 +36,8 @@ class ProfileScreen extends StatefulWidget {
     required this.coins,
     required this.streak,
     required this.petHappiness,
-    required this.pet,
-    required this.accessory,
+    required this.companion,
+    required this.streakTier,
     required this.selectedMood,
     required this.goals,
     required this.tasks,
@@ -67,8 +68,8 @@ class ProfileScreen extends StatefulWidget {
   final int coins;
   final int streak;
   final int petHappiness;
-  final PetSkin pet;
-  final String accessory;
+  final CompanionKind companion;
+  final CompanionStreakTier streakTier;
   final String selectedMood;
   final List<GoalProject> goals;
   final List<MicroTask> tasks;
@@ -122,8 +123,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int get coins => widget.coins;
   int get streak => widget.streak;
   int get petHappiness => widget.petHappiness;
-  PetSkin get pet => widget.pet;
-  String get accessory => widget.accessory;
+  CompanionKind get companion => widget.companion;
+  CompanionStreakTier get streakTier => widget.streakTier;
   String get selectedMood => widget.selectedMood;
   List<GoalProject> get goals => widget.goals;
   List<MicroTask> get tasks => widget.tasks;
@@ -287,8 +288,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 14),
                     _CompanionSection(
-                      pet: pet,
-                      accessory: accessory,
+                      companion: companion,
+                      streakTier: streakTier,
                       happiness: petHappiness,
                       selectedMood: selectedMood,
                       title: _profileTitle,
@@ -335,11 +336,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
+  // ignore: unused_element
   void _setGoalReminders(bool value) {
     setState(() => _goalReminders = value);
     onGoalRemindersChanged(value);
   }
 
+  // ignore: unused_element
   void _setFriendProgressSharing(bool value) {
     setState(() => _friendProgressSharing = value);
     onFriendProgressSharingChanged(value);
@@ -458,6 +461,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // ignore: unused_element
   Future<void> _sendVerificationEmail(BuildContext context) async {
     final sent = await onSendEmailVerification();
     if (!context.mounted) return;
@@ -469,6 +473,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // ignore: unused_element
   Future<void> _refreshVerification(BuildContext context) async {
     final refreshed = await onRefreshEmailVerification();
     if (!context.mounted) return;
@@ -480,6 +485,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // ignore: unused_element
   Future<void> _sendPasswordReset(BuildContext context) async {
     if (email.trim().isEmpty) {
       _showSnack(context, 'No email address is attached to this account.');
@@ -495,6 +501,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // ignore: unused_element
   Future<void> _confirmDeleteAccount(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -523,11 +530,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (deleted) {
       _showSnack(context, 'Account deleted.');
       Navigator.pop(context);
-    } else {
-      _showSnack(context, 'Could not delete account.');
     }
   }
 
+  // ignore: unused_element
   void _showInfo(
     BuildContext context, {
     required String title,
@@ -956,15 +962,15 @@ class _ProgressSection extends StatelessWidget {
 
 class _CompanionSection extends StatelessWidget {
   const _CompanionSection({
-    required this.pet,
-    required this.accessory,
+    required this.companion,
+    required this.streakTier,
     required this.happiness,
     required this.selectedMood,
     required this.title,
   });
 
-  final PetSkin pet;
-  final String accessory;
+  final CompanionKind companion;
+  final CompanionStreakTier streakTier;
   final int happiness;
   final String selectedMood;
   final String title;
@@ -977,7 +983,7 @@ class _CompanionSection extends StatelessWidget {
         padding: const EdgeInsets.all(18),
         child: Row(
           children: [
-            PetAvatar(pet: pet, size: 92),
+            CompanionSprite(kind: companion, tier: streakTier, size: 92),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
@@ -986,7 +992,7 @@ class _CompanionSection extends StatelessWidget {
                   Text(title, style: GdText.titleLarge),
                   const SizedBox(height: 6),
                   Text(
-                    '${pet.name} companion with $accessory. Mood: $selectedMood.',
+                    '${companion.label} companion. Mood: $selectedMood.',
                     style: TextStyle(
                       color: gdMuted,
                       fontWeight: FontWeight.w800,
@@ -1086,6 +1092,7 @@ class _AchievementsSection extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _AccountSecuritySection extends StatelessWidget {
   const _AccountSecuritySection({
     required this.email,
@@ -1186,6 +1193,7 @@ class _AccountSecuritySection extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _SocialPrivacySection extends StatelessWidget {
   const _SocialPrivacySection({
     required this.friends,
@@ -1226,8 +1234,7 @@ class _SocialPrivacySection extends StatelessWidget {
             ),
             subtitle: Text(
               '$friends friends. $joinedCommunities/$totalCommunities communities joined.',
-              style:
-                  TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
             ),
           ),
           const Divider(height: 1),
@@ -1265,6 +1272,7 @@ class _SocialPrivacySection extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _PreferencesSection extends StatelessWidget {
   const _PreferencesSection({
     required this.routines,
@@ -1333,6 +1341,7 @@ class _PreferencesSection extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _DangerZoneSection extends StatelessWidget {
   const _DangerZoneSection({
     required this.isGuest,
@@ -1389,8 +1398,7 @@ class _DangerZoneSection extends StatelessWidget {
               isGuest
                   ? 'Guest preview accounts can simply sign out.'
                   : 'Permanently delete the Firebase Auth account.',
-              style:
-                  TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
             ),
             onTap: isGuest ? null : onDeleteAccount,
           ),

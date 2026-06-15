@@ -1061,13 +1061,13 @@ class TaskCard extends StatefulWidget {
     required this.task,
     required this.goal,
     required this.mood,
-    required this.onToggle,
+    required this.onComplete,
   });
 
   final MicroTask task;
   final GoalProject goal;
   final String mood;
-  final VoidCallback onToggle;
+  final VoidCallback onComplete;
 
   @override
   State<TaskCard> createState() => _TaskCardState();
@@ -1169,7 +1169,7 @@ class _TaskCardState extends State<TaskCard>
       child: AppCard(
         color: isDone ? gdCardLight.withValues(alpha: 0.72) : null,
         child: InkWell(
-          onTap: isDone ? null : widget.onToggle,
+          onTap: isDone ? null : widget.onComplete,
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Row(
@@ -1177,7 +1177,7 @@ class _TaskCardState extends State<TaskCard>
               children: [
                 Checkbox(
                   value: isDone,
-                  onChanged: isDone ? null : (_) => widget.onToggle(),
+                  onChanged: isDone ? null : (_) => widget.onComplete(),
                 ),
                 const SizedBox(width: 4),
                 Expanded(
