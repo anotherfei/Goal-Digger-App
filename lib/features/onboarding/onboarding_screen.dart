@@ -963,35 +963,13 @@ class _GoalDiggerMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return SizedBox(
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        color: gdSurface,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: _emailPalette.primary.withValues(alpha: 0.16),
-            blurRadius: size * 0.38,
-            offset: Offset(0, size * 0.14),
-          ),
-        ],
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Icon(Icons.track_changes_rounded,
-              color: gdPrimary, size: size * 0.58),
-          Positioned(
-            right: size * 0.18,
-            bottom: size * 0.2,
-            child: Icon(
-              Icons.terrain_rounded,
-              color: _guestPalette.primary,
-              size: size * 0.28,
-            ),
-          ),
-        ],
+      child: Image.asset(
+        'assets/app_icon2.png',
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
       ),
     );
   }

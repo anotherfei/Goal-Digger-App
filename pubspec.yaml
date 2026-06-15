@@ -51,6 +51,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/app_icon2.png
     - assets/lumi/
     - assets/auri/
     - assets/porc/
