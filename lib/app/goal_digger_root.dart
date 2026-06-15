@@ -4447,6 +4447,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       pageBuilder: (context, animation, secondaryAnimation) {
         return FocusCountdownDialog(
           config: config,
+          activeCompanion: _activeCompanion,
           remainingSecondsProvider: () => _focusRemainingSeconds,
           pausedProvider: () => _focusPaused,
           onPauseToggle: () => unawaited(_toggleFocusPause()),

@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../../core/constants/gd_constants.dart';
 import '../../../core/theme/gd_design.dart';
 import '../../../core/utils/date_helpers.dart';
 import '../../../models/models.dart';
 import '../../../shared/widgets/shared_widgets.dart';
+import '../../companion/companion_sprite.dart';
 import '../services/focus_app_blocking_service.dart';
 
 class FocusSessionConfig {
@@ -771,6 +771,7 @@ class FocusCountdownDialog extends StatefulWidget {
   const FocusCountdownDialog({
     super.key,
     required this.config,
+    required this.activeCompanion,
     required this.remainingSecondsProvider,
     required this.pausedProvider,
     required this.onPauseToggle,
@@ -779,6 +780,7 @@ class FocusCountdownDialog extends StatefulWidget {
   });
 
   final FocusSessionConfig config;
+  final CompanionKind activeCompanion;
   final int Function() remainingSecondsProvider;
   final bool Function() pausedProvider;
   final VoidCallback onPauseToggle;
@@ -850,7 +852,9 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
                   child: SingleChildScrollView(
                     child: Column(
                       children: [
-                        PetAvatar(pet: defaultPet, size: 112),
+                        _FocusCompanionAnimation(
+                          companion: widget.activeCompanion,
+                        ),
                         const SizedBox(height: 20),
                         Text(widget.config.title,
                             textAlign: TextAlign.center,
@@ -965,6 +969,25 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _FocusCompanionAnimation extends StatelessWidget {
+  const _FocusCompanionAnimation({required this.companion});
+
+  final CompanionKind companion;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      image: true,
+      label: '${companion.label} companion focusing with you',
+      child: SpriteSheetAnimation(
+        assetPath: 'assets/${companion.assetFolder}/high_interacted.png',
+        size: 132,
+        duration: const Duration(milliseconds: 1400),
       ),
     );
   }
