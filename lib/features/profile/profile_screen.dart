@@ -119,12 +119,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool get isGuest => _isGuest;
   bool get emailVerified => _emailVerified;
   List<String> get providerIds => _providerIds;
-  int get coins => widget.coins;
   int get streak => widget.streak;
   int get petHappiness => widget.petHappiness;
   PetSkin get pet => widget.pet;
-  String get accessory => widget.accessory;
-  String get selectedMood => widget.selectedMood;
   List<GoalProject> get goals => widget.goals;
   List<MicroTask> get tasks => widget.tasks;
   List<CommunityGroup> get communities => widget.communities;
@@ -219,7 +216,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final completedGoals = goals
         .where((goal) => goal.tasks.isNotEmpty && goal.progress >= 1)
         .length;
-    final progress = tasks.isEmpty ? 0.0 : completedTasks / tasks.length;
 
     return Scaffold(
       backgroundColor: gdBackground,
@@ -276,22 +272,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ],
                     const SizedBox(height: 14),
                     _ProgressSection(
-                      coins: coins,
                       streak: streak,
                       completedGoals: completedGoals,
                       totalGoals: goals.length,
                       completedTasks: completedTasks,
                       totalTasks: tasks.length,
                       focusMinutes: focusMinutes,
-                      progress: progress,
-                    ),
-                    const SizedBox(height: 14),
-                    _CompanionSection(
                       pet: pet,
-                      accessory: accessory,
-                      happiness: petHappiness,
-                      selectedMood: selectedMood,
-                      title: _profileTitle,
+                      petHappiness: petHappiness,
                     ),
                     const SizedBox(height: 14),
                     _AchievementsSection(
@@ -309,16 +297,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
-  }
-
-  String get _profileTitle {
-    if (streak >= 30) return 'Goal Crusher';
-    if (streak >= 14) return 'Sprint Builder';
-    if (streak >= 7) return 'Focused Starter';
-    if (goals.where((goal) => goal.progress > 0).isNotEmpty) {
-      return 'Momentum Maker';
-    }
-    return 'Goal Explorer';
   }
 
   void _startDisplayNameEdit() {
@@ -875,139 +853,103 @@ class _InlineDivider extends StatelessWidget {
 
 class _ProgressSection extends StatelessWidget {
   const _ProgressSection({
-    required this.coins,
     required this.streak,
     required this.completedGoals,
     required this.totalGoals,
     required this.completedTasks,
     required this.totalTasks,
     required this.focusMinutes,
-    required this.progress,
+    required this.pet,
+    required this.petHappiness,
   });
 
-  final int coins;
   final int streak;
   final int completedGoals;
   final int totalGoals;
   final int completedTasks;
   final int totalTasks;
   final int focusMinutes;
-  final double progress;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _SectionHeader(
-              icon: Icons.insights_rounded,
-              title: 'Progress',
-              subtitle: 'A quick read on your current momentum.',
-            ),
-            const SizedBox(height: 16),
-            LinearProgressIndicator(
-              value: progress.clamp(0, 1),
-              minHeight: 10,
-              backgroundColor: gdPrimarySoft,
-              color: gdPrimary,
-              borderRadius: BorderRadius.circular(999),
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                _MetricTile(
-                  icon: Icons.local_fire_department_rounded,
-                  label: 'Streak',
-                  value: '$streak days',
-                ),
-                _MetricTile(
-                  icon: Icons.paid_rounded,
-                  label: 'Coins',
-                  value: '$coins',
-                ),
-                _MetricTile(
-                  icon: Icons.flag_rounded,
-                  label: 'Goals',
-                  value: '$completedGoals/$totalGoals',
-                ),
-                _MetricTile(
-                  icon: Icons.check_circle_rounded,
-                  label: 'Tasks',
-                  value: '$completedTasks/$totalTasks',
-                ),
-                _MetricTile(
-                  icon: Icons.timer_rounded,
-                  label: 'Focus',
-                  value: '$focusMinutes min',
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CompanionSection extends StatelessWidget {
-  const _CompanionSection({
-    required this.pet,
-    required this.accessory,
-    required this.happiness,
-    required this.selectedMood,
-    required this.title,
-  });
-
   final PetSkin pet;
-  final String accessory;
-  final int happiness;
-  final String selectedMood;
-  final String title;
+  final int petHappiness;
 
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      color: gdPrimarySoft,
       child: Padding(
         padding: const EdgeInsets.all(18),
-        child: Row(
-          children: [
-            PetAvatar(pet: pet, size: 92),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: GdText.titleLarge),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${pet.name} companion with $accessory. Mood: $selectedMood.',
-                    style: TextStyle(
-                      color: gdMuted,
-                      fontWeight: FontWeight.w800,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const spacing = 12.0;
+            const focusSize = 104.0;
+            final tileWidth =
+                ((constraints.maxWidth - spacing) / 2).clamp(138.0, 220.0);
+
+            return Center(
+              child: SizedBox(
+                width: tileWidth * 2 + spacing,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            _MetricTile(
+                              icon: Icons.local_fire_department_rounded,
+                              label: 'Streak',
+                              value: _daysLabel(streak),
+                              width: tileWidth,
+                              minHeight: 132,
+                            ),
+                            const SizedBox(width: spacing),
+                            _MetricTile(
+                              icon: Icons.timer_rounded,
+                              label: 'Focus',
+                              value: '$focusMinutes min',
+                              width: tileWidth,
+                              minHeight: 132,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: spacing),
+                        Row(
+                          children: [
+                            _MetricTile(
+                              icon: Icons.flag_rounded,
+                              label: 'Goals',
+                              value: '$completedGoals/$totalGoals',
+                              width: tileWidth,
+                              minHeight: 132,
+                            ),
+                            const SizedBox(width: spacing),
+                            _MetricTile(
+                              icon: Icons.check_circle_rounded,
+                              label: 'Tasks',
+                              value: '$completedTasks/$totalTasks',
+                              width: tileWidth,
+                              minHeight: 132,
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  LinearProgressIndicator(
-                    value: happiness.clamp(0, 100) / 100,
-                    minHeight: 8,
-                    color: gdAccent,
-                    backgroundColor: gdSurface,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ],
+                    _PetProgressCircle(
+                      pet: pet,
+                      happiness: petHappiness,
+                      size: focusSize,
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );
   }
+
+  String _daysLabel(int days) => days == 1 ? '1 day' : '$days days';
 }
 
 class _AchievementsSection extends StatelessWidget {
@@ -1226,8 +1168,7 @@ class _SocialPrivacySection extends StatelessWidget {
             ),
             subtitle: Text(
               '$friends friends. $joinedCommunities/$totalCommunities communities joined.',
-              style:
-                  TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
             ),
           ),
           const Divider(height: 1),
@@ -1389,8 +1330,7 @@ class _DangerZoneSection extends StatelessWidget {
               isGuest
                   ? 'Guest preview accounts can simply sign out.'
                   : 'Permanently delete the Firebase Auth account.',
-              style:
-                  TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+              style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
             ),
             onTap: isGuest ? null : onDeleteAccount,
           ),
@@ -1487,16 +1427,21 @@ class _MetricTile extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    this.width = 132,
+    this.minHeight,
   });
 
   final IconData icon;
   final String label;
   final String value;
+  final double width;
+  final double? minHeight;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 132,
+      width: width,
+      constraints: BoxConstraints(minHeight: minHeight ?? 0),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: gdCardLight,
@@ -1504,12 +1449,16 @@ class _MetricTile extends StatelessWidget {
         border: Border.all(color: gdBorder),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Icon(icon, color: gdPrimary),
           const SizedBox(height: 8),
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: gdInk,
               fontSize: 18,
@@ -1518,9 +1467,71 @@ class _MetricTile extends StatelessWidget {
           ),
           Text(
             label,
+            textAlign: TextAlign.center,
             style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PetProgressCircle extends StatelessWidget {
+  const _PetProgressCircle({
+    required this.pet,
+    required this.happiness,
+    required this.size,
+  });
+
+  final PetSkin pet;
+  final int happiness;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = (happiness.clamp(0, 100) / 100).toDouble();
+    final avatarSize = size - 24;
+
+    return Semantics(
+      label: '${pet.name} companion, $happiness percent happy',
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: gdSurface,
+                boxShadow: GdShadows.soft,
+              ),
+            ),
+            SizedBox(
+              width: size - 4,
+              height: size - 4,
+              child: CircularProgressIndicator(
+                value: progress,
+                strokeWidth: 6,
+                strokeCap: StrokeCap.round,
+                color: gdAccent,
+                backgroundColor: gdPrimarySoft,
+              ),
+            ),
+            Container(
+              width: avatarSize + 8,
+              height: avatarSize + 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: gdSurface,
+                border: Border.all(color: gdSurface, width: 3),
+              ),
+            ),
+            ExcludeSemantics(
+              child: PetAvatar(pet: pet, size: avatarSize),
+            ),
+          ],
+        ),
       ),
     );
   }

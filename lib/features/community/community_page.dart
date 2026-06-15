@@ -3453,14 +3453,6 @@ class _CommunityDetailPage extends StatelessWidget {
     return '${value.substring(0, 6)}...${value.substring(value.length - 2)}';
   }
 
-  String _formatTimestamp(Timestamp? timestamp) {
-    if (timestamp == null) return 'Not saved yet';
-    final date = timestamp.toDate().toLocal();
-    String two(int value) => value.toString().padLeft(2, '0');
-    return '${date.year}-${two(date.month)}-${two(date.day)} '
-        '${two(date.hour)}:${two(date.minute)}';
-  }
-
   void _openMemberDetails(
     BuildContext context,
     _CommunityMemberProfile member,
@@ -3607,6 +3599,23 @@ class _CommunityDetailPage extends StatelessWidget {
                             height: 1.4,
                           ),
                         ),
+                        const SizedBox(height: 14),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            _CommunityDetailPill(
+                              icon: Icons.confirmation_number_rounded,
+                              label: 'Join code',
+                              value: group.joinCode,
+                            ),
+                            _CommunityDetailPill(
+                              icon: Icons.person_rounded,
+                              label: 'Owner',
+                              value: group.ownerName,
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 16),
                         Row(
                           children: [
@@ -3648,56 +3657,7 @@ class _CommunityDetailPage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
-                AppCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        _CommunityInfoRow(
-                          icon: Icons.confirmation_number_rounded,
-                          label: 'Join code',
-                          value: group.joinCode,
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.person_rounded,
-                          label: 'Owner',
-                          value: group.ownerName,
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.badge_rounded,
-                          label: 'Owner UID',
-                          value: _shortId(group.ownerUid),
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.people_rounded,
-                          label: 'Members',
-                          value: '${group.members}',
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.local_fire_department_rounded,
-                          label: 'Community streak',
-                          value: '${group.communityStreak} days',
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.calendar_month_rounded,
-                          label: 'Created',
-                          value: _formatTimestamp(group.createdAt),
-                        ),
-                        const Divider(height: 20),
-                        _CommunityInfoRow(
-                          icon: Icons.update_rounded,
-                          label: 'Updated',
-                          value: _formatTimestamp(group.updatedAt),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                _CommunityOverviewSection(group: group),
                 const SizedBox(height: 18),
                 SectionTitle(title: 'Members', trailing: '${group.members}'),
                 const SizedBox(height: 10),
@@ -3775,6 +3735,142 @@ class _CommunityDetailPage extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _CommunityDetailPill extends StatelessWidget {
+  const _CommunityDetailPill({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 160,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: gdCardLight,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: gdBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: gdPrimarySoft,
+            child: Icon(icon, color: gdPrimary, size: 17),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: gdMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: gdInk,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommunityOverviewSection extends StatelessWidget {
+  const _CommunityOverviewSection({required this.group});
+
+  final _DbCommunity group;
+
+  @override
+  Widget build(BuildContext context) {
+    final requiredActiveMembers = max(1, group.requiredActiveMembersToday);
+    final activeMembers =
+        max(0, min(group.activeMemberCountToday, requiredActiveMembers));
+
+    return AppCard(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const spacing = 12.0;
+            final tileWidth =
+                ((constraints.maxWidth - spacing) / 2).clamp(150.0, 190.0);
+
+            return Wrap(
+              alignment: WrapAlignment.center,
+              spacing: spacing,
+              runSpacing: spacing,
+              children: [
+                _CommunityMetricTile(
+                  icon: Icons.local_fire_department_rounded,
+                  label: 'Streak',
+                  value: _daysLabel(group.communityStreak),
+                  width: tileWidth,
+                  minHeight: 126,
+                ),
+                _CommunityMetricTile(
+                  icon: Icons.people_rounded,
+                  label: 'Members',
+                  value: _membersLabel(group.members),
+                  width: tileWidth,
+                  minHeight: 126,
+                ),
+                _CommunityMetricTile(
+                  icon: Icons.task_alt_rounded,
+                  label: 'Active today',
+                  value: '$activeMembers/$requiredActiveMembers',
+                  width: tileWidth,
+                  minHeight: 126,
+                ),
+                _CommunityMetricTile(
+                  icon: group.joined
+                      ? Icons.verified_user_rounded
+                      : Icons.group_add_rounded,
+                  label: 'Status',
+                  value: group.isOwner
+                      ? 'Owner'
+                      : group.joined
+                          ? 'Joined'
+                          : 'Open',
+                  width: tileWidth,
+                  minHeight: 126,
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  String _daysLabel(int days) => days == 1 ? '1 day' : '$days days';
+
+  String _membersLabel(int members) {
+    return members == 1 ? '1 member' : '$members members';
   }
 }
 
@@ -4699,16 +4795,21 @@ class _CommunityMetricTile extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    this.width = 132,
+    this.minHeight,
   });
 
   final IconData icon;
   final String label;
   final String value;
+  final double width;
+  final double? minHeight;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 132,
+      width: width,
+      constraints: BoxConstraints(minHeight: minHeight ?? 0),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: gdCardLight,
@@ -4736,55 +4837,6 @@ class _CommunityMetricTile extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _CommunityInfoRow extends StatelessWidget {
-  const _CommunityInfoRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        CircleAvatar(
-          radius: 18,
-          backgroundColor: gdPrimarySoft,
-          child: Icon(icon, color: gdPrimary, size: 18),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  color: gdMuted,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 2),
-              SelectableText(
-                value.isEmpty ? '-' : value,
-                style: TextStyle(
-                  color: gdInk,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }
