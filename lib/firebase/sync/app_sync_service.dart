@@ -98,6 +98,7 @@ class AppSyncService {
     required String? lastStreakDateKey,
     required String selectedMood,
     required int petHappiness,
+    required Map<CompanionKind, int> companionHappiness,
     required String? lastHappinessDecayDateKey,
     required CompanionKind activeCompanion,
     required Set<CompanionKind> unlockedCompanions,
@@ -109,6 +110,7 @@ class AppSyncService {
         lastStreakDateKey: lastStreakDateKey,
         selectedMood: selectedMood,
         petHappiness: petHappiness,
+        companionHappiness: companionHappiness,
         lastHappinessDecayDateKey: lastHappinessDecayDateKey,
         activeCompanion: activeCompanion,
         unlockedCompanions: unlockedCompanions,
@@ -134,6 +136,7 @@ class AppSyncService {
   Future<void> updateCompanionState({
     required int coins,
     required int happiness,
+    required Map<CompanionKind, int> companionHappiness,
     required CompanionKind activeCompanion,
     required Set<CompanionKind> unlockedCompanions,
   }) =>
@@ -141,6 +144,7 @@ class AppSyncService {
         uid: uid,
         coins: coins,
         happiness: happiness,
+        companionHappiness: companionHappiness,
         activeCompanion: activeCompanion,
         unlockedCompanions: unlockedCompanions,
       );

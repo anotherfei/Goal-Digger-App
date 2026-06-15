@@ -1110,7 +1110,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
   DialogRoute<void>? _reassignLoaderRoute;
 
   String _selectedMood = 'Okay';
-  int _petHappiness = 62;
+  Map<CompanionKind, int> _companionHappiness = {
+    CompanionKind.lumi: defaultCompanionHappiness,
+  };
   String? _lastHappinessDecayDateKey;
   int _coins = 140;
   int _streak = 0;
@@ -1125,6 +1127,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
   ];
   CompanionKind _activeCompanion = CompanionKind.lumi;
   Set<CompanionKind> _unlockedCompanions = {CompanionKind.lumi};
+
+  int get _petHappiness =>
+      _companionHappiness[_activeCompanion] ?? defaultCompanionHappiness;
 
   FocusSessionConfig? _activeFocusConfig;
   int _focusRemainingSeconds = 0;
@@ -1370,7 +1375,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       _locallyReadNotificationIds.clear();
       _sentDeadlineSystemNoticeIds.clear();
       _coins = 140;
-      _petHappiness = 62;
+      _companionHappiness = {
+        CompanionKind.lumi: defaultCompanionHappiness,
+      };
       _lastHappinessDecayDateKey = null;
       _streak = 0;
       _lastStreakDateKey = null;
@@ -1445,13 +1452,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
           _coins = profile.coins;
           _streak = currentStreak;
           _lastStreakDateKey = profile.lastStreakDateKey;
-          _petHappiness = profile.petHappiness;
           _lastHappinessDecayDateKey = profile.lastHappinessDecayDateKey;
           _activeCompanion = profile.activeCompanion;
           _unlockedCompanions = {
             CompanionKind.lumi,
             ...profile.unlockedCompanions,
           };
+          _companionHappiness =
+              Map<CompanionKind, int>.from(profile.companionHappiness);
+          _ensureCompanionState();
           _selectedMood = profile.selectedMood;
           _profileDisplayName = syncedDisplayName.isNotEmpty
               ? syncedDisplayName
@@ -1548,6 +1557,90 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     return groups;
   }
 
+  int _clampCompanionHappiness(int happiness) {
+    return max(0, min(100, happiness));
+  }
+
+  int _happinessFor(CompanionKind companion) {
+    return _companionHappiness[companion] ?? defaultCompanionHappiness;
+  }
+
+  Map<CompanionKind, int> _companionHappinessForPersistence() {
+    final companions = {CompanionKind.lumi, ..._unlockedCompanions};
+    return {
+      for (final companion in companions)
+        companion: _clampCompanionHappiness(_happinessFor(companion)),
+    };
+  }
+
+  void _ensureCompanionState() {
+    _unlockedCompanions = {CompanionKind.lumi, ..._unlockedCompanions};
+    _companionHappiness.removeWhere((companion, happiness) {
+      if (companion == CompanionKind.lumi) return false;
+      final shouldLock =
+          happiness <= 0 || !_unlockedCompanions.contains(companion);
+      if (shouldLock) _unlockedCompanions.remove(companion);
+      return shouldLock;
+    });
+    _companionHappiness.putIfAbsent(
+      CompanionKind.lumi,
+      () => defaultCompanionHappiness,
+    );
+    for (final companion in _unlockedCompanions) {
+      _companionHappiness.putIfAbsent(
+        companion,
+        () => defaultCompanionHappiness,
+      );
+    }
+    if (!_unlockedCompanions.contains(_activeCompanion)) {
+      _activeCompanion = CompanionKind.lumi;
+    }
+  }
+
+  void _setCompanionHappiness(CompanionKind companion, int happiness) {
+    final clamped = _clampCompanionHappiness(happiness);
+    if (companion != CompanionKind.lumi && clamped <= 0) {
+      _unlockedCompanions.remove(companion);
+      _companionHappiness.remove(companion);
+      if (_activeCompanion == companion) {
+        _activeCompanion = CompanionKind.lumi;
+      }
+      _ensureCompanionState();
+      return;
+    }
+    _companionHappiness[companion] = clamped;
+    _ensureCompanionState();
+  }
+
+  void _adjustActiveCompanionHappiness(int delta) {
+    _setCompanionHappiness(
+      _activeCompanion,
+      _happinessFor(_activeCompanion) + delta,
+    );
+  }
+
+  void _applyCompanionSwitchPenalty(CompanionKind companion) {
+    final current = _happinessFor(companion);
+    if (current < companionSwitchHappinessFloor) return;
+    _setCompanionHappiness(
+      companion,
+      max(
+        companionSwitchHappinessFloor,
+        current - companionSwitchHappinessPenalty,
+      ),
+    );
+  }
+
+  void _unlockCompanion(CompanionKind companion) {
+    _unlockedCompanions = {
+      CompanionKind.lumi,
+      ..._unlockedCompanions,
+      companion,
+    };
+    _companionHappiness[companion] = defaultCompanionHappiness;
+    _ensureCompanionState();
+  }
+
   Future<void> _persistProfileStats() async {
     final sync = _sync;
     if (sync == null) return;
@@ -1556,6 +1649,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     final lastStreakDateKey = _lastStreakDateKey;
     final selectedMood = _selectedMood;
     final petHappiness = _petHappiness;
+    final companionHappiness = _companionHappinessForPersistence();
     final lastHappinessDecayDateKey = _lastHappinessDecayDateKey;
     final activeCompanion = _activeCompanion;
     final unlockedCompanions = Set<CompanionKind>.from(_unlockedCompanions)
@@ -1567,6 +1661,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
         lastStreakDateKey: lastStreakDateKey,
         selectedMood: selectedMood,
         petHappiness: petHappiness,
+        companionHappiness: companionHappiness,
         lastHappinessDecayDateKey: lastHappinessDecayDateKey,
         activeCompanion: activeCompanion,
         unlockedCompanions: unlockedCompanions,
@@ -1879,7 +1974,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     }
 
     setState(() {
-      _petHappiness = max(0, _petHappiness - decay);
+      final companions = List<CompanionKind>.from(_unlockedCompanions);
+      for (final companion in companions) {
+        _setCompanionHappiness(companion, _happinessFor(companion) - decay);
+      }
       _lastHappinessDecayDateKey = currentDayKey;
     });
     unawaited(_persistProfileStats());
@@ -3686,7 +3784,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     setState(() {
       task.done = true;
       _coins += task.points;
-      _petHappiness = min(100, _petHappiness + 5);
+      _adjustActiveCompanionHappiness(5);
       streakAwarded = _awardTaskCompletionStreak();
     });
     _showCoinRewardPrompt(
@@ -3854,7 +3952,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       return;
     }
     if (_activeCompanion == companion) return;
-    setState(() => _activeCompanion = companion);
+    final previousCompanion = _activeCompanion;
+    setState(() {
+      _applyCompanionSwitchPenalty(previousCompanion);
+      _activeCompanion = companion;
+      _ensureCompanionState();
+    });
     unawaited(_persistProfileStats());
     _showMessage('${companion.label} is now your companion.');
   }
@@ -3887,13 +3990,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     setState(() {
       _coins -= companionGachaCost - refund;
       if (!duplicate) {
-        _unlockedCompanions = {
-          CompanionKind.lumi,
-          ..._unlockedCompanions,
-          companion,
-        };
+        _applyCompanionSwitchPenalty(_activeCompanion);
+        _unlockCompanion(companion);
         _activeCompanion = companion;
-        _petHappiness = min(100, _petHappiness + 6);
+        _ensureCompanionState();
       }
     });
     unawaited(_persistProfileStats());
@@ -3947,7 +4047,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     }
     setState(() {
       _coins -= 10;
-      _petHappiness = min(100, _petHappiness + 10);
+      _adjustActiveCompanionHappiness(10);
     });
     unawaited(_persistProfileStats());
   }
@@ -3959,8 +4059,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       '${_activeCompanion.label} says: one tiny step counts!',
       '${_activeCompanion.label} feels closer to you.',
     ];
-    setState(() => _petHappiness = min(100, _petHappiness + 2));
-    unawaited(_persistProfileStats());
     _showMessage(reactions[Random().nextInt(reactions.length)]);
   }
 
@@ -4876,6 +4974,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       CompanionPage(
         coins: _coins,
         happiness: _petHappiness,
+        companionHappiness: _companionHappinessForPersistence(),
         streakTier: companionStreakTierFor(_streak),
         activeCompanion: _activeCompanion,
         unlockedCompanions: _unlockedCompanions,
