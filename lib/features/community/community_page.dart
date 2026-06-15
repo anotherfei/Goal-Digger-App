@@ -1516,6 +1516,7 @@ class _CommunityPageState extends State<CommunityPage> {
         builder: (_) => _FindFriendsPage(
           currentUid: _user?.uid,
           publicProfiles: _publicProfiles,
+          usersCollection: _usersCollection,
           currentFriendUids:
               Set<String>.from(currentFriendUids ?? const <String>{}),
           onProfileDetails: (profile) =>
@@ -2260,7 +2261,7 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
     _profileStream =
         widget.publicProfiles.limit(80).snapshots().asyncMap((snapshot) async {
       var profiles = snapshot.docs
-          .map((doc) => _PublicProfile.fromPublicDoc(doc))
+          .map((doc) => _PublicProfile.fromUserDoc(doc))
           .where((profile) => profile.uid != widget.currentUid)
           .toList();
       final streaks =

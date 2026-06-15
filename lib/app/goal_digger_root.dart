@@ -107,6 +107,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   StreamSubscription<List<AppNotification>>? _notificationsSub;
   String? _activeUid;
   bool _syncedGoalsLoaded = false;
+  bool _goalsSyncedFromFirebase = false;
   bool _profileLoaded = false;
   Set<String> _joinedCommunityIds = {};
   List<RoutineItem> _routines = [];
@@ -417,6 +418,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         setState(() {
           _goals = goals;
           _syncedGoalsLoaded = true;
+          _goalsSyncedFromFirebase = true;
         });
         _restoreTodayStreakFromCompletedTask();
         _queueNotificationScheduleSync();
@@ -2529,19 +2531,11 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   void _deleteGoal(GoalProject goal) {
     setState(() => _goals.removeWhere((item) => item.id == goal.id));
-    setState(() => _goals.removeWhere((item) => item.id == goal.id));
-
     unawaited(_deleteGoalEverywhere(goal));
-
-    _queueNotificationScheduleSync();
-    _showMessage('Removed ${goal.title}.');
-  }
     _queueNotificationScheduleSync();
     _showMessage('Removed ${goal.title}.');
   }
 
-  Future<void> _deleteGoalEverywhere(GoalProject goal) async {
-    final user = context.read<AuthService>().currentUser;
   Future<void> _deleteGoalEverywhere(GoalProject goal) async {
     final user = context.read<AuthService>().currentUser;
 
@@ -2550,58 +2544,23 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         final deletedEvents = await context
             .read<GoogleCalendarService>()
             .deleteTaskEventsForGoal(goal);
-    if (user != null && !user.isAnonymous) {
-      try {
-        final deletedEvents = await context
-            .read<GoogleCalendarService>()
-            .deleteTaskEventsForGoal(goal);
-
         debugPrint(
           'Deleted $deletedEvents Google Calendar events for goal ${goal.title}.',
         );
       } catch (e) {
         debugPrint('Google Calendar goal cleanup failed: $e');
-        debugPrint(
-          'Deleted $deletedEvents Google Calendar events for goal ${goal.title}.',
-        );
-      } catch (e) {
-        debugPrint('Google Calendar goal cleanup failed: $e');
-
         if (mounted) {
-          _showMessage(
-            'Goal removed, but Google Calendar cleanup failed.',
-          );
-        }
-      }
-    }
-        if (mounted) {
-          _showMessage(
-            'Goal removed, but Google Calendar cleanup failed.',
-          );
+          _showMessage('Goal removed, but Google Calendar cleanup failed.');
         }
       }
     }
 
     final sync = _sync;
-    final sync = _sync;
-
     if (sync != null) {
       try {
         await sync.deleteGoal(goal.id.toString());
       } catch (e) {
         debugPrint('Delete goal sync failed: $e');
-    if (sync != null) {
-      try {
-        await sync.deleteGoal(goal.id.toString());
-      } catch (e) {
-        debugPrint('Delete goal sync failed: $e');
-
-        if (mounted) {
-          _showMessage('Goal removed locally, but Firebase delete failed.');
-        }
-      }
-    }
-  }
         if (mounted) {
           _showMessage('Goal removed locally, but Firebase delete failed.');
         }
