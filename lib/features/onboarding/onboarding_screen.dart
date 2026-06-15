@@ -352,8 +352,8 @@ class _BrandPanel extends StatelessWidget {
             mainAxisAlignment:
                 compact ? MainAxisAlignment.center : MainAxisAlignment.end,
             children: [
-              const _GoalDiggerMark(size: 64),
-              SizedBox(height: compact ? 16 : 24),
+              const _GoalDiggerMark(size: 82),
+              SizedBox(height: compact ? 8 : 12),
               Text(
                 'Goal Digger',
                 style: TextStyle(
@@ -502,8 +502,8 @@ class _AuthFormPanelState extends State<_AuthFormPanel> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(child: _GoalDiggerMark(size: 52)),
-            const SizedBox(height: 22),
+            Center(child: _GoalDiggerMark(size: 72)),
+            const SizedBox(height: 12),
             Text(
               title,
               textAlign: TextAlign.center,
@@ -963,13 +963,29 @@ class _GoalDiggerMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return Container(
       width: size,
       height: size,
-      child: Image.asset(
-        'assets/app_icon2.png',
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.high,
+      padding: EdgeInsets.all(size * 0.02),
+      decoration: BoxDecoration(
+        color: gdPrimarySoft,
+        borderRadius: BorderRadius.circular(size * 0.24),
+        border: Border.all(color: gdPrimary.withValues(alpha: 0.18)),
+        boxShadow: [
+          BoxShadow(
+            color: gdPrimary.withValues(alpha: 0.16),
+            blurRadius: size * 0.28,
+            offset: Offset(0, size * 0.12),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(size * 0.16),
+        child: Image.asset(
+          'assets/app_icon2.png',
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+        ),
       ),
     );
   }
