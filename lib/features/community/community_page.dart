@@ -1181,29 +1181,31 @@ class _CommunityPageState extends State<CommunityPage> {
     final displayName = _cleanDisplayName(user.displayName, user.email);
     final communityRef = _communitiesCollection.doc(communityId);
     final messageRef = communityRef.collection('messages').doc();
-    final batch = _db.batch();
 
-    batch.set(messageRef, {
-      'type': 'system',
-      'eventType': eventType,
-      'senderUid': user.uid,
-      'senderName': displayName,
-      'text': text,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    try {
+      await messageRef.set({
+        'type': 'system',
+        'eventType': eventType,
+        'senderUid': user.uid,
+        'senderName': displayName,
+        'text': text,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (error) {
+      debugPrint('Community system message failed: $error');
+      return;
+    }
 
-    batch.set(
-      communityRef,
-      {
+    try {
+      await communityRef.set({
         'lastMessage': text,
         'lastSenderUid': user.uid,
         'lastSenderName': displayName,
         'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
-
-    await batch.commit();
+      }, SetOptions(merge: true));
+    } catch (error) {
+      debugPrint('Community system message summary update failed: $error');
+    }
   }
 
   Future<void> _deleteOrLeaveCommunity(_DbCommunity community) async {
@@ -1247,6 +1249,7 @@ class _CommunityPageState extends State<CommunityPage> {
       } else {
         final displayName = _cleanDisplayName(user.displayName, user.email);
         final leaveText = '$displayName has left';
+        var didLeave = false;
 
         await _db.runTransaction((transaction) async {
           final snapshot = await transaction.get(ref);
@@ -1258,25 +1261,21 @@ class _CommunityPageState extends State<CommunityPage> {
 
           members.remove(user.uid);
 
-          final messageRef = ref.collection('messages').doc();
-          transaction.set(messageRef, {
-            'type': 'system',
-            'eventType': 'leave',
-            'senderUid': user.uid,
-            'senderName': displayName,
-            'text': leaveText,
-            'createdAt': FieldValue.serverTimestamp(),
-          });
-
           transaction.update(ref, {
             'members': members.toList(),
             'memberCount': members.length,
-            'lastMessage': leaveText,
-            'lastSenderUid': user.uid,
-            'lastSenderName': displayName,
             'updatedAt': FieldValue.serverTimestamp(),
           });
+          didLeave = true;
         });
+
+        if (didLeave) {
+          await _addCommunitySystemMessage(
+            communityId: community.id,
+            text: leaveText,
+            eventType: 'leave',
+          );
+        }
       }
 
       await _usersCollection.doc(user.uid).set({
@@ -4918,27 +4917,24 @@ class _CommunityChatPageState extends State<_CommunityChatPage> {
           : user.email?.split('@').first.trim() ?? 'Member';
 
       final messageRef = _messages.doc();
-      final batch = _db.batch();
-
-      batch.set(messageRef, {
+      await messageRef.set({
         'senderUid': user.uid,
         'senderName': displayName,
         'text': text,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      batch.set(
-        _communityRef,
-        {
+      try {
+        await _communityRef.set({
           'lastMessage': text,
           'lastSenderUid': user.uid,
           'lastSenderName': displayName,
           'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+        }, SetOptions(merge: true));
+      } catch (error) {
+        debugPrint('Community message summary update failed: $error');
+      }
 
-      await batch.commit();
       _controller.clear();
     } on FirebaseException catch (error) {
       _snack('Community message failed: ${error.message ?? error.code}');
