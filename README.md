@@ -1,211 +1,460 @@
 # Goal Digger
 
-Goal Digger is a Flutter productivity companion app for Android, backed by Firebase and an agentic AI planning layer built with Genkit and Gemini. The app helps a user turn goals into scheduled micro-tasks, adapt plans around mood and routines, focus without distractions, earn companion rewards, and stay accountable through friends, communities, notifications, and Google Calendar sync.
+Goal Digger is an agentic AI productivity companion app built with Flutter, Firebase, Genkit, and Gemini. It helps a user turn goals into scheduled micro-tasks, adapt work around mood and routines, focus with Android app blocking, earn companion rewards, collaborate with friends and communities, receive smart notifications, and optionally sync tasks to Google Calendar.
 
-The repository includes the Flutter client, Firebase Auth/Firestore/Functions integration, Genkit Cloud Functions, Firestore rules/indexes, Android native notification and app-blocking bridges, and generated platform folders. Android is the primary target because focus app blocking and local system notifications depend on Android APIs.
+Android is the primary, fully featured target. The repository also contains generated Flutter folders for web, iOS, macOS, Linux, and Windows, but the native focus blocker and local notification scheduler are Android-specific.
 
 ![Goal Digger screenshot](flutter_01.png)
 
-## What The App Does
+## What Is In This Repository
 
-Goal Digger is organized around five primary app tabs plus modal surfaces for focus, profile, settings, and notifications:
+```text
+.
+|-- android/                      Android app, notification bridge, focus blocker
+|-- assets/                       Companion sprite sheets and Plus Jakarta Sans
+|-- functions/                    Firebase Functions, Genkit flows, agents, notification triage
+|-- ios/ macos/ linux/ windows/   Generated Flutter platform folders
+|-- lib/
+|   |-- app/                      App root, shell wiring, goal planning workflow
+|   |-- core/                     Constants, theme, date helpers
+|   |-- data/                     Demo seed goals used before synced data loads
+|   |-- features/                 UI features: goals, home, calendar, social, pet, focus, profile, settings, notifications
+|   |-- firebase/                 Firebase init, auth, Firestore repositories, app sync service
+|   |-- genkit/                   Typed Flutter wrappers for AI Cloud Functions
+|   |-- models/                   Shared app models
+|   |-- services/                 Google Calendar REST service
+|   |-- shared/                   Shared widgets
+|-- firebase.json                 Firebase project, emulator, rules, indexes, functions config
+|-- firestore.rules               Firestore security rules
+|-- firestore.indexes.json        Firestore indexes
+|-- pubspec.yaml                  Flutter dependencies, assets, fonts
+```
 
-| Area | What is implemented |
+## Feature Map
+
+| Area | Implemented features |
 | --- | --- |
-| Goals | Create goals with deadline, category, and priority; review AI-generated milestone plans before committing; edit deadlines and priority; remove goals; persist goals and embedded tasks in Firestore. |
-| Home | Mood check-in, today's scheduled tasks grouped by goal, completion progress, remaining minutes, one-way task completion confirmation, streak and coin rewards. |
-| Calendar | Month grid with task/routine dots, daily agenda grouped by goal, recurring routines, routine management, single-task and bulk Google Calendar sync. |
-| Social | Full-account social access with public profiles, friend search, direct chats, community creation, join codes, community chat, member detail pages, and leaderboards. |
-| Pet | Animated companion, happiness, feeding, companion switching, capsule/gacha unlocks, duplicate refunds, rarity tiers, and per-companion persistence. |
-| Focus | Task-linked or custom focus sessions, timer presets/custom duration, pause/resume/minimize/stop, Android persistent timer notification, optional Android Accessibility app blocking, post-session AI insight and rewards. |
-| Settings | Light/dark/system theme, account security, email verification, password reset, Google Calendar connection, notification controls, account deletion, sign out. |
-| Notifications | In-app inbox with important grouping, unread badge, mark read/all-read, delete, Android settings shortcut, Firestore-backed notification history. |
+| Onboarding and auth | Email/password login and signup, Google sign-in, anonymous guest mode, password reset, Firebase Auth state handling. |
+| Goals | Goal creation with title, category, priority, deadline, AI-generated task plan review, edit deadline, edit priority, search goals, delete goals. |
+| Agentic planning | Goal guard, deadline feasibility check, AI milestone generation, chat-style plan edits, task reassignment, memory, deterministic fallbacks. |
+| Home | Mood check, today's task groups, progress, remaining minutes, one-way task completion confirmation, streaks, coins, companion happiness. |
+| Calendar | Month grid, daily agenda, recurring routines, fixed-commitment display, single-task and bulk Google Calendar task sync. |
+| Focus | Task-linked or custom focus sessions, presets/custom duration, pause/resume/minimize/stop, Android timer notification, optional app blocking. |
+| Pet | Animated companion, happiness, feeding, companion switching, capsule/gacha unlocks, duplicate refunds, rarity tiers, streak-based sprites. |
+| Social | Public profiles, friend search, direct chats, community creation, join codes, community chat, member profiles, leaderboards, AI social ranking. |
+| Notifications | Firestore inbox, important grouping, unread badge, mark read/all-read/delete, Android scheduled notifications, FCM token storage, push triage agent. |
+| Profile and settings | Display name, guest upgrade, email verification, password reset, account deletion, theme mode, notification controls, Google Calendar connection. |
 
-## Key User Features
+## App Shell
 
-### Agentic Goal Planning
+The main signed-in experience uses five bottom tabs:
 
-- Goal creation starts with a mandatory planning agent call before tasks are created.
-- The backend first runs a goal guard that rejects goals that are unclear, too broad, impossible, harmful, or negatively framed.
-- The planning agent receives context from the client: category, priority, deadline length, already scheduled daily minutes, mood, streak, and today's task count.
-- If the deadline looks unrealistic, the agent suggests a new number of days and asks the user to accept or decline before changing the deadline.
-- The agent can generate structured milestones with title, duration, load, and day offset.
-- Generated plans are shown in a review dialog before being saved.
-- The review dialog supports chat-style plan edits before finalizing.
-- Plan modification uses `agentModify`, which can apply changes, ask for clarification, ask for confirmation, or reject unsafe/unrealistic edits.
-- If a modification agent call fails, the app can attempt a full re-plan.
-- If AI task generation fails after a valid guard/planning path, the app has deterministic fallback task templates.
-- If the planning guard itself is unavailable, the app refuses to silently create tasks and asks the user to retry or rewrite the goal.
+- `Goals`: create and manage goals.
+- `Calendar`: inspect scheduled work and routines.
+- `Home`: mood-aware daily task dashboard.
+- `Social`: friends, chats, communities, and leaderboards.
+- `Pet`: companion rewards and collection.
 
-### Goals And Tasks
+The top app chrome opens profile, settings, and the notification inbox. A floating Focus action starts or resumes a focus session. Active focus sessions show a banner and a live countdown label in the shell.
 
-- Each goal has a title, category, priority from 1 to 5, deadline, gradient colors, and progress.
-- Tasks have a title, duration, scheduled date, point reward, done state, and load:
-  - `Light`
-  - `Focus`
-  - `Stretch`
-- Goals calculate progress from completed tasks.
-- Task completion is intentionally one-way in the UI and requires confirmation.
-- Completing a task gives coins, increases companion happiness, updates streaks, persists the task state, and refreshes notification schedules.
-- Goal deletion removes the local goal and attempts to delete the Firestore goal document.
-- Goal deadlines and priorities can be edited after creation.
+## Onboarding, Accounts, And Profiles
 
-### Mood-Aware Home
+Goal Digger uses Firebase Auth for every session, including guest preview mode.
 
-- The Home tab tracks mood, today's task count, completed count, progress, and remaining minutes.
-- Mood changes persist to the user profile.
-- Mood changes call `moodAdvisor`, which produces an AI mood plan and may create an important in-app notification for low-energy moods.
-- Mood changes also trigger `agentReassign` so the backend can rebalance unfinished tasks around the user's current capacity.
+Implemented auth flows:
 
-### Calendar And Routines
+- Email/password account creation and login.
+- Google sign-in.
+- Anonymous guest sign-in.
+- Password reset from onboarding, profile, and settings.
+- Guest upgrade to email/password while preserving progress when Firebase credential linking succeeds.
+- Guest upgrade to Google while preserving progress when credential linking succeeds.
+- Display name editing for non-guest accounts.
+- Email verification send and refresh.
+- Account deletion with password reauthentication when Firebase requires recent login.
+- Sign out.
 
-- Calendar shows a month grid with task and routine density.
-- Selecting a day shows tasks grouped by goal, completion state, load, duration, deadline, and category.
-- Users can add routines with title, date, time, and repeat type:
-  - yearly
-  - monthly
-  - weekly
-  - daily
-  - custom one-off
-- Routines are persisted under the user's Firestore document.
-- Adding a routine triggers task reassignment because routines are treated as fixed commitments.
-- Routines can be viewed in a dedicated full list and deleted.
+Guest users can preview the app. Full social features such as friend search, real direct chat, and community writes require a non-anonymous account.
 
-### Google Calendar Sync
+Profile surfaces include:
 
-- Users connect Google Calendar from Settings.
-- Calendar sync is manual from the Calendar tab.
-- A single task can be synced to Google Calendar.
+- Display name, email, photo URL, provider status, and verification status.
+- Coins, streak, companion, selected mood, goals, tasks, communities, and friends.
+- Achievement-style badges based on streak, completion, friends, focus minutes, and community activity.
+- Social/privacy controls for friend progress sharing.
+- Goal reminder preference.
+- Guest upgrade panel for binding the guest session to Google or email/password.
+- Danger-zone actions for sign out and account deletion.
+
+## Goals And Tasks
+
+Goal creation captures:
+
+- Goal title.
+- Category: `Study`, `Career`, `Wellness`, `Finance`, `Creative`, or `Other`.
+- Priority from 1 to 5.
+- Deadline date.
+
+Each saved goal contains:
+
+- Integer `id`.
+- `title`.
+- `importance`.
+- `category`.
+- `deadline`.
+- Gradient colors.
+- `progress`.
+- Embedded `tasksMap` keyed by task id.
+
+Each task contains:
+
+- Integer `id`.
+- Parent `goalId`.
+- `title`.
+- `durationMinutes`.
+- `scheduledDate`.
+- `done`.
+- `points`.
+- Optional `completedAt`.
+- Load: `Light`, `Focus`, or `Stretch`.
+
+The Goals tab shows active goals sorted by nearest deadline, with search, progress, category, priority, deadline, completed-task counts, and a task preview. Users can edit a goal deadline, edit priority, or delete a goal.
+
+Task completion is intentionally one-way in the UI. The Home tab asks for confirmation before marking a task complete. Completing a task:
+
+- Sets `done` and `completedAt`.
+- Awards the task's points as coins.
+- Adds companion happiness.
+- Updates the streak.
+- Marks joined communities active for the day.
+- Persists the task state to Firestore.
+- Reschedules local Android notifications.
+
+## Agentic AI Planning
+
+The app's goal creation flow is agent-first. A goal is not saved immediately after the user types it. Instead, the app opens a planning dialog and calls the backend `agentPlanner` function.
+
+Planning context sent from Flutter includes goal metadata and current app state such as category, priority, deadline length, selected mood, completed/today task counts, streak, and existing scheduled daily minutes. The backend uses that context to decide feasibility and scheduling.
+
+The planning pipeline:
+
+1. `goal_guard.ts` evaluates the goal before any task generation.
+2. The guard rejects goals that are unclear, too broad, impossible, harmful, or negatively framed.
+3. Allowed goals can still receive a deadline suggestion if the selected deadline is unrealistic.
+4. `planner.ts` chooses which tools to run.
+5. `runtime.ts` executes selected tools and chains useful outputs between them.
+6. `createMilestones` generates structured task milestones.
+7. `analyzeHabits` estimates burnout risk, strongest hours, and a productivity insight.
+8. `scheduleTasks` calculates deterministic session spacing.
+9. `reflection.ts` produces concise user-facing reflections.
+10. Agent memory is written to `agent_memory/{uid}` by the backend Admin SDK.
+
+The app displays generated tasks in a plan review dialog before committing them. The user can ask for changes inside that dialog. Those edits call `agentModify`, which can:
+
+- Apply a clear, realistic change.
+- Ask a clarifying question.
+- Ask for confirmation when a change is possible but risky.
+- Reject unrealistic or unsafe changes.
+
+Hard safety rules are enforced in code, not only prompts:
+
+- No task may be scheduled past the deadline window.
+- Durations are clamped into sane bounds.
+- Task counts are capped.
+- Reassignment respects mood-based daily capacity.
+- Higher-priority goals get scheduling preference when proposals conflict.
+
+Fallback behavior is explicit:
+
+- If milestone generation returns no usable tasks, the app can try `taskGenerator`.
+- If task generation fails after a valid planning path, deterministic task templates are available.
+- If the goal guard cannot verify the goal, the app does not silently create tasks.
+- If the modification agent is unavailable, the dialog can attempt a full re-plan.
+- Reassignment has a deterministic overload-relief fallback.
+
+## Home And Mood-Aware Tasks
+
+The Home tab is the daily work surface. It shows:
+
+- Mood check.
+- Today's completion progress.
+- Number of completed tasks.
+- Total scheduled tasks for today.
+- Remaining scheduled minutes.
+- Tasks grouped by goal.
+- Per-goal progress and metadata.
+
+The visible mood choices are:
+
+- `Tired`.
+- `Okay`.
+- `Great`.
+
+Mood affects the UI and backend:
+
+- Tired mode shows smaller first-step guidance and shorter adjusted minutes for heavy tasks.
+- Great mode encourages deeper focus on non-light tasks.
+- Mood is persisted to the user profile.
+- Mood changes call `moodAdvisor`.
+- Mood changes also call `agentReassign` so unfinished tasks can be moved around current capacity.
+- Low-energy mood advice can create important in-app notifications.
+
+## Calendar, Routines, And Google Calendar
+
+The Calendar tab includes:
+
+- Month grid.
+- Task and routine density dots.
+- Month task count and completed count.
+- Selected-day summary.
+- Day agenda grouped by goal.
+- Fixed commitments card for routines.
+- Collapsible task lists for crowded agenda days.
+- Single-task Google Calendar sync button.
+- Bulk "sync all tasks" button.
+- Routine creation and deletion.
+- Full routines list.
+
+Routine fields:
+
+- Title.
+- Start date.
+- Start time.
+- Repeat type: `yearly`, `monthly`, `weekly`, `daily`, or `custom`.
+
+Routine matching is date-aware:
+
+- Daily routines appear every day from their start date.
+- Weekly routines match weekday.
+- Monthly routines match day of month.
+- Yearly routines match month and day.
+- Custom routines occur only on their selected day.
+
+Adding a routine triggers task reassignment because routines are treated as fixed commitments.
+
+Google Calendar support:
+
+- Settings connects or disconnects a Google Calendar account.
+- Calendar sync remains manual.
+- A single task can be synced to the user's primary Google Calendar.
 - All tasks can be synced in bulk.
-- The sync code checks for existing events before inserting duplicates.
-- Task events use private extended properties such as `source`, `goalId`, `taskId`, and `syncKey`.
-- The Google Calendar service also includes a routine event helper with `routineId`, `syncKey`, and recurrence support for daily, weekly, monthly, or yearly repeats.
-- The current event timezone in the implementation is `Asia/Taipei`.
+- The service checks existing events before inserting duplicates.
+- Task events use private extended properties: `source`, `goalId`, `taskId`, and `syncKey`.
+- Event timezone is currently `Asia/Taipei`.
+- The Google Calendar service also contains a routine event helper with recurrence support, but the visible Calendar UI currently exposes task sync.
 
-### Focus Mode
+The required Google OAuth scope is:
 
-- Focus sessions can be tied to an unfinished goal task or started as a custom session.
-- Duration options include task duration, 15, 25, 45, 60 minutes, or a custom value up to 240 minutes.
-- The focus dialog supports pause, resume, minimize, and stop.
-- The countdown stays accurate when the app resumes from the background.
-- On Android, focus mode shows a persistent countdown notification.
+```text
+https://www.googleapis.com/auth/calendar.events
+```
+
+## Focus Mode
+
+Focus mode can start from:
+
+- An unfinished task scheduled for today.
+- A custom focus session.
+
+Duration options:
+
+- Selected task duration.
+- 15 minutes.
+- 25 minutes.
+- 45 minutes.
+- 60 minutes.
+- Custom duration from 1 to 240 minutes.
+
+Focus session controls:
+
+- Start.
+- Pause.
+- Resume.
+- Minimize without stopping.
+- Stop.
+- Reopen an active session from the shell.
+
+Android focus support:
+
+- The native layer shows a persistent countdown notification.
+- The notification uses a dedicated `goal_digger_focus_timer` channel.
 - Optional app blocking uses Android Accessibility with explicit user permission.
-- The app picker lists launchable apps, supports search, and excludes system/protected packages.
-- If a blocked app opens during focus, the accessibility service sends the user back to the home screen and shows a short toast.
-- Completed sessions can auto-complete the selected task.
-- Completed or stopped sessions call `focusInsight` for a short AI reflection.
-- Completed focus sessions can award additional coins based on duration.
+- The app picker lists launchable apps, supports search, shows icons when available, and excludes protected/system packages.
+- If a blocked app opens during a session, the accessibility service sends the user to the home screen and shows a short toast.
+- Focus timer state is restored after boot/app update/time changes when possible.
 
-### Companion System
+When a focus session completes, the app can complete the selected task and calls `focusInsight` for an AI reflection. Completed sessions can award additional coins based on duration.
 
-- Lumi is the default unlocked companion.
-- Additional companions are unlockable through capsule/gacha pulls:
-  - Auri
-  - Porc
-  - Mush
-  - Cels
-  - Pyro
-  - Gbat
-  - Nong
-- Rarity tiers are common, uncommon, rare, and epic.
-- Capsule cost is 100 coins.
-- Duplicate pulls refund 50 coins.
-- Rarity distribution shown in the UI is:
-  - Common: 68%
-  - Uncommon: 20%
-  - Rare: 10%
-  - Epic: 2%
-- Feeding a companion costs 10 coins and increases happiness.
-- Switching companions applies a small happiness penalty to the previous companion, with a floor.
-- Companion happiness decays daily:
-  - 10 points after a day with completed work
-  - 20 points after a day with no completed work
+## Companion And Rewards
+
+Lumi is the default unlocked companion. Additional companions can be unlocked through capsule pulls:
+
+- Auri.
+- Porc.
+- Mush.
+- Cels.
+- Pyro.
+- Gbat.
+- Nong.
+
+Companion rarity tiers:
+
+- Common: Auri, Porc.
+- Uncommon: Mush, Cels.
+- Rare: Pyro, Gbat.
+- Epic: Nong.
+
+Gacha economy:
+
+- Capsule cost: 100 coins.
+- Duplicate refund: 50 coins.
+- Effective rarity weights: Common 68%, Uncommon 20%, Rare 10%, Epic 2%.
+
+Companion care:
+
+- Feeding costs 10 coins.
+- Feeding adds 10 happiness.
+- Completing a task adds 5 happiness.
+- Switching companions applies a 10-point happiness penalty to the previous companion, with a floor of 30.
+- Daily happiness decay is 10 after a day with completed work and 20 after a day with no completed work.
 - Non-default companions can lock again if their happiness reaches zero.
-- Streak tiers change the sprite sheet:
-  - low: under 7 days
-  - mid: 7 to 13 days
-  - high: 14 or more days
-- Sprite assets include idle and interacted animations for each companion and tier.
 
-### Social And Community
+Sprites:
 
-- Guest users can preview the app, but full social features require a non-anonymous account.
-- The app creates and maintains public profiles in `public_profiles/{uid}` for search and social display.
-- Users can search public profiles and add friends.
-- Direct chats are stored under `chats/{chatId}` with a `messages` subcollection.
-- Communities are stored under `communities/{communityId}`.
-- Users can create communities, join by code, leave communities, or delete owned communities.
-- Communities support message threads under `communities/{communityId}/messages`.
-- Social notifications are written to recipients' inboxes for friend, chat, and community activity.
-- Leaderboards show streak ranking across friends and communities.
-- Profile detail pages show progress, achievements, shared communities, streak state, and relationship status.
+- Each companion has `low`, `mid`, and `high` sprite tiers.
+- Each tier has `idle` and `interacted` animation sheets.
+- Streak tier thresholds are low under 7 days, mid from 7 to 13 days, and high from 14 days onward.
 
-### Profile And Account Management
+## Social, Friends, Chats, And Communities
 
-- Firebase Auth supports:
-  - anonymous guest sign-in
-  - Google sign-in
-  - email/password sign-in
-  - email/password account creation
-  - upgrading a guest account to email/password
-  - upgrading a guest account to Google
-- Guest upgrades preserve the anonymous account where Firebase credential linking succeeds.
-- Users can edit display name.
-- Users can request email verification.
-- Users can refresh email verification status.
-- Users can send password reset email.
-- Users can delete the current Firebase Auth account.
-- Email/password account deletion supports password reauthentication when Firebase requires recent login.
+The Social tab uses Firestore directly for real-time social data. Full access requires a non-anonymous account.
 
-### Notifications
+Public profile behavior:
 
-Goal Digger has both in-app notifications and Android system notifications.
+- The app creates and updates `public_profiles/{uid}`.
+- Public profiles include display name, username/search text, photo URL, and streak-related fields.
+- Signed-in users can read public profiles for search and social display.
+
+Friends:
+
+- Users can search live public profiles.
+- AI social ranking uses the `socialSuggestions` function to score friend fit from current goals/activity and candidates.
+- Users can add and remove friends.
+- Friend and chat lists include active direct chats, even if the other user is not yet stored as a friend.
+- Friend leaderboards rank streaks.
+- Detail pages show progress, achievements, chat status, and shared communities.
+
+Direct chats:
+
+- Direct chat documents live under `chats/{chatId}`.
+- Messages live under `chats/{chatId}/messages/{messageId}`.
+- Chat membership is enforced by Firestore rules.
+- Sending a message can create a best-effort in-app notification for the recipient.
+
+Communities:
+
+- Communities live under `communities/{communityId}`.
+- Users can create communities with a generated join code.
+- Users can join by join code.
+- Users can leave or delete communities they own.
+- Community messages live under `communities/{communityId}/messages/{messageId}`.
+- Community detail pages show join code, members, metrics, overview, member profiles, and chat entry points.
+- Community leaderboards rank community streaks.
+- Community streaks are driven by daily activity: at least half of listed members must be active for the day to qualify.
+- Per-user membership records live under `users/{uid}/communities/{communityId}`.
+
+## Notifications
+
+Goal Digger has three notification layers:
+
+- Firestore-backed in-app inbox.
+- Android local/system notifications.
+- Firebase Cloud Messaging push notifications selected by a backend triage agent.
 
 In-app notification types:
 
-- daily plan
-- task reminder
-- streak saver
-- deadline warning
-- routine reminder
-- focus complete
-- mood nudge
-- reward
-- community
-- friend
-- chat
-- important
+- `dailyPlan`.
+- `taskReminder`.
+- `streakSaver`.
+- `deadlineWarning`.
+- `routineReminder`.
+- `focusComplete`.
+- `moodNudge`.
+- `reward`.
+- `community`.
+- `friend`.
+- `chat`.
+- `important`.
 
-Implemented notification behavior:
+Inbox behavior:
 
-- Firestore-backed inbox under `users/{uid}/notifications`.
-- Important unread notifications are grouped at the top of the inbox.
-- Top app bar shows unread and important unread state.
-- Notifications can be marked read, all marked read, or deleted.
-- Important deadline notifications are created when goals are due soon or overdue.
-- Android permission problems create an important in-app notification.
-- System notification settings are configurable in Settings.
-- Android notification scheduling covers daily plans, streak saver nudges, deadline warnings, routine reminders, and focus completion.
-- Scheduled Android notifications are restored after boot, app update, time change, or timezone change.
-- Firebase Cloud Messaging tokens are saved under `users/{uid}/fcmTokens`.
+- Notifications live under `users/{uid}/notifications/{notificationId}`.
+- Important unread notifications are grouped at the top.
+- The app shell shows unread and important-unread badges.
+- Users can mark one notification read.
+- Users can mark all notifications read.
+- Users can delete notifications.
+- Important notifications can surface as snackbars.
+
+Android local scheduling includes:
+
+- Daily plan summaries for the next 7 days with unfinished work.
+- Streak saver reminders.
+- Deadline warnings and overdue notices.
+- Routine reminders.
+- Focus completion notifications.
+
+Android notification behavior:
+
+- Runtime permission request for Android 13+.
+- Standard and important channels.
+- Dedicated focus timer channel.
+- Settings shortcut to Android notification settings.
+- Saved alarm requests restored after boot, app update, time change, and timezone change.
+
+FCM behavior:
+
+- FCM tokens are saved under `users/{uid}/fcmTokens/{tokenId}`.
 - Foreground FCM messages can be displayed through the Android notification bridge.
+- Reward push messages are suppressed in the foreground path.
 
 Backend notification agent:
 
-- `sendNotificationPush` runs when an inbox notification is created.
-- The agent decides whether to push now or keep the notification inbox-only.
-- It considers duplicates, hourly push budget, notification settings, engagement history, importance, and protected social content.
-- Reward notifications stay in the inbox.
+- `sendNotificationPush` runs when a Firestore inbox notification is created.
+- `learnNotificationEngagement` runs when a notification becomes read.
+- The agent decides between `push_now` and `inbox_only`.
+- Policy blocks respect system notification settings, explicit suppress flags, duplicates, rewards, disabled type settings, hourly push budget, and learned low engagement.
 - Chat, friend, and community push copy is preserved rather than rewritten by the model.
-- `learnNotificationEngagement` updates notification-agent memory when notifications are read.
+- Reward notifications remain inbox-only.
+- Decisions and engagement stats are written into notification documents and `agent_memory/{uid}`.
 
-### Theme And Design
+## Settings And Theme
 
-- The app uses Plus Jakarta Sans from local assets.
-- Light, dark, and system theme modes are available.
-- Theme preference is persisted with `shared_preferences`.
-- Design tokens live under `lib/core/theme`.
-- Shared UI components live under `lib/shared/widgets`.
+Settings includes:
+
+- Appearance selector: Light, Dark, or System.
+- Email verification.
+- Password reset.
+- Linked provider summary.
+- Google Calendar connect/disconnect.
+- Android notification master switch.
+- In-app notification switch.
+- Important in-app notification switch.
+- Advanced local notification controls for daily plan, streak saver, deadline warnings, routine reminders, and focus completion.
+- Daily plan time picker.
+- Streak saver time picker.
+- Deadline warning lead time.
+- Android notification settings shortcut.
+- Test notification.
+- Sign out.
+- Account deletion.
+
+Theme implementation:
+
+- Plus Jakarta Sans is bundled in `assets/fonts/plus_jakarta_sans`.
+- Theme mode persists with `shared_preferences`.
+- Design tokens live in `lib/core/theme`.
+- Shared UI widgets live in `lib/shared/widgets`.
 
 ## AI Backend
 
@@ -223,149 +472,124 @@ Function region:
 asia-east1
 ```
 
-Callable and HTTP functions:
+Runtime:
+
+```text
+Node.js 20
+```
+
+Exported functions:
 
 | Function | Type | Purpose |
 | --- | --- | --- |
-| `goalCoach` | callable | Conversational goal coaching response with suggested actions. Implemented in the backend and typed Flutter wrapper, but not currently exposed as its own standalone screen. |
-| `goalCoachStream` | HTTP SSE | Streaming goal coach endpoint with manual Firebase ID token verification. |
-| `taskGenerator` | callable | Generates AI micro-tasks for a goal, with deterministic fallback. |
-| `moodAdvisor` | callable | Produces mood-aware productivity advice. |
-| `focusInsight` | callable | Produces post-focus-session insight and deterministic reward metadata. |
-| `agentPlanner` | callable | Full agentic goal planning run: guard, plan, execute tools, reflect, save memory. |
-| `agentModify` | callable | Applies or rejects edits to the current draft plan. |
-| `agentReassign` | callable | Rebalances unfinished tasks after mood, routine, deadline, priority, or manual context changes. |
-| `sendNotificationPush` | Firestore trigger | Runs the notification triage agent when inbox notifications are created. |
+| `goalCoach` | Callable | Conversational goal coaching response with suggested actions. Implemented and wrapped in Flutter, but not currently exposed as its own visible screen. |
+| `goalCoachStream` | HTTP SSE | Streaming coach endpoint with manual Firebase ID token verification. |
+| `taskGenerator` | Callable | Generates micro-tasks for a goal after goal guard validation; includes deterministic fallback. |
+| `moodAdvisor` | Callable | Produces mood-aware advice after mood changes. |
+| `focusInsight` | Callable | Produces post-focus-session insight and reward metadata. |
+| `socialSuggestions` | Callable | Ranks friend/community candidates by AI fit, with deterministic fallback ranking. |
+| `agentPlanner` | Callable | Full agentic planning run: guard, plan, execute tools, reflect, save memory. |
+| `agentModify` | Callable | Applies, clarifies, confirms, or rejects edits to the current draft plan. |
+| `agentReassign` | Callable | Rebalances unfinished tasks after mood, routine, deadline, priority, or manual context changes. |
+| `sendNotificationPush` | Firestore trigger | Runs the notification triage agent for new inbox notifications. |
 | `learnNotificationEngagement` | Firestore trigger | Learns from read notifications and updates notification-agent memory. |
 
 Agent tools:
 
-- `analyzeHabits`: estimates burnout risk, productivity insight, and stronger work hours.
-- `createMilestones`: creates structured milestone tasks with duration, load, and day offset.
-- `scheduleTasks`: deterministic schedule math for sessions and recommended daily minutes.
-
-Agent hard rules:
-
-- Reject negative, harmful, unclear, impossible, or too-broad goals before task generation.
-- Suggest a better deadline when the selected deadline is unrealistic, but ask before changing it.
-- Never silently apply risky or ambiguous plan edits.
-- Enforce deadline limits in code, not only in prompts.
-- Apply reassignment with daily capacity and goal-importance constraints.
-- Use deterministic fallbacks when model calls fail.
+- `analyzeHabits`: estimates burnout risk, productivity insight, and strongest work hours.
+- `createMilestones`: generates structured milestone tasks with title, duration, load, and day offset.
+- `scheduleTasks`: deterministic session schedule math and recommended daily minutes.
 
 Agent memory:
 
-- Stored in `agent_memory/{uid}`.
-- Written only by backend Admin SDK.
-- Readable by the owning user under Firestore rules.
-- Tracks last goal, total agent runs, reflection count, preferred work hours, recommended daily minutes, burnout risk, notification engagement, and reassignment audit data.
+- Stored at `agent_memory/{uid}`.
+- Readable by the owning user.
+- Not writable from client SDKs.
+- Written by backend Admin SDK.
+- Stores last goal, total agent runs, reflection count, preferred work hours, recommended daily minutes, burnout risk, mood history, reassignment audit data, and notification engagement.
 
-## Firebase And Data Model
+## Firebase And Firestore
 
-Configured Firebase project in this repo:
+Configured project information in this repo:
 
 ```text
 projectId: goaldigger-2026
+Firestore database: (default)
 Firestore location: asia-east1
 Functions region: asia-east1
 ```
 
-Primary Firestore collections:
+Primary Firestore paths:
 
 | Path | Purpose |
 | --- | --- |
-| `users/{uid}` | Profile, streak, coins, companion state, mood, notification settings, preferences, friends, onboarding status. |
-| `users/{uid}/goals/{goalId}` | User goals. Tasks are embedded in a `tasksMap` field on the goal document. |
+| `users/{uid}` | User profile, streak, coins, companion state, mood, notification settings, preferences, friends array, onboarding status. |
+| `users/{uid}/goals/{goalId}` | User goals. Tasks are embedded on the goal document in `tasksMap`. |
 | `users/{uid}/routines/{routineId}` | Calendar routines. |
-| `users/{uid}/notifications/{notificationId}` | In-app notifications and notification-agent metadata. |
+| `users/{uid}/notifications/{notificationId}` | In-app notification inbox and notification-agent metadata. |
 | `users/{uid}/fcmTokens/{tokenId}` | Firebase Messaging tokens. |
-| `users/{uid}/communities/{communityId}` | Per-user community membership records used by repository code. |
+| `users/{uid}/communities/{communityId}` | Per-user community membership records. |
 | `public_profiles/{uid}` | Searchable social profile. |
-| `communities/{communityId}` | Global community documents. |
-| `communities/{communityId}/messages/{messageId}` | Community chat messages. |
 | `chats/{chatId}` | Direct chat documents. |
 | `chats/{chatId}/messages/{messageId}` | Direct chat messages. |
+| `communities/{communityId}` | Global community documents. |
+| `communities/{communityId}/messages/{messageId}` | Community chat messages. |
+| `communities/{communityId}/dailyActivity/{dateKey}` | Community streak participation records. |
 | `agent_memory/{uid}` | Backend-owned AI memory. |
 
-Security rules are in `firestore.rules`.
+Rules summary:
 
-Indexes are in `firestore.indexes.json`.
+- `users/{uid}` is readable by signed-in users and writable only by the owner.
+- Owner-only access is enforced for goals, routines, membership records, notifications, and FCM tokens under `users/{uid}`.
+- `public_profiles` are readable by signed-in users and writable only by the owner.
+- Direct chats are readable/updatable only by chat members.
+- Direct chat messages are creatable only by chat members as themselves.
+- Communities are readable by signed-in users.
+- Community updates allow owners plus validated self-join/self-leave/activity updates.
+- Community messages are readable by signed-in users and creatable by the authenticated sender.
+- `agent_memory/{uid}` is owner-readable and client-write-disabled.
 
-Firebase config is in:
-
-- `firebase.json`
-- `.firebaserc`
-- `lib/firebase_options.dart`
-- `android/app/google-services.json`
+Indexes are defined in `firestore.indexes.json` for goal sorting, routine sorting, and community ranking queries.
 
 ## Android Native Capabilities
 
-Android platform channels:
+Android package and label:
+
+```text
+applicationId: com.example.fltr_test
+android:label: Goal Digger
+```
+
+Platform channels:
 
 | Channel | Dart service | Native implementation |
 | --- | --- | --- |
-| `goal_digger/notifications` | `AndroidNotificationService` | `MainActivity.kt`, `GoalNotificationScheduler.kt`, receivers |
+| `goal_digger/notifications` | `AndroidNotificationService` | `MainActivity.kt`, `GoalNotificationScheduler.kt`, notification receivers |
 | `goal_digger/focus_blocking` | `FocusAppBlockingService` | `MainActivity.kt`, `FocusBlockAccessibilityService.kt`, `FocusBlockStore.kt`, `FocusTimerNotification.kt` |
 
-Android permissions and services:
+Android permissions/services:
 
 - `POST_NOTIFICATIONS` for Android 13+ notification permission.
-- `RECEIVE_BOOT_COMPLETED` to restore scheduled notifications and focus timer state.
+- `RECEIVE_BOOT_COMPLETED` for restoring scheduled notifications and focus timer state.
 - Accessibility service `FocusBlockAccessibilityService` for optional app blocking.
-- Package visibility query for launchable apps so the focus app picker can list installed apps.
-
-The Android manifest currently uses:
-
-```text
-android:label="fltr_test"
-```
-
-Change that label if you want installed builds to display `Goal Digger`.
-
-## Project Structure
-
-```text
-.
-|-- android/                      Android app, native notification bridge, focus blocker
-|-- assets/                       Companion sprite sheets and fonts
-|-- functions/                    Firebase Functions, Genkit flows, agents, notification triage
-|-- ios/ macos/ linux/ windows/   Generated Flutter platform folders
-|-- lib/
-|   |-- app/                      App root, shell wiring, goal planning workflow
-|   |-- core/                     Constants, theme, date helpers
-|   |-- data/                     Seed demo goals
-|   |-- features/                 UI features: planner, tasks, calendar, community, companion, focus, profile, settings, notifications
-|   |-- firebase/                 Firebase init, auth, Firestore repositories, sync service
-|   |-- genkit/                   Flutter wrappers for AI Functions
-|   |-- models/                   Shared app models
-|   |-- services/                 Google Calendar service
-|   |-- shared/                   Shared widgets
-|-- firestore.rules               Firestore security rules
-|-- firestore.indexes.json        Firestore indexes
-|-- firebase.json                 Firebase project configuration
-|-- pubspec.yaml                  Flutter dependencies, assets, fonts
-```
+- Package visibility queries for launchable apps so the focus app picker can list installed apps.
 
 ## Requirements
 
 - Flutter SDK compatible with Dart `>=3.4.0 <4.0.0`.
 - Android Studio or Android SDK for Android builds.
-- A Firebase project with Auth, Firestore, Functions, App Check, and Firebase Messaging configured.
+- Firebase project with Auth, Firestore, Functions, App Check, and Firebase Messaging configured.
 - Node.js 20 for Firebase Functions.
-- Firebase CLI, usually run with `npx -y firebase-tools@latest`.
-- A Gemini API key stored as the Firebase Functions secret `GEMINI_API_KEY`.
+- Firebase CLI, commonly run as `npx -y firebase-tools@latest`.
+- Gemini API key stored as Firebase Functions secret `GEMINI_API_KEY`.
 
-For Android sign-in with Google, the Firebase Android app must have the correct SHA-1/SHA-256 fingerprints for the debug/release signing keys you use.
+For Google sign-in on Android, add the correct SHA-1/SHA-256 fingerprints for your debug and release signing keys to the Firebase Android app.
 
-For Google Calendar sync, the Google sign-in client must be allowed to request:
-
-```text
-https://www.googleapis.com/auth/calendar.events
-```
+For Google Calendar sync, the Google sign-in configuration must allow the `calendar.events` scope listed above.
 
 ## Install
 
-From the repository root:
+Install Flutter dependencies:
 
 ```powershell
 flutter pub get
@@ -381,13 +605,13 @@ cd ..
 
 ## Run With Real Firebase
 
-The app defaults to real Firebase unless `USE_FIREBASE_EMULATORS` is enabled.
+The app uses real Firebase unless `USE_FIREBASE_EMULATORS` is set.
 
 ```powershell
 flutter run
 ```
 
-For a release APK:
+Build a release APK:
 
 ```powershell
 flutter build apk --release
@@ -407,19 +631,19 @@ npx -y firebase-tools@latest deploy --only firestore,functions
 
 ## Run With Firebase Emulators
 
-Start Firebase emulators:
+Start emulators:
 
 ```powershell
 npx -y firebase-tools@latest emulators:start --only auth,firestore,functions
 ```
 
-Run Flutter against the local emulators:
+Run Flutter against local emulators:
 
 ```powershell
 flutter run --dart-define=USE_FIREBASE_EMULATORS=true
 ```
 
-Emulator ports from `firebase.json`:
+Default emulator ports from `firebase.json`:
 
 | Emulator | Port |
 | --- | --- |
@@ -428,9 +652,26 @@ Emulator ports from `firebase.json`:
 | Functions | `5001` |
 | Emulator UI | `4000` |
 
-On Android emulators, the app connects to Firebase emulators through `10.0.2.2`.
+The app maps Android emulator traffic to `10.0.2.2`. Other local platforms use `localhost`.
 
-Debug/profile Android manifests include cleartext network config for emulator traffic. Release configuration disables cleartext traffic.
+Optional Dart defines:
+
+```text
+FIREBASE_AUTH_EMULATOR_PORT
+FIRESTORE_EMULATOR_PORT
+FIREBASE_FUNCTIONS_EMULATOR_PORT
+USE_FIREBASE_APP_CHECK_DEBUG_PROVIDER
+RECAPTCHA_SITE_KEY
+```
+
+## App Check
+
+Firebase App Check is activated during startup unless emulator mode is enabled.
+
+- Debug provider is used in non-release builds.
+- Play Integrity is used for Android release paths.
+- DeviceCheck is used for Apple release paths.
+- Web can use reCAPTCHA v3 when `RECAPTCHA_SITE_KEY` is provided.
 
 ## Build And Test
 
@@ -462,48 +703,51 @@ npm test
 cd ..
 ```
 
-The current Functions test suite covers notification triage policy decisions.
+Current tests include Flutter onboarding widget coverage and Functions notification-triage policy coverage.
 
 ## Important Implementation Notes
 
-- Root `README.md` is intentionally the source of truth for the repository overview.
-- The app includes generated platform folders, but Android has the most complete native feature support.
-- Guest sign-in is anonymous Firebase Auth, not a purely local mode.
-- Demo seed goals, routines, friends, and communities are used while signed out or before Firestore sync completes.
-- Social features require a full, non-anonymous account unless `kDebugAllowGuestSocialAccess` is changed in code.
-- Tasks are embedded under each goal in `tasksMap`; they are not stored in a Firestore task subcollection.
-- App Check uses debug providers in non-release builds and Play Integrity/DeviceCheck in production paths.
-- `goalCoach` and `goalCoachStream` are implemented and wrapped, but the current visible app flow mainly uses the planning, modification, reassignment, mood, task generation, and focus insight functions.
-- The Google Calendar service writes to the user's primary calendar and uses private extended properties to avoid duplicates.
-- Android app blocking only works after the user explicitly enables the accessibility service.
+- Android is the most complete app target.
+- Guest mode is Firebase anonymous auth, not purely local state.
+- Demo seed goals, routines, friends, and communities are used before real synced data is available.
+- Social features require a full non-anonymous account.
+- Goal tasks are embedded in `tasksMap`; they are not currently stored in a task subcollection.
+- `goalCoach` and `goalCoachStream` are implemented and typed, but the visible app flow mainly uses planning, modification, reassignment, mood advice, social suggestions, task generation, and focus insight.
+- Google Calendar sync writes to the primary calendar and uses private extended properties to avoid duplicate task events.
+- Android app blocking works only after the user explicitly enables the accessibility service.
+- Local Android notifications depend on OS notification permission and channel settings.
 
-## Common Troubleshooting
+## Troubleshooting
 
 ### Google sign-in fails on Android
 
-Check that the Firebase Auth Google provider is enabled and that the Android app in Firebase has the correct SHA-1/SHA-256 fingerprints for your signing key.
+Check that the Firebase Auth Google provider is enabled and that the Android app in Firebase has the correct SHA-1/SHA-256 fingerprints for the signing key used by the build.
 
 ### AI calls fail
 
-Confirm that Functions are deployed in `asia-east1`, the Flutter `GenkitConfig.region` matches that region, and the `GEMINI_API_KEY` secret is available to Functions.
+Confirm that Functions are deployed in `asia-east1`, `GenkitConfig.region` is also `asia-east1`, and the `GEMINI_API_KEY` secret is available to Functions.
 
 ### Firestore writes fail
 
-Deploy the rules and indexes:
+Deploy rules and indexes:
 
 ```powershell
 npx -y firebase-tools@latest deploy --only firestore
 ```
 
-Then confirm the user is authenticated and writing only to allowed owner paths.
+Then confirm the user is authenticated and writing only to paths allowed by `firestore.rules`.
+
+### Google Calendar sync fails
+
+Reconnect Google Calendar from Settings, confirm the Calendar API and OAuth consent configuration are valid, and make sure the app can request `https://www.googleapis.com/auth/calendar.events`.
 
 ### Android notifications do not appear
 
-Open Settings in the app and use Android notification settings. Android 13+ requires runtime notification permission, and the focus timer channel can also be disabled independently by the OS.
+Open Settings in the app and use the Android notification settings shortcut. Android 13+ requires runtime notification permission, and the standard, important, or focus timer channel may also be disabled by the OS.
 
 ### Focus app blocking does not work
 
-Enable the `Goal Digger App Block` accessibility service from Android Accessibility settings, then return to the focus setup sheet and choose apps to block.
+Enable the `Goal Digger App Block` accessibility service in Android Accessibility settings, return to the focus setup sheet, and choose apps to block.
 
 ### Emulator networking fails on Android
 
