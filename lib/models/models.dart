@@ -161,6 +161,140 @@ class RoutineItem {
   final RoutineRepeat repeat;
 }
 
+enum CompanionRarity { common, uncommon, rare, epic }
+
+extension CompanionRarityX on CompanionRarity {
+  String get label {
+    switch (this) {
+      case CompanionRarity.common:
+        return 'Common';
+      case CompanionRarity.uncommon:
+        return 'Uncommon';
+      case CompanionRarity.rare:
+        return 'Rare';
+      case CompanionRarity.epic:
+        return 'Epic';
+    }
+  }
+
+  double get gachaWeight {
+    switch (this) {
+      case CompanionRarity.common:
+        return 25;
+      case CompanionRarity.uncommon:
+        return 15;
+      case CompanionRarity.rare:
+        return 7.5;
+      case CompanionRarity.epic:
+        return 5;
+    }
+  }
+}
+
+enum CompanionKind { lumi, auri, porc, mush, cels, pyro, gbat, nong }
+
+const int companionGachaCost = 100;
+const int companionDuplicateRefund = companionGachaCost ~/ 2;
+
+const List<CompanionKind> gachaCompanions = [
+  CompanionKind.auri,
+  CompanionKind.porc,
+  CompanionKind.mush,
+  CompanionKind.cels,
+  CompanionKind.pyro,
+  CompanionKind.gbat,
+  CompanionKind.nong,
+];
+
+extension CompanionKindX on CompanionKind {
+  String get id => name;
+
+  String get label {
+    switch (this) {
+      case CompanionKind.lumi:
+        return 'Lumi';
+      case CompanionKind.auri:
+        return 'Auri';
+      case CompanionKind.porc:
+        return 'Porc';
+      case CompanionKind.mush:
+        return 'Mush';
+      case CompanionKind.cels:
+        return 'Cels';
+      case CompanionKind.pyro:
+        return 'Pyro';
+      case CompanionKind.gbat:
+        return 'Gbat';
+      case CompanionKind.nong:
+        return 'Nong';
+    }
+  }
+
+  String get assetFolder {
+    switch (this) {
+      case CompanionKind.lumi:
+        return 'lumi';
+      case CompanionKind.auri:
+        return 'auri';
+      case CompanionKind.porc:
+        return 'porc';
+      case CompanionKind.mush:
+        return 'mush';
+      case CompanionKind.cels:
+        return 'cels';
+      case CompanionKind.pyro:
+        return 'pyro';
+      case CompanionKind.gbat:
+        return 'gbat';
+      case CompanionKind.nong:
+        return 'nong';
+    }
+  }
+
+  CompanionRarity? get rarity {
+    switch (this) {
+      case CompanionKind.lumi:
+        return null;
+      case CompanionKind.auri:
+      case CompanionKind.porc:
+        return CompanionRarity.common;
+      case CompanionKind.mush:
+      case CompanionKind.cels:
+        return CompanionRarity.uncommon;
+      case CompanionKind.pyro:
+      case CompanionKind.gbat:
+        return CompanionRarity.rare;
+      case CompanionKind.nong:
+        return CompanionRarity.epic;
+    }
+  }
+}
+
+CompanionKind companionKindFromId(String? id) {
+  for (final companion in CompanionKind.values) {
+    if (companion.id == id) return companion;
+  }
+  return CompanionKind.lumi;
+}
+
+class CompanionGachaResult {
+  const CompanionGachaResult({
+    required this.companion,
+    required this.rarity,
+    required this.duplicate,
+    required this.cost,
+    required this.refund,
+  });
+
+  final CompanionKind companion;
+  final CompanionRarity rarity;
+  final bool duplicate;
+  final int cost;
+  final int refund;
+
+  int get netCost => cost - refund;
+}
+
 class PetSkin {
   const PetSkin({
     required this.name,

@@ -98,8 +98,9 @@ class AppSyncService {
     required String? lastStreakDateKey,
     required String selectedMood,
     required int petHappiness,
-    required PetSkin activePetSkin,
-    required String activeAccessory,
+    required String? lastHappinessDecayDateKey,
+    required CompanionKind activeCompanion,
+    required Set<CompanionKind> unlockedCompanions,
   }) =>
       _userRepo.updateProfileStats(
         uid: uid,
@@ -108,8 +109,9 @@ class AppSyncService {
         lastStreakDateKey: lastStreakDateKey,
         selectedMood: selectedMood,
         petHappiness: petHappiness,
-        activePetSkin: activePetSkin,
-        activeAccessory: activeAccessory,
+        lastHappinessDecayDateKey: lastHappinessDecayDateKey,
+        activeCompanion: activeCompanion,
+        unlockedCompanions: unlockedCompanions,
       );
 
   Future<void> updateMood(String mood) => _userRepo.updateMood(uid, mood);
@@ -129,8 +131,19 @@ class AppSyncService {
   Future<void> updateFriends(List<String> friends) =>
       _userRepo.updateFriends(uid, friends);
 
-  Future<void> updatePetState(int happiness, PetSkin skin, String accessory) =>
-      _userRepo.updatePetState(uid, happiness, skin, accessory);
+  Future<void> updateCompanionState({
+    required int coins,
+    required int happiness,
+    required CompanionKind activeCompanion,
+    required Set<CompanionKind> unlockedCompanions,
+  }) =>
+      _userRepo.updateCompanionState(
+        uid: uid,
+        coins: coins,
+        happiness: happiness,
+        activeCompanion: activeCompanion,
+        unlockedCompanions: unlockedCompanions,
+      );
 
   Future<void> markOnboarded() => _userRepo.markOnboarded(uid);
 

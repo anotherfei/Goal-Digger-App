@@ -2,11 +2,10 @@
 // lib/firebase/firestore/repositories/user_repository.dart
 //
 // Persists user profile data: display name, streak, coins, pet happiness,
-// active pet skin, active accessory, and mood.
+// active companion, unlocked companions, and mood.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/material.dart';
 
 import '../../../features/notifications/models/notification_models.dart';
 import '../../../models/models.dart';
@@ -23,8 +22,9 @@ class UserProfile {
     required this.lastStreakDateKey,
     required this.coins,
     required this.petHappiness,
-    required this.activePetSkin,
-    required this.activeAccessory,
+    required this.lastHappinessDecayDateKey,
+    required this.activeCompanion,
+    required this.unlockedCompanions,
     required this.selectedMood,
     required this.goalReminders,
     required this.notificationSettings,
@@ -43,8 +43,9 @@ class UserProfile {
   final String? lastStreakDateKey;
   final int coins;
   final int petHappiness;
-  final PetSkin activePetSkin;
-  final String activeAccessory;
+  final String? lastHappinessDecayDateKey;
+  final CompanionKind activeCompanion;
+  final Set<CompanionKind> unlockedCompanions;
   final String selectedMood;
   final bool goalReminders;
   final NotificationSettings notificationSettings;
@@ -109,19 +110,15 @@ class UserRepository {
       'lastStreakDateKey': null,
       'coins': 140,
       'petHappiness': 62,
-      'activeAccessory': 'Cap',
+      'lastHappinessDecayDateKey': null,
+      'activeCompanion': CompanionKind.lumi.id,
+      'unlockedCompanions': [CompanionKind.lumi.id],
       'selectedMood': 'Okay',
       'goalReminders': true,
       'notificationSettings': const NotificationSettings.defaults().toMap(),
       'friendProgressSharing': true,
       'friends': <String>[],
       'onboarded': false,
-      'petSkin': {
-        'name': 'Mint',
-        'colorFrom': Colors.teal.shade200.toARGB32(),
-        'colorTo': Colors.teal.shade400.toARGB32(),
-        'accent': Colors.tealAccent.toARGB32(),
-      },
     });
   }
 
@@ -162,8 +159,9 @@ class UserRepository {
     required String? lastStreakDateKey,
     required String selectedMood,
     required int petHappiness,
-    required PetSkin activePetSkin,
-    required String activeAccessory,
+    required String? lastHappinessDecayDateKey,
+    required CompanionKind activeCompanion,
+    required Set<CompanionKind> unlockedCompanions,
   }) async {
     final data = <String, dynamic>{
       'coins': coins,
@@ -171,13 +169,9 @@ class UserRepository {
       'lastStreakDateKey': lastStreakDateKey,
       'selectedMood': selectedMood,
       'petHappiness': petHappiness,
-      'activeAccessory': activeAccessory,
-      'petSkin': {
-        'name': activePetSkin.name,
-        'colorFrom': activePetSkin.from.toARGB32(),
-        'colorTo': activePetSkin.to.toARGB32(),
-        'accent': activePetSkin.accent.toARGB32(),
-      },
+      'lastHappinessDecayDateKey': lastHappinessDecayDateKey,
+      'activeCompanion': activeCompanion.id,
+      'unlockedCompanions': _companionIds(unlockedCompanions),
       'updatedAt': FirestoreService.serverTimestamp,
     };
 
@@ -212,17 +206,18 @@ class UserRepository {
     });
   }
 
-  Future<void> updatePetState(
-      String uid, int happiness, PetSkin skin, String accessory) async {
+  Future<void> updateCompanionState({
+    required String uid,
+    required int coins,
+    required int happiness,
+    required CompanionKind activeCompanion,
+    required Set<CompanionKind> unlockedCompanions,
+  }) async {
     await _svc.updateDoc(FirestorePaths.userDoc(uid), {
+      'coins': coins,
       'petHappiness': happiness,
-      'activeAccessory': accessory,
-      'petSkin': {
-        'name': skin.name,
-        'colorFrom': skin.from.toARGB32(),
-        'colorTo': skin.to.toARGB32(),
-        'accent': skin.accent.toARGB32(),
-      },
+      'activeCompanion': activeCompanion.id,
+      'unlockedCompanions': _companionIds(unlockedCompanions),
       'updatedAt': FirestoreService.serverTimestamp,
     });
   }
@@ -267,9 +262,24 @@ class UserRepository {
 
   // ── Serialisation ─────────────────────────────────────────────────────────────
 
+  List<String> _companionIds(Set<CompanionKind> companions) {
+    return ({CompanionKind.lumi, ...companions}.map((kind) => kind.id).toList()
+      ..sort());
+  }
+
+  Set<CompanionKind> _companionSetFromDoc(Object? value) {
+    final ids = value is List<dynamic> ? value : const <dynamic>[];
+    final companions =
+        ids.map((id) => companionKindFromId(id.toString())).toSet();
+    companions.add(CompanionKind.lumi);
+    return companions;
+  }
+
   UserProfile _profileFromDoc(DocumentSnapshot<Map<String, dynamic>> snap) {
     final d = snap.data()!;
-    final petMap = d['petSkin'] as Map<String, dynamic>? ?? {};
+    final activeCompanion = companionKindFromId(d['activeCompanion'] as String?);
+    final unlockedCompanions = _companionSetFromDoc(d['unlockedCompanions']);
+    unlockedCompanions.add(activeCompanion);
 
     return UserProfile(
       uid: d['uid'] as String? ?? snap.id,
@@ -280,19 +290,9 @@ class UserRepository {
       lastStreakDateKey: d['lastStreakDateKey'] as String?,
       coins: (d['coins'] as num?)?.toInt() ?? 0,
       petHappiness: (d['petHappiness'] as num?)?.toInt() ?? 50,
-      activePetSkin: PetSkin(
-        name: petMap['name'] as String? ?? 'Mint',
-        from: Color(
-          petMap['colorFrom'] as int? ?? Colors.teal.shade200.toARGB32(),
-        ),
-        to: Color(
-          petMap['colorTo'] as int? ?? Colors.teal.shade400.toARGB32(),
-        ),
-        accent: Color(
-          petMap['accent'] as int? ?? Colors.tealAccent.toARGB32(),
-        ),
-      ),
-      activeAccessory: d['activeAccessory'] as String? ?? 'Cap',
+      lastHappinessDecayDateKey: d['lastHappinessDecayDateKey'] as String?,
+      activeCompanion: activeCompanion,
+      unlockedCompanions: unlockedCompanions,
       selectedMood: d['selectedMood'] as String? ?? 'Okay',
       goalReminders: d['goalReminders'] as bool? ?? true,
       notificationSettings: NotificationSettings.fromMap(

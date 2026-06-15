@@ -6,14 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../core/constants/gd_constants.dart';
 import '../core/theme/gd_design.dart';
 import '../core/utils/date_helpers.dart';
 import '../data/seed_data.dart';
 import '../features/calendar/calendar_page.dart';
 import '../features/community/community_page.dart';
 import '../features/companion/companion_page.dart';
-import '../features/companion/lumi_sprite.dart';
+import '../features/companion/companion_sprite.dart';
 import '../features/focus/widgets/focus_widgets.dart';
 import '../features/notifications/models/notification_models.dart';
 import '../features/notifications/notification_inbox_page.dart';
@@ -148,6 +147,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   String _selectedMood = 'Okay';
   int _petHappiness = 62;
+  String? _lastHappinessDecayDateKey;
   int _coins = 140;
   int _streak = 0;
   String? _lastStreakDateKey;
@@ -159,8 +159,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     'Jay Lim',
     'Sofia Hart'
   ];
-  PetSkin _activePetSkin = defaultPet;
-  String _activeAccessory = 'Cap';
+  CompanionKind _activeCompanion = CompanionKind.lumi;
+  Set<CompanionKind> _unlockedCompanions = {CompanionKind.lumi};
 
   FocusSessionConfig? _activeFocusConfig;
   int _focusRemainingSeconds = 0;
@@ -378,8 +378,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       _notifications = [];
       _locallyReadNotificationIds.clear();
       _sentDeadlineSystemNoticeIds.clear();
+      _coins = 140;
+      _petHappiness = 62;
+      _lastHappinessDecayDateKey = null;
       _streak = 0;
       _lastStreakDateKey = null;
+      _activeCompanion = CompanionKind.lumi;
+      _unlockedCompanions = {CompanionKind.lumi};
       _notificationSettings = const NotificationSettings.defaults();
       _goalReminders = _notificationSettings.systemNotificationsEnabled;
       _friends = ['Maya Chen', 'Leo Tan', 'Ari Putra'];
@@ -410,7 +415,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _disposeSync();
     final sync = AppSyncService(uid: uid);
     _sync = sync;
-    _goalsSyncedFromFirebase = false;
+    _syncedGoalsLoaded = false;
 
     _goalsSub = sync.goalsStream.listen(
       (goals) {
@@ -421,6 +426,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           _goalsSyncedFromFirebase = true;
         });
         _restoreTodayStreakFromCompletedTask();
+        _applyDailyHappinessDecay();
         _queueNotificationScheduleSync();
         _ensureImportantDeadlineNotifications();
       },
@@ -444,8 +450,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           _streak = currentStreak;
           _lastStreakDateKey = profile.lastStreakDateKey;
           _petHappiness = profile.petHappiness;
-          _activePetSkin = profile.activePetSkin;
-          _activeAccessory = profile.activeAccessory;
+          _lastHappinessDecayDateKey = profile.lastHappinessDecayDateKey;
+          _activeCompanion = profile.activeCompanion;
+          _unlockedCompanions = {
+            CompanionKind.lumi,
+            ...profile.unlockedCompanions,
+          };
           _selectedMood = profile.selectedMood;
           _profileDisplayName = syncedDisplayName.isNotEmpty
               ? syncedDisplayName
@@ -478,6 +488,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           );
         }
         _restoreTodayStreakFromCompletedTask();
+        _applyDailyHappinessDecay();
         _queueNotificationScheduleSync();
         _syncStreakFromCompletedTasks();
       },
@@ -548,8 +559,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     final lastStreakDateKey = _lastStreakDateKey;
     final selectedMood = _selectedMood;
     final petHappiness = _petHappiness;
-    final activePetSkin = _activePetSkin;
-    final activeAccessory = _activeAccessory;
+    final lastHappinessDecayDateKey = _lastHappinessDecayDateKey;
+    final activeCompanion = _activeCompanion;
+    final unlockedCompanions = Set<CompanionKind>.from(_unlockedCompanions)
+      ..add(CompanionKind.lumi);
     try {
       // One user-doc write keeps profile listeners from seeing a partial
       // coins-only update and resetting streak before the streak write lands.
@@ -559,8 +572,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         lastStreakDateKey: lastStreakDateKey,
         selectedMood: selectedMood,
         petHappiness: petHappiness,
-        activePetSkin: activePetSkin,
-        activeAccessory: activeAccessory,
+        lastHappinessDecayDateKey: lastHappinessDecayDateKey,
+        activeCompanion: activeCompanion,
+        unlockedCompanions: unlockedCompanions,
       );
     } catch (e) {
       debugPrint('Profile write failed: $e');
@@ -750,7 +764,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
   }
 
   void _syncStreakFromCompletedTasks() {
-    if (_sync != null && !_goalsSyncedFromFirebase) return;
+    if (_sync != null && !_syncedGoalsLoaded) return;
 
     final nextStreak = _calculatedCurrentStreak;
     if (nextStreak == _streak) return;
@@ -824,6 +838,50 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     }
   }
 
+  void _applyDailyHappinessDecay() {
+    if (!_syncedGoalsLoaded || !_profileLoaded) return;
+
+    final currentDay = dateOnly(DateTime.now());
+    final currentDayKey = dateKey(currentDay);
+    final lastDecayDay = _dateFromKey(_lastHappinessDecayDateKey);
+
+    if (lastDecayDay == null) {
+      setState(() => _lastHappinessDecayDateKey = currentDayKey);
+      unawaited(_persistProfileStats());
+      return;
+    }
+
+    if (!lastDecayDay.isBefore(currentDay)) {
+      if (lastDecayDay.isAfter(currentDay)) {
+        setState(() => _lastHappinessDecayDateKey = currentDayKey);
+        unawaited(_persistProfileStats());
+      }
+      return;
+    }
+
+    var day = addDays(lastDecayDay, 1);
+    var decay = 0;
+    while (!day.isAfter(currentDay)) {
+      final previousDay = addDays(day, -1);
+      final completedYesterday = _completedTaskCountOn(previousDay);
+      decay += completedYesterday == 0 ? 20 : 10;
+      day = addDays(day, 1);
+    }
+
+    setState(() {
+      _petHappiness = max(0, _petHappiness - decay);
+      _lastHappinessDecayDateKey = currentDayKey;
+    });
+    unawaited(_persistProfileStats());
+  }
+
+  int _completedTaskCountOn(DateTime day) {
+    final target = dateOnly(day);
+    return _allTasks
+        .where((task) => dateOnly(task.scheduledDate) == target && task.done)
+        .length;
+  }
+
   String _formatFocusTime(int seconds) {
     final minutes = seconds ~/ 60;
     final remaining = seconds % 60;
@@ -839,7 +897,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   void _showCoinRewardPrompt(int coins, String reason) {
     if (coins <= 0) return;
-    _showMessage('${_activePetSkin.name} says: +$coins coins $reason.');
+    _showMessage('${_activeCompanion.label} says: +$coins coins $reason.');
   }
 
   void _showHelpfulError({
@@ -2499,7 +2557,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     setState(() {
       task.done = true;
       _coins += task.points;
-      _petHappiness = min(100, _petHappiness + 8);
+      _petHappiness = min(100, _petHappiness + 5);
       streakAwarded = _awardTaskCompletionStreak();
     });
     _showCoinRewardPrompt(
@@ -2531,7 +2589,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
 
   void _deleteGoal(GoalProject goal) {
     setState(() => _goals.removeWhere((item) => item.id == goal.id));
+
     unawaited(_deleteGoalEverywhere(goal));
+
     _queueNotificationScheduleSync();
     _showMessage('Removed ${goal.title}.');
   }
@@ -2544,23 +2604,29 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
         final deletedEvents = await context
             .read<GoogleCalendarService>()
             .deleteTaskEventsForGoal(goal);
+
         debugPrint(
           'Deleted $deletedEvents Google Calendar events for goal ${goal.title}.',
         );
       } catch (e) {
         debugPrint('Google Calendar goal cleanup failed: $e');
+
         if (mounted) {
-          _showMessage('Goal removed, but Google Calendar cleanup failed.');
+          _showMessage(
+            'Goal removed, but Google Calendar cleanup failed.',
+          );
         }
       }
     }
 
     final sync = _sync;
+
     if (sync != null) {
       try {
         await sync.deleteGoal(goal.id.toString());
       } catch (e) {
         debugPrint('Delete goal sync failed: $e');
+
         if (mounted) {
           _showMessage('Goal removed locally, but Firebase delete failed.');
         }
@@ -2675,47 +2741,90 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     _showMessage('Removed $name from friends.');
   }
 
-  void _openPetChest() {
-    if (_coins < 50) {
+  void _selectCompanion(CompanionKind companion) {
+    if (!_unlockedCompanions.contains(companion)) {
+      _showMessage('Unlock ${companion.label} before switching.');
+      return;
+    }
+    if (_activeCompanion == companion) return;
+    setState(() => _activeCompanion = companion);
+    unawaited(_persistProfileStats());
+    _showMessage('${companion.label} is now your companion.');
+  }
+
+  Future<CompanionGachaResult?> _pullCompanionGacha() async {
+    final allGachaCompanionsUnlocked = gachaCompanions.every(
+      _unlockedCompanions.contains,
+    );
+    if (allGachaCompanionsUnlocked) {
+      _showMessage('All companions are already unlocked.');
+      return null;
+    }
+
+    if (_coins < companionGachaCost) {
       _showHelpfulError(
         title: 'Not enough coins',
         message:
-            'A mystery chest costs 50 coins. Complete a few tasks first, then try again.',
+            'A companion capsule costs $companionGachaCost coins. Complete a few tasks first, then try again.',
         actionLabel: 'Got it',
         onAction: () {},
       );
-      return;
+      return null;
     }
-    final skins = [
-      defaultPet,
-      const PetSkin(
-          name: 'Peach',
-          from: Color(0xFFFFB4A2),
-          to: Color(0xFFFFD6A5),
-          accent: Color(0xFFFFF1E6)),
-      const PetSkin(
-          name: 'Lunar',
-          from: Color(0xFF64748B),
-          to: Color(0xFF1E293B),
-          accent: Color(0xFFE2E8F0)),
-    ];
-    final accessories = ['Cap', 'Star badge', 'Tiny scarf', 'Focus glasses'];
-    final skin = skins[Random().nextInt(skins.length)];
-    final accessory = accessories[Random().nextInt(accessories.length)];
+
+    final companion = _rollCompanionGacha();
+    final rarity = companion.rarity!;
+    final duplicate = _unlockedCompanions.contains(companion);
+    final refund = duplicate ? companionDuplicateRefund : 0;
+
     setState(() {
-      _coins -= 50;
-      _activePetSkin = skin;
-      _activeAccessory = accessory;
-      _petHappiness = min(100, _petHappiness + 6);
+      _coins -= companionGachaCost - refund;
+      if (!duplicate) {
+        _unlockedCompanions = {
+          CompanionKind.lumi,
+          ..._unlockedCompanions,
+          companion,
+        };
+        _activeCompanion = companion;
+        _petHappiness = min(100, _petHappiness + 6);
+      }
     });
     unawaited(_persistProfileStats());
     _addInAppNotification(
-      title: 'Chest reward unlocked',
-      body: '${skin.name} skin and $accessory are now in your collection.',
+      title: duplicate ? 'Duplicate companion pull' : 'Companion unlocked',
+      body: duplicate
+          ? '${companion.label} was already in your roster. $refund coins were refunded.'
+          : '${companion.label} joined your companion roster as a ${rarity.label} pull.',
       type: AppNotificationType.reward,
-      sourceId: '${skin.name}_$accessory',
+      sourceId: 'companion_${companion.id}',
     );
-    _showMessage('Chest opened: ${skin.name} skin + $accessory unlocked!');
+
+    final result = CompanionGachaResult(
+      companion: companion,
+      rarity: rarity,
+      duplicate: duplicate,
+      cost: companionGachaCost,
+      refund: refund,
+    );
+    _showMessage(
+      duplicate
+          ? 'Duplicate ${companion.label}: $refund coins refunded.'
+          : '${rarity.label} pull: ${companion.label} unlocked!',
+    );
+    return result;
+  }
+
+  CompanionKind _rollCompanionGacha() {
+    final totalWeight = gachaCompanions.fold<double>(
+      0,
+      (total, companion) => total + companion.rarity!.gachaWeight,
+    );
+    var roll = Random().nextDouble() * totalWeight;
+    for (final companion in gachaCompanions) {
+      roll -= companion.rarity!.gachaWeight;
+      if (roll <= 0) return companion;
+    }
+    return gachaCompanions.last;
   }
 
   void _feedPet() {
@@ -2731,17 +2840,17 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
     }
     setState(() {
       _coins -= 10;
-      _petHappiness = min(100, _petHappiness + 12);
+      _petHappiness = min(100, _petHappiness + 10);
     });
     unawaited(_persistProfileStats());
   }
 
   void _interactWithPet() {
     final reactions = [
-      '${_activePetSkin.name} is cheering for you!',
-      '${_activePetSkin.name} did a happy little bounce.',
-      '${_activePetSkin.name} says: one tiny step counts!',
-      '${_activePetSkin.name} feels closer to you.',
+      '${_activeCompanion.label} is cheering for you!',
+      '${_activeCompanion.label} did a happy little bounce.',
+      '${_activeCompanion.label} says: one tiny step counts!',
+      '${_activeCompanion.label} feels closer to you.',
     ];
     setState(() => _petHappiness = min(100, _petHappiness + 2));
     unawaited(_persistProfileStats());
@@ -3082,11 +3191,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       if (completed && insight.coinsEarned > 0) {
         setState(() {
           _coins += insight.coinsEarned;
-          _petHappiness = min(100, _petHappiness + 4);
         });
         unawaited(_persistProfileStats());
         _showMessage(
-          '${_activePetSkin.name} says: +${insight.coinsEarned} coins for finishing ${config.durationMinutes} focused minutes. AI focus insight: ${insight.insight}',
+          '${_activeCompanion.label} says: +${insight.coinsEarned} coins for finishing ${config.durationMinutes} focused minutes. AI focus insight: ${insight.insight}',
         );
       } else {
         _showMessage('AI focus insight: ${insight.insight}');
@@ -3114,8 +3222,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
           coins: _coins,
           streak: _streak,
           petHappiness: _petHappiness,
-          pet: _activePetSkin,
-          accessory: _activeAccessory,
+          companion: _activeCompanion,
+          streakTier: companionStreakTierFor(_streak),
           selectedMood: _selectedMood,
           goals: _goals,
           tasks: _allTasks,
@@ -3566,13 +3674,14 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot> {
       CompanionPage(
         coins: _coins,
         happiness: _petHappiness,
-        lumiTier: lumiStreakTierFor(_streak),
-        pet: _activePetSkin,
-        accessory: _activeAccessory,
+        streakTier: companionStreakTierFor(_streak),
+        activeCompanion: _activeCompanion,
+        unlockedCompanions: _unlockedCompanions,
+        onCompanionSelected: _selectCompanion,
+        onGachaPull: _pullCompanionGacha,
         onFeed: _feedPet,
-        onOpenChest: _openPetChest,
         onPetInteract: _interactWithPet,
-),
+      ),
     ];
 
     return ResponsiveGoalShell(

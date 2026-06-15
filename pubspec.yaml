@@ -37,6 +37,13 @@ flutter:
 
   assets:
     - assets/lumi/
+    - assets/auri/
+    - assets/porc/
+    - assets/mush/
+    - assets/cels/
+    - assets/pyro/
+    - assets/gbat/
+    - assets/nong/
   fonts:
     - family: PlusJakartaSans
       fonts:
