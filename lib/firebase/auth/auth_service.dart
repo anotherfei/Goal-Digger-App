@@ -12,6 +12,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Thin wrapper around [FirebaseAuth] and [GoogleSignIn].
 ///
@@ -25,31 +26,101 @@ class AuthService {
             GoogleSignIn(
               scopes: const [
                 'email',
-                'https://www.googleapis.com/auth/calendar.events'
               ],
             );
 
   final FirebaseAuth _auth;
   final GoogleSignIn _googleSignIn;
+  static const String _googleCalendarScope =
+      'https://www.googleapis.com/auth/calendar.events';
+  static const List<String> _googleCalendarScopes = <String>[
+    _googleCalendarScope,
+  ];
+  static const String _googleCalendarEmailKeyPrefix =
+      'google_calendar_connected_email_';
+
+  String? get _googleCalendarEmailKey {
+    final user = currentUser;
+    if (user == null || user.isAnonymous) return null;
+    return '$_googleCalendarEmailKeyPrefix${user.uid}';
+  }
 
   // Calendar
-  Future<Map<String, String>> getGoogleCalendarAuthHeaders() async {
-    var account = _googleSignIn.currentUser;
+  Future<String?> googleCalendarAccountEmail() async {
+    final key = _googleCalendarEmailKey;
+    if (key == null) return null;
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(key);
+  }
 
-    account ??= await _googleSignIn.signInSilently();
-
+  Future<String> connectGoogleCalendar() async {
+    var account =
+        _googleSignIn.currentUser ?? await _googleSignIn.signInSilently();
     account ??= await _googleSignIn.signIn();
 
     if (account == null) {
-      throw const AuthException('Google sign-in is required to sync Calendar.');
+      throw const AuthException('Google sign-in was cancelled by the user.');
     }
 
-    final granted = await _googleSignIn.requestScopes(const [
-      'https://www.googleapis.com/auth/calendar.events',
-    ]);
+    final granted = await _googleSignIn.requestScopes(_googleCalendarScopes);
 
     if (!granted) {
       throw const AuthException('Google Calendar permission was not granted.');
+    }
+
+    final key = _googleCalendarEmailKey;
+    if (key != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(key, account.email);
+    }
+
+    return account.email;
+  }
+
+  Future<void> disconnectGoogleCalendar() async {
+    final key = _googleCalendarEmailKey;
+    if (key != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(key);
+    }
+
+    try {
+      await _googleSignIn.disconnect();
+    } catch (e) {
+      debugPrint('Google Calendar disconnect failed, signing out instead: $e');
+      try {
+        await _googleSignIn.signOut();
+      } catch (signOutError) {
+        debugPrint('Google Calendar sign-out fallback failed: $signOutError');
+      }
+    }
+  }
+
+  Future<Map<String, String>> getGoogleCalendarAuthHeaders({
+    bool allowInteractiveSignIn = false,
+  }) async {
+    final connectedEmail = await googleCalendarAccountEmail();
+    if (connectedEmail == null) {
+      throw const AuthException('Connect Google Calendar from Settings first.');
+    }
+
+    var account =
+        _googleSignIn.currentUser ?? await _googleSignIn.signInSilently();
+
+    if (account == null && allowInteractiveSignIn) {
+      account = await _googleSignIn.signIn();
+    }
+
+    if (account == null) {
+      throw const AuthException(
+        'Google Calendar connection expired. Open Settings and connect again.',
+      );
+    }
+
+    if (account.email != connectedEmail) {
+      throw AuthException(
+        'Google Calendar is connected as $connectedEmail. Disconnect it in Settings to use ${account.email}.',
+      );
     }
 
     return account.authHeaders;
@@ -85,7 +156,7 @@ class AuthService {
         idToken: googleAuth.idToken,
       );
 
-      // Upgrade anonymous account to a real account while preserving data.
+      // Upgrade anonymous account → real account (links data, avoids orphans)
       if (currentUser != null && currentUser!.isAnonymous) {
         try {
           return await currentUser!.linkWithCredential(credential);
@@ -276,9 +347,6 @@ class AuthService {
       try {
         await user.delete();
       } on FirebaseAuthException catch (e) {
-        // Deleting an account is a sensitive operation: Firebase rejects it
-        // with 'requires-recent-login' once the sign-in has aged out. Re-auth
-        // with a fresh credential and retry once.
         if (e.code != 'requires-recent-login') rethrow;
         await _reauthenticateForDeletion(user, password: password);
         await user.delete();
@@ -317,7 +385,6 @@ class AuthService {
         );
       }
       if (password == null || password.isEmpty) {
-        // The caller must collect the password and retry.
         throw const ReauthPasswordRequiredException();
       }
       final credential =
@@ -362,9 +429,6 @@ class AuthException implements Exception {
   String toString() => 'AuthException: $message';
 }
 
-/// Thrown when deleting an email/password account requires the user to
-/// re-enter their password (Firebase 'requires-recent-login'). The caller
-/// should collect the password and retry the delete.
 class ReauthPasswordRequiredException extends AuthException {
   const ReauthPasswordRequiredException()
       : super('Re-enter your password to confirm account deletion.');

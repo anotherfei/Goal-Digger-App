@@ -405,7 +405,7 @@ class _CommunityPageState extends State<CommunityPage> {
     final profilesByUid = <String, _FriendProfile>{};
 
     for (final chunk in _chunks(orderedUids, 10)) {
-      final snapshot = await _publicProfiles
+      final snapshot = await _usersCollection
           .where(FieldPath.documentId, whereIn: chunk)
           .get();
 
@@ -444,7 +444,7 @@ class _CommunityPageState extends State<CommunityPage> {
       }
 
       // This can happen when users/{currentUid}.friends contains a UID,
-      // but that user has not created public_profiles/{uid} yet.
+      // but that user document is not readable yet.
       // Do not crash the whole Friends page; show a safe fallback row instead.
       final shortUid = uid.substring(0, min(6, uid.length));
       final displayName = 'Friend $shortUid';
@@ -629,14 +629,8 @@ class _CommunityPageState extends State<CommunityPage> {
 
   void _showSnack(String message) {
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
 
@@ -1522,6 +1516,7 @@ class _CommunityPageState extends State<CommunityPage> {
         builder: (_) => _FindFriendsPage(
           currentUid: _user?.uid,
           publicProfiles: _publicProfiles,
+          usersCollection: _usersCollection,
           currentFriendUids:
               Set<String>.from(currentFriendUids ?? const <String>{}),
           onProfileDetails: (profile) =>
@@ -2234,6 +2229,7 @@ class _FindFriendsPage extends StatefulWidget {
   const _FindFriendsPage({
     required this.currentUid,
     required this.publicProfiles,
+    required this.usersCollection,
     required this.currentFriendUids,
     required this.onProfileDetails,
     required this.onAddFriend,
@@ -2241,6 +2237,7 @@ class _FindFriendsPage extends StatefulWidget {
 
   final String? currentUid;
   final CollectionReference<Map<String, dynamic>> publicProfiles;
+  final CollectionReference<Map<String, dynamic>> usersCollection;
   final Set<String> currentFriendUids;
   final ValueChanged<_PublicProfile> onProfileDetails;
   final Future<void> Function(_PublicProfile profile) onAddFriend;
@@ -2261,11 +2258,18 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
     // Subscribe to Firestore once. Filtering by the search query happens in the
     // builder (see _visibleProfiles) so typing does not recreate the stream,
     // which would flash a spinner over the results on every keystroke.
-    _profileStream = widget.publicProfiles.limit(80).snapshots().map((snapshot) {
-      final profiles = snapshot.docs
+    _profileStream =
+        widget.publicProfiles.limit(80).snapshots().asyncMap((snapshot) async {
+      var profiles = snapshot.docs
           .map((doc) => _PublicProfile.fromUserDoc(doc))
           .where((profile) => profile.uid != widget.currentUid)
           .toList();
+      final streaks =
+          await _fetchUserStreaks(profiles.map((profile) => profile.uid));
+      profiles = [
+        for (final profile in profiles)
+          profile.copyWith(streak: streaks[profile.uid] ?? profile.streak),
+      ];
 
       profiles.sort((a, b) => a.displayName.compareTo(b.displayName));
       return profiles;
@@ -2299,6 +2303,34 @@ class _FindFriendsPageState extends State<_FindFriendsPage> {
     } finally {
       if (mounted) setState(() => _adding = false);
     }
+  }
+
+  Future<Map<String, int>> _fetchUserStreaks(Iterable<String> uids) async {
+    final orderedUids = uids
+        .map((uid) => uid.trim())
+        .where((uid) => uid.isNotEmpty)
+        .toSet()
+        .toList();
+    final streaks = <String, int>{};
+
+    for (final chunk in _chunks(orderedUids, 10)) {
+      final snapshot = await widget.usersCollection
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+      for (final doc in snapshot.docs) {
+        streaks[doc.id] = _readInt(doc.data(), const ['streak'], 0);
+      }
+    }
+
+    return streaks;
+  }
+
+  List<List<T>> _chunks<T>(List<T> values, int size) {
+    final chunks = <List<T>>[];
+    for (var i = 0; i < values.length; i += size) {
+      chunks.add(values.sublist(i, min(i + size, values.length)));
+    }
+    return chunks;
   }
 
   @override
@@ -2724,14 +2756,8 @@ class _DirectChatPageState extends State<_DirectChatPage> {
 
   void _snack(String message) {
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
 
@@ -3419,10 +3445,7 @@ class _UserDetailPage extends StatelessWidget {
   FirebaseFirestore get _db => FirebaseFirestore.instance;
 
   Stream<DocumentSnapshot<Map<String, dynamic>>> _profileStream() {
-    return _db
-        .collection('public_profiles')
-        .doc(initialProfile.uid)
-        .snapshots();
+    return _db.collection('users').doc(initialProfile.uid).snapshots();
   }
 
   _FriendProfile _profileFromSnapshot(
@@ -3509,7 +3532,7 @@ class _UserDetailPage extends StatelessWidget {
                 child: HelpfulErrorBox(
                   title: 'Profile failed to load',
                   message:
-                      'Check Firestore rules for public_profiles reads. Details: ${snapshot.error}',
+                      'Check Firestore rules for users reads. Details: ${snapshot.error}',
                   actionLabel: 'OK',
                   showAction: false,
                 ),
@@ -4525,14 +4548,8 @@ class _CommunityChatPageState extends State<_CommunityChatPage> {
 
   void _snack(String message) {
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
 
@@ -5477,6 +5494,51 @@ class _PublicProfile {
       photoUrl: photoUrl,
       streak: streak,
       searchText: searchText.toLowerCase(),
+    );
+  }
+
+  // ignore: unused_element
+  factory _PublicProfile.fromPublicDoc(
+      DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data() ?? {};
+    final displayName = _readString(
+      data,
+      const ['displayName', 'name', 'fullName'],
+      'Goal Digger User',
+    );
+    final username = _readString(
+      data,
+      const ['username', 'handle'],
+      _fallbackUsernameFor(displayName, '', doc.id),
+    );
+    final photoUrl = _readNullableString(
+      data,
+      const ['photoUrl', 'photoURL', 'avatarUrl', 'avatarURL'],
+    );
+    final searchText = _readString(
+      data,
+      const ['searchName', 'searchText'],
+      '${displayName.toLowerCase()} ${username.toLowerCase()} ${username.toLowerCase().replaceAll('@', '')}',
+    );
+
+    return _PublicProfile(
+      uid: _readString(data, const ['uid'], doc.id),
+      displayName: displayName,
+      username: username,
+      photoUrl: photoUrl,
+      streak: _readStreak(data),
+      searchText: searchText.toLowerCase(),
+    );
+  }
+
+  _PublicProfile copyWith({int? streak}) {
+    return _PublicProfile(
+      uid: uid,
+      displayName: displayName,
+      username: username,
+      photoUrl: photoUrl,
+      streak: streak ?? this.streak,
+      searchText: searchText,
     );
   }
 

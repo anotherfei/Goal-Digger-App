@@ -46,7 +46,8 @@ class _FocusSetupSheetState extends State<FocusSetupSheet>
     with WidgetsBindingObserver {
   static const List<int> _durationPresets = [15, 25, 45, 60];
 
-  final TextEditingController _customDurationController = TextEditingController(text: '30');
+  final TextEditingController _customDurationController =
+      TextEditingController(text: '30');
   final FocusAppBlockingService _appBlocking = FocusAppBlockingService();
 
   MicroTask? _selectedTask;
@@ -254,262 +255,273 @@ class _FocusSetupSheetState extends State<FocusSetupSheet>
     return SafeArea(
       child: ChipTheme(
         data: Theme.of(context).chipTheme.copyWith(
-          backgroundColor: gdSurface,
-          selectedColor: gdPrimary,
-          labelStyle: TextStyle(color: gdInk, fontWeight: FontWeight.w800),
-          secondaryLabelStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
-          side: BorderSide(color: gdBorderStrong),
-        ),
+              backgroundColor: gdSurface,
+              selectedColor: gdPrimary,
+              labelStyle: TextStyle(color: gdInk, fontWeight: FontWeight.w800),
+              secondaryLabelStyle: const TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.w800),
+              side: BorderSide(color: gdBorderStrong),
+            ),
         child: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + bottomInset),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor: gdPrimarySoft,
-                  child: Icon(Icons.track_changes_rounded, color: gdPrimary),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
+          padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + bottomInset),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: gdPrimarySoft,
+                    child: Icon(Icons.track_changes_rounded, color: gdPrimary),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Focus mode', style: GdText.headlineMedium),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Choose a task, set a timer, and block distractions.',
+                          style: TextStyle(
+                              color: gdMuted, fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Text('1. Choose focus task', style: GdText.titleMedium),
+              const SizedBox(height: 10),
+              AppCard(
+                color: gdCardLight,
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Focus mode', style: GdText.headlineMedium),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Choose a task, set a timer, and block distractions.',
-                        style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ChoiceChip(
+                            selected: _selectedTask == null,
+                            avatar: const Icon(Icons.edit_calendar_rounded,
+                                size: 18),
+                            label: const Text('Custom focus'),
+                            onSelected: (_) {
+                              setState(() {
+                                _selectedTask = null;
+                              });
+                            },
+                          ),
+                        ],
                       ),
+                      const SizedBox(height: 10),
+                      if (_allOpenTasks().isEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          'No unfinished subtasks yet, so this will start a custom focus session.',
+                          style: TextStyle(
+                              color: gdMuted, fontWeight: FontWeight.w700),
+                        ),
+                      ] else
+                        for (final goal in widget.goals.where(
+                          (goal) => _openTasksForGoal(goal).isNotEmpty,
+                        ))
+                          _GoalTaskExpansionTile(
+                            goal: goal,
+                            tasks: _openTasksForGoal(goal),
+                            today: widget.today,
+                            selectedTask: _selectedTask,
+                            onSelectTask: _selectTask,
+                          ),
                     ],
                   ),
                 ),
-                IconButton(
-                  tooltip: 'Close',
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close_rounded),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Text('1. Choose focus task', style: GdText.titleMedium),
-            const SizedBox(height: 10),
-            AppCard(
-              color: gdCardLight,
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        ChoiceChip(
-                          selected: _selectedTask == null,
-                          avatar: const Icon(Icons.edit_calendar_rounded, size: 18),
-                          label: const Text('Custom focus'),
-                          onSelected: (_) {
-                            setState(() {
-                              _selectedTask = null;
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    if (_allOpenTasks().isEmpty) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        'No unfinished subtasks yet, so this will start a custom focus session.',
-                        style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
-                      ),
-                    ] else
-                      for (final goal in widget.goals.where(
-                        (goal) => _openTasksForGoal(goal).isNotEmpty,
-                      ))
-                        _GoalTaskExpansionTile(
-                          goal: goal,
-                          tasks: _openTasksForGoal(goal),
-                          today: widget.today,
-                          selectedTask: _selectedTask,
-                          onSelectTask: _selectTask,
-                        ),
-                  ],
-                ),
               ),
-            ),
-            const SizedBox(height: 18),
-            Text('2. Select duration', style: GdText.titleMedium),
-            const SizedBox(height: 10),
-            AppCard(
-              color: gdCardLight,
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        if (_selectedTask != null)
+              const SizedBox(height: 18),
+              Text('2. Select duration', style: GdText.titleMedium),
+              const SizedBox(height: 10),
+              AppCard(
+                color: gdCardLight,
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (_selectedTask != null)
+                            ChoiceChip(
+                              selected: !_useCustomDuration &&
+                                  _selectedDuration ==
+                                      _selectedTask!.durationMinutes,
+                              avatar:
+                                  const Icon(Icons.schedule_rounded, size: 18),
+                              label: Text(
+                                  'Task time · ${_selectedTask!.durationMinutes}m'),
+                              onSelected: (_) {
+                                setState(() {
+                                  _useCustomDuration = false;
+                                  _selectedDuration =
+                                      _selectedTask!.durationMinutes;
+                                });
+                              },
+                            ),
+                          for (final minutes in _durationPresets)
+                            ChoiceChip(
+                              selected: !_useCustomDuration &&
+                                  _selectedDuration == minutes,
+                              label: Text('$minutes min'),
+                              onSelected: (_) {
+                                setState(() {
+                                  _useCustomDuration = false;
+                                  _selectedDuration = minutes;
+                                });
+                              },
+                            ),
                           ChoiceChip(
-                            selected: !_useCustomDuration && _selectedDuration == _selectedTask!.durationMinutes,
-                            avatar: const Icon(Icons.schedule_rounded, size: 18),
-                            label: Text('Task time · ${_selectedTask!.durationMinutes}m'),
-                            onSelected: (_) {
-                              setState(() {
-                                _useCustomDuration = false;
-                                _selectedDuration = _selectedTask!.durationMinutes;
-                              });
-                            },
+                            selected: _useCustomDuration,
+                            avatar: const Icon(Icons.tune_rounded, size: 18),
+                            label: const Text('Custom'),
+                            onSelected: (_) =>
+                                setState(() => _useCustomDuration = true),
                           ),
-                        for (final minutes in _durationPresets)
-                          ChoiceChip(
-                            selected: !_useCustomDuration && _selectedDuration == minutes,
-                            label: Text('$minutes min'),
-                            onSelected: (_) {
-                              setState(() {
-                                _useCustomDuration = false;
-                                _selectedDuration = minutes;
-                              });
-                            },
+                        ],
+                      ),
+                      if (_useCustomDuration) ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _customDurationController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'Custom time',
+                            hintText: 'Example: 30',
+                            suffixText: 'minutes',
                           ),
-                        ChoiceChip(
-                          selected: _useCustomDuration,
-                          avatar: const Icon(Icons.tune_rounded, size: 18),
-                          label: const Text('Custom'),
-                          onSelected: (_) => setState(() => _useCustomDuration = true),
                         ),
                       ],
-                    ),
-                    if (_useCustomDuration) ...[
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _customDurationController,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Custom time',
-                          hintText: 'Example: 30',
-                          suffixText: 'minutes',
-                        ),
-                      ),
                     ],
-                  ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 18),
-            Text('3. Block distracting apps', style: GdText.titleMedium),
-            const SizedBox(height: 10),
-            AppCard(
-              color: gdCardLight,
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SwitchListTile.adaptive(
-                      contentPadding: EdgeInsets.zero,
-                      value: _blockApps,
-                      onChanged: (value) => unawaited(
-                        _toggleAppBlocking(value),
-                      ),
-                      secondary: const Icon(Icons.app_blocking_rounded),
-                      title: const Text(
-                        'Block selected apps',
-                        style: TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      subtitle: Text(
-                        _appBlocking.isSupported
-                            ? 'Uses Android Accessibility with your explicit permission.'
-                            : 'Available on Android devices.',
-                        style: TextStyle(
-                          color: gdMuted,
-                          fontWeight: FontWeight.w700,
+              const SizedBox(height: 18),
+              Text('3. Block distracting apps', style: GdText.titleMedium),
+              const SizedBox(height: 10),
+              AppCard(
+                color: gdCardLight,
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SwitchListTile.adaptive(
+                        contentPadding: EdgeInsets.zero,
+                        value: _blockApps,
+                        onChanged: (value) => unawaited(
+                          _toggleAppBlocking(value),
                         ),
-                      ),
-                    ),
-                    if (_blockApps) ...[
-                      const SizedBox(height: 8),
-                      if (!_appBlocking.isSupported)
-                        Text(
-                          'This device does not support Goal Digger app blocking.',
+                        secondary: const Icon(Icons.app_blocking_rounded),
+                        title: const Text(
+                          'Block selected apps',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        subtitle: Text(
+                          _appBlocking.isSupported
+                              ? 'Uses Android Accessibility with your explicit permission.'
+                              : 'Available on Android devices.',
                           style: TextStyle(
                             color: gdMuted,
                             fontWeight: FontWeight.w700,
                           ),
-                        )
-                      else if (!_accessibilityEnabled)
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.tonalIcon(
-                            onPressed: _appBlocking.openAccessibilitySettings,
-                            icon: const Icon(Icons.settings_accessibility),
-                            label: const Text('Enable in Android settings'),
-                          ),
-                        )
-                      else ...[
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed:
-                                _loadingApps ? null : _chooseBlockedApps,
-                            icon: _loadingApps
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.checklist_rounded),
-                            label: Text(
-                              _selectedBlockedPackages.isEmpty
-                                  ? 'Choose apps to block'
-                                  : '${_selectedBlockedPackages.length} app(s) selected',
-                            ),
-                          ),
                         ),
-                        if (_selectedBlockedPackages.isNotEmpty) ...[
-                          const SizedBox(height: 8),
+                      ),
+                      if (_blockApps) ...[
+                        const SizedBox(height: 8),
+                        if (!_appBlocking.isSupported)
                           Text(
-                            _availableApps
-                                .where(
-                                  (app) => _selectedBlockedPackages
-                                      .contains(app.packageName),
-                                )
-                                .map((app) => app.label)
-                                .join(', '),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                            'This device does not support Goal Digger app blocking.',
                             style: TextStyle(
                               color: gdMuted,
                               fontWeight: FontWeight.w700,
                             ),
+                          )
+                        else if (!_accessibilityEnabled)
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.tonalIcon(
+                              onPressed: _appBlocking.openAccessibilitySettings,
+                              icon: const Icon(Icons.settings_accessibility),
+                              label: const Text('Enable in Android settings'),
+                            ),
+                          )
+                        else ...[
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed:
+                                  _loadingApps ? null : _chooseBlockedApps,
+                              icon: _loadingApps
+                                  ? const SizedBox.square(
+                                      dimension: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.checklist_rounded),
+                              label: Text(
+                                _selectedBlockedPackages.isEmpty
+                                    ? 'Choose apps to block'
+                                    : '${_selectedBlockedPackages.length} app(s) selected',
+                              ),
+                            ),
                           ),
+                          if (_selectedBlockedPackages.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              _availableApps
+                                  .where(
+                                    (app) => _selectedBlockedPackages
+                                        .contains(app.packageName),
+                                  )
+                                  .map((app) => app.label)
+                                  .join(', '),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: gdMuted,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
                         ],
                       ],
                     ],
-                  ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _startFocus,
-                icon: const Icon(Icons.track_changes_rounded),
-                label: const Text('Start focus session'),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _startFocus,
+                  icon: const Icon(Icons.track_changes_rounded),
+                  label: const Text('Start focus session'),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -608,8 +620,7 @@ class _BlockedAppPickerState extends State<_BlockedAppPicker> {
                       itemCount: apps.length,
                       itemBuilder: (context, index) {
                         final app = apps[index];
-                        final selected =
-                            _selected.contains(app.packageName);
+                        final selected = _selected.contains(app.packageName);
                         return CheckboxListTile(
                           value: selected,
                           onChanged: (checked) {
@@ -715,7 +726,8 @@ class _GoalTaskExpansionTile extends StatelessWidget {
     final todayCount = tasks
         .where((task) => dateOnly(task.scheduledDate) == dateOnly(today))
         .length;
-    final selectedInGoal = selectedTask != null && selectedTask!.goalId == goal.id;
+    final selectedInGoal =
+        selectedTask != null && selectedTask!.goalId == goal.id;
 
     return ExpansionTile(
       initiallyExpanded: selectedInGoal || todayCount > 0,
@@ -812,7 +824,8 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final progress = _totalSeconds == 0 ? 1.0 : 1 - (_remainingSeconds / _totalSeconds);
+    final progress =
+        _totalSeconds == 0 ? 1.0 : 1 - (_remainingSeconds / _totalSeconds);
     return Material(
       color: gdBackground,
       child: SafeArea(
@@ -822,10 +835,18 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
             children: [
               Row(
                 children: [
-                  CircleAvatar(backgroundColor: gdPrimarySoft, child: Icon(Icons.track_changes_rounded, color: gdPrimary)),
+                  CircleAvatar(
+                      backgroundColor: gdPrimarySoft,
+                      child:
+                          Icon(Icons.track_changes_rounded, color: gdPrimary)),
                   const SizedBox(width: 12),
-                  Expanded(child: Text(_isComplete ? 'Focus complete' : 'Focus mode', style: GdText.headlineMedium)),
-                  IconButton.filledTonal(tooltip: 'Minimize without stopping', onPressed: widget.onMinimize, icon: const Icon(Icons.keyboard_arrow_down_rounded)),
+                  Expanded(
+                      child: Text(_isComplete ? 'Focus complete' : 'Focus mode',
+                          style: GdText.headlineMedium)),
+                  IconButton.filledTonal(
+                      tooltip: 'Minimize without stopping',
+                      onPressed: widget.onMinimize,
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded)),
                 ],
               ),
               const SizedBox(height: 18),
@@ -836,9 +857,14 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
                       children: [
                         PetAvatar(pet: defaultPet, size: 112),
                         const SizedBox(height: 20),
-                        Text(widget.config.title, textAlign: TextAlign.center, style: GdText.titleLarge),
+                        Text(widget.config.title,
+                            textAlign: TextAlign.center,
+                            style: GdText.titleLarge),
                         const SizedBox(height: 8),
-                        Text(widget.config.focusSummary, textAlign: TextAlign.center, style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700)),
+                        Text(widget.config.focusSummary,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                color: gdMuted, fontWeight: FontWeight.w700)),
                         const SizedBox(height: 24),
                         SizedBox(
                           width: 230,
@@ -846,14 +872,41 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
                           child: Stack(
                             alignment: Alignment.center,
                             children: [
-                              SizedBox.expand(child: CircularProgressIndicator(value: progress.clamp(0.0, 1.0).toDouble(), strokeWidth: 14, backgroundColor: gdPrimarySoft, strokeCap: StrokeCap.round)),
+                              SizedBox.expand(
+                                  child: CircularProgressIndicator(
+                                      value:
+                                          progress.clamp(0.0, 1.0).toDouble(),
+                                      strokeWidth: 14,
+                                      backgroundColor: gdPrimarySoft,
+                                      strokeCap: StrokeCap.round)),
                               Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(_isComplete ? Icons.check_circle_rounded : _paused ? Icons.pause_circle_filled_rounded : Icons.track_changes_rounded, size: 34, color: gdPrimary),
+                                  Icon(
+                                      _isComplete
+                                          ? Icons.check_circle_rounded
+                                          : _paused
+                                              ? Icons
+                                                  .pause_circle_filled_rounded
+                                              : Icons.track_changes_rounded,
+                                      size: 34,
+                                      color: gdPrimary),
                                   const SizedBox(height: 8),
-                                  Text(_formatTime(_remainingSeconds), style: TextStyle(fontSize: 42, fontWeight: FontWeight.w900, letterSpacing: -1.5, color: gdInk)),
-                                  Text(_isComplete ? 'Nice work' : _paused ? 'Paused' : 'Running', style: TextStyle(color: gdMuted, fontWeight: FontWeight.w800)),
+                                  Text(_formatTime(_remainingSeconds),
+                                      style: TextStyle(
+                                          fontSize: 42,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: -1.5,
+                                          color: gdInk)),
+                                  Text(
+                                      _isComplete
+                                          ? 'Nice work'
+                                          : _paused
+                                              ? 'Paused'
+                                              : 'Running',
+                                      style: TextStyle(
+                                          color: gdMuted,
+                                          fontWeight: FontWeight.w800)),
                                 ],
                               ),
                             ],
@@ -867,13 +920,23 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(children: [Icon(Icons.center_focus_strong_rounded, size: 20), SizedBox(width: 8), Text('Stay in focus', style: TextStyle(fontWeight: FontWeight.w900, color: gdInk))]),
+                                Row(children: [
+                                  Icon(Icons.center_focus_strong_rounded,
+                                      size: 20),
+                                  SizedBox(width: 8),
+                                  Text('Stay in focus',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          color: gdInk))
+                                ]),
                                 const SizedBox(height: 10),
                                 Text(
                                   widget.config.blocksApps
                                       ? '${widget.config.blockedPackages.length} selected app(s) stay blocked while this timer runs.'
                                       : 'The timer keeps running accurately when Goal Digger is in the background.',
-                                  style: TextStyle(color: gdMuted, fontWeight: FontWeight.w700),
+                                  style: TextStyle(
+                                      color: gdMuted,
+                                      fontWeight: FontWeight.w700),
                                 ),
                               ],
                             ),
@@ -886,9 +949,22 @@ class _FocusCountdownDialogState extends State<FocusCountdownDialog> {
               ),
               Row(
                 children: [
-                  Expanded(child: OutlinedButton.icon(onPressed: _isComplete ? null : widget.onPauseToggle, icon: Icon(_paused ? Icons.play_arrow_rounded : Icons.pause_rounded), label: Text(_paused ? 'Resume' : 'Pause'))),
+                  Expanded(
+                      child: OutlinedButton.icon(
+                          onPressed: _isComplete ? null : widget.onPauseToggle,
+                          icon: Icon(_paused
+                              ? Icons.play_arrow_rounded
+                              : Icons.pause_rounded),
+                          label: Text(_paused ? 'Resume' : 'Pause'))),
                   const SizedBox(width: 10),
-                  Expanded(child: FilledButton.icon(onPressed: widget.onStop, icon: Icon(_isComplete ? Icons.check_circle_rounded : Icons.stop_rounded), label: Text(_isComplete ? 'Finish' : 'Stop session'))),
+                  Expanded(
+                      child: FilledButton.icon(
+                          onPressed: widget.onStop,
+                          icon: Icon(_isComplete
+                              ? Icons.check_circle_rounded
+                              : Icons.stop_rounded),
+                          label:
+                              Text(_isComplete ? 'Finish' : 'Stop session'))),
                 ],
               ),
             ],

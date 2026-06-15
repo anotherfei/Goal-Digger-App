@@ -6,19 +6,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../core/constants/gd_constants.dart';
 import '../core/theme/gd_design.dart';
 import '../core/utils/date_helpers.dart';
 import '../data/seed_data.dart';
 import '../features/calendar/calendar_page.dart';
 import '../features/community/community_page.dart';
 import '../features/companion/companion_page.dart';
+import '../features/companion/companion_sprite.dart';
 import '../features/focus/services/focus_app_blocking_service.dart';
 import '../features/focus/widgets/focus_widgets.dart';
 import '../features/notifications/models/notification_models.dart';
 import '../features/notifications/notification_inbox_page.dart';
 import '../features/notifications/services/android_notification_service.dart';
-import '../features/notifications/services/push_notification_service.dart';
 import '../features/onboarding/onboarding_screen.dart';
 import '../features/planner/planner_page.dart';
 import '../features/profile/profile_screen.dart';
@@ -46,9 +45,6 @@ class _DraftTaskSpec {
   final int durationMinutes;
   final TaskLoad load;
   final int dayOffset;
-
-  String get previewLabel =>
-      '$title · $durationMinutes min · ${load.label} · Day ${dayOffset + 1}';
 }
 
 class _GoalPlanApprovalResult {
@@ -59,6 +55,972 @@ class _GoalPlanApprovalResult {
 
   final String title;
   final List<_DraftTaskSpec> tasks;
+}
+
+class _AiContextUsedStrip extends StatelessWidget {
+  const _AiContextUsedStrip({required this.chips});
+
+  final List<String> chips;
+
+  @override
+  Widget build(BuildContext context) {
+    if (chips.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
+      decoration: BoxDecoration(
+        color: gdPrimarySoft.withValues(alpha: 0.48),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: gdPrimary.withValues(alpha: 0.14)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.visibility_rounded, size: 16, color: gdPrimary),
+              const SizedBox(width: 7),
+              Text(
+                'AI used this context',
+                style: TextStyle(
+                  color: gdInk,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              for (final chip in chips) _AiContextChip(label: chip),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiContextChip extends StatelessWidget {
+  const _AiContextChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: gdSurface.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: gdBorder.withValues(alpha: 0.70)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: gdMuted,
+          fontSize: 11.5,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanPreviewSection extends StatelessWidget {
+  const _PlanPreviewSection({
+    required this.tasks,
+    this.contextChips = const [],
+  });
+
+  final List<_DraftTaskSpec> tasks;
+  final List<String> contextChips;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+      decoration: BoxDecoration(
+        color: gdSurface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: gdBorder),
+        boxShadow: [
+          BoxShadow(
+            color: gdShadow.withValues(alpha: GdAlpha.faint),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: gdPrimarySoft,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child:
+                    Icon(Icons.view_agenda_rounded, size: 17, color: gdPrimary),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Plan Preview',
+                      style: TextStyle(
+                        color: gdInk,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${tasks.length} generated task${tasks.length == 1 ? '' : 's'}',
+                      style: TextStyle(
+                        color: gdMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (contextChips.isNotEmpty) ...[
+            _AiContextUsedStrip(chips: contextChips),
+            const SizedBox(height: 14),
+          ],
+          for (var i = 0; i < tasks.length; i++)
+            Padding(
+              padding: EdgeInsets.only(bottom: i == tasks.length - 1 ? 0 : 12),
+              child: _StaggeredTaskEntrance(
+                index: i,
+                child: _GeneratedTaskBlock(
+                  task: tasks[i],
+                  index: i,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StaggeredTaskEntrance extends StatefulWidget {
+  const _StaggeredTaskEntrance({
+    required this.index,
+    required this.child,
+  });
+
+  final int index;
+  final Widget child;
+
+  @override
+  State<_StaggeredTaskEntrance> createState() => _StaggeredTaskEntranceState();
+}
+
+class _StaggeredTaskEntranceState extends State<_StaggeredTaskEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  late final Animation<Offset> _offset;
+  Timer? _delay;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 240),
+    );
+    final curved = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
+    _opacity = Tween<double>(begin: 0, end: 1).animate(curved);
+    _offset = Tween<Offset>(
+      begin: const Offset(0, 0.08),
+      end: Offset.zero,
+    ).animate(curved);
+    _delay = Timer(Duration(milliseconds: min(widget.index * 70, 420)), () {
+      if (mounted) _controller.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _delay?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _opacity,
+      child: SlideTransition(
+        position: _offset,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class _GeneratedTaskBlock extends StatefulWidget {
+  const _GeneratedTaskBlock({
+    required this.task,
+    required this.index,
+  });
+
+  final _DraftTaskSpec task;
+  final int index;
+
+  @override
+  State<_GeneratedTaskBlock> createState() => _GeneratedTaskBlockState();
+}
+
+class _GeneratedTaskBlockState extends State<_GeneratedTaskBlock> {
+  bool _expanded = false;
+
+  _DraftTaskSpec get task => widget.task;
+
+  String get _whyText {
+    if (task.dayOffset == 0) {
+      return 'This gives the plan a clear first action and helps you build momentum today.';
+    }
+    switch (task.load) {
+      case TaskLoad.light:
+        return 'This keeps progress moving without adding too much load.';
+      case TaskLoad.focus:
+        return 'This is a focused study block that turns the goal into measurable progress.';
+      case TaskLoad.stretch:
+        return 'This is the deeper work that helps lock in the most important part of the plan.';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: _expanded ? gdCardLight : gdSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _expanded ? gdPrimary.withValues(alpha: 0.28) : gdBorder,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: gdPrimarySoft,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${widget.index + 1}',
+                        style: TextStyle(
+                          color: gdPrimary,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            task.title,
+                            maxLines: _expanded ? 4 : 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: gdInk,
+                              fontSize: 15,
+                              height: 1.22,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 7),
+                          Wrap(
+                            spacing: 7,
+                            runSpacing: 7,
+                            children: [
+                              _detailPill(
+                                icon: Icons.timer_rounded,
+                                label: '${task.durationMinutes} min',
+                              ),
+                              _detailPill(
+                                icon: task.load.icon,
+                                label: task.load.label,
+                              ),
+                              _detailPill(
+                                icon: Icons.event_rounded,
+                                label: 'Day ${task.dayOffset + 1}',
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    AnimatedRotation(
+                      turns: _expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOutCubic,
+                      child: Icon(Icons.keyboard_arrow_down_rounded,
+                          color: gdPrimary),
+                    ),
+                  ],
+                ),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 210),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: _expanded
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 14),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: gdSurface,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: gdBorder),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(Icons.lightbulb_rounded,
+                                    size: 17, color: gdPrimary),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _whyText,
+                                    style: TextStyle(
+                                      color: gdMuted,
+                                      fontSize: 13,
+                                      height: 1.45,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _detailPill({
+    required IconData icon,
+    required String label,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: gdPrimarySoft.withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: gdPrimary),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: gdMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiThinkingIndicator extends StatefulWidget {
+  const _AiThinkingIndicator();
+
+  @override
+  State<_AiThinkingIndicator> createState() => _AiThinkingIndicatorState();
+}
+
+class _AiThinkingIndicatorState extends State<_AiThinkingIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1050),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: gdCardLight,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: gdBorder),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.auto_awesome_rounded, size: 17, color: gdPrimary),
+            const SizedBox(width: 10),
+            Text(
+              'Thinking through the plan',
+              style: TextStyle(
+                color: gdMuted,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(width: 10),
+            AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) {
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(3, (index) {
+                    final pulse = (sin(
+                              (_controller.value * 2 * pi) + (index * 0.85),
+                            ) +
+                            1) /
+                        2;
+                    return Container(
+                      width: 6 + pulse * 2,
+                      height: 6 + pulse * 2,
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      decoration: BoxDecoration(
+                        color: gdPrimary.withValues(alpha: 0.28 + pulse * 0.45),
+                        shape: BoxShape.circle,
+                      ),
+                    );
+                  }),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LoadingStatusFeed extends StatefulWidget {
+  const _LoadingStatusFeed({required this.lines});
+
+  final List<String> lines;
+
+  @override
+  State<_LoadingStatusFeed> createState() => _LoadingStatusFeedState();
+}
+
+class _LoadingStatusFeedState extends State<_LoadingStatusFeed> {
+  Timer? _timer;
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LoadingStatusFeed oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.lines.join('|') == widget.lines.join('|')) return;
+    _index = 0;
+    _startTimer();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    if (widget.lines.length < 2) return;
+    _timer = Timer.periodic(const Duration(milliseconds: 1150), (_) {
+      if (!mounted) return;
+      setState(() => _index = (_index + 1) % widget.lines.length);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = widget.lines.isEmpty
+        ? const ['AI is checking timing and workload']
+        : widget.lines;
+    final line = lines[_index % lines.length];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: gdPrimarySoft.withValues(alpha: 0.64),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: gdPrimary.withValues(alpha: 0.10)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.manage_search_rounded, color: gdPrimary, size: 18),
+          const SizedBox(width: 9),
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                final offset = Tween<Offset>(
+                  begin: const Offset(0, 0.25),
+                  end: Offset.zero,
+                ).animate(animation);
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(position: offset, child: child),
+                );
+              },
+              child: Text(
+                line,
+                key: ValueKey(line),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: gdPrimary,
+                  fontSize: 12.5,
+                  height: 1.25,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SproutLoadingMark extends StatefulWidget {
+  const _SproutLoadingMark();
+
+  @override
+  State<_SproutLoadingMark> createState() => _SproutLoadingMarkState();
+}
+
+class _SproutLoadingMarkState extends State<_SproutLoadingMark>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1550),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 86,
+      height: 66,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          return CustomPaint(
+            painter: _SproutLoadingPainter(_controller.value),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SproutLoadingPainter extends CustomPainter {
+  const _SproutLoadingPainter(this.progress);
+
+  final double progress;
+
+  double _segment(double start, double end) {
+    return ((progress - start) / (end - start)).clamp(0.0, 1.0).toDouble();
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height * 0.68);
+    final drop = Curves.easeInCubic.transform(_segment(0.0, 0.32));
+    final grow = Curves.easeOutBack.transform(_segment(0.28, 0.74));
+    final settle = Curves.easeInCubic.transform(_segment(0.78, 1.0));
+    final sprout = (grow * (1 - settle)).clamp(0.0, 1.0).toDouble();
+    final seedAlpha = (1 - _segment(0.30, 0.56)).clamp(0.0, 1.0).toDouble();
+
+    final soilPaint = Paint()
+      ..color = gdPrimarySoft.withValues(alpha: 0.95)
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      Offset(center.dx - 30, center.dy + 4),
+      Offset(center.dx + 30, center.dy + 4),
+      soilPaint,
+    );
+
+    final soilDotPaint = Paint()
+      ..color = gdPrimary.withValues(alpha: 0.18)
+      ..style = PaintingStyle.fill;
+    for (final offset in [-22.0, -10.0, 12.0, 24.0]) {
+      canvas.drawCircle(
+          Offset(center.dx + offset, center.dy + 9), 2.2, soilDotPaint);
+    }
+
+    final seedY = size.height * 0.24 + (center.dy - size.height * 0.24) * drop;
+    final seedPaint = Paint()
+      ..color = gdStarGold.withValues(alpha: seedAlpha)
+      ..style = PaintingStyle.fill;
+    if (seedAlpha > 0) {
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(center.dx, seedY),
+          width: 13,
+          height: 10,
+        ),
+        seedPaint,
+      );
+    }
+
+    if (sprout <= 0) return;
+
+    final stemPaint = Paint()
+      ..color = gdSuccess.withValues(alpha: 0.92)
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round;
+    final stemTop = Offset(center.dx, center.dy - 28 * sprout);
+    canvas.drawLine(center, stemTop, stemPaint);
+
+    final leafPaint = Paint()
+      ..color = gdSuccess.withValues(alpha: 0.78 * sprout)
+      ..style = PaintingStyle.fill;
+    final leftLeaf = Path()
+      ..moveTo(stemTop.dx, stemTop.dy + 8)
+      ..quadraticBezierTo(stemTop.dx - 19 * sprout, stemTop.dy - 2,
+          stemTop.dx - 7 * sprout, stemTop.dy + 14 * sprout)
+      ..quadraticBezierTo(
+          stemTop.dx - 2, stemTop.dy + 12, stemTop.dx, stemTop.dy + 8);
+    final rightLeaf = Path()
+      ..moveTo(stemTop.dx, stemTop.dy + 4)
+      ..quadraticBezierTo(stemTop.dx + 20 * sprout, stemTop.dy - 8,
+          stemTop.dx + 8 * sprout, stemTop.dy + 10 * sprout)
+      ..quadraticBezierTo(
+          stemTop.dx + 2, stemTop.dy + 8, stemTop.dx, stemTop.dy + 4);
+    canvas.drawPath(leftLeaf, leafPaint);
+    canvas.drawPath(rightLeaf, leafPaint);
+
+    final shinePaint = Paint()
+      ..color = gdPrimary.withValues(alpha: 0.18 * sprout)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromCenter(center: center, width: 70, height: 48),
+      pi * 1.05,
+      pi * 0.9 * sprout,
+      false,
+      shinePaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _SproutLoadingPainter oldDelegate) {
+    return oldDelegate.progress != progress;
+  }
+}
+
+class _PlanCommitAnimation extends StatelessWidget {
+  const _PlanCommitAnimation({
+    required this.title,
+    required this.tasks,
+  });
+
+  final String title;
+  final List<_DraftTaskSpec> tasks;
+
+  @override
+  Widget build(BuildContext context) {
+    final previewTasks = tasks.take(4).toList();
+
+    return Center(
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 1350),
+        curve: Curves.easeOutCubic,
+        builder: (context, value, _) {
+          final titleT = (value / 0.28).clamp(0.0, 1.0).toDouble();
+          final sinkT = ((value - 0.70) / 0.30).clamp(0.0, 1.0).toDouble();
+
+          return Material(
+            color: Colors.transparent,
+            child: Container(
+              width: min(MediaQuery.of(context).size.width - 40, 440.0),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+              decoration: BoxDecoration(
+                color: gdSurface,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: gdBorder),
+                boxShadow: [
+                  BoxShadow(
+                    color: gdShadow.withValues(alpha: 0.18),
+                    blurRadius: 32,
+                    offset: const Offset(0, 18),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Opacity(
+                    opacity: titleT,
+                    child: Transform.translate(
+                      offset: Offset(0, (1 - titleT) * 10),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: gdPrimarySoft,
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                            child: Icon(Icons.auto_awesome_rounded,
+                                color: gdPrimary),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: gdInk,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  'Building your schedule',
+                                  style: TextStyle(
+                                    color: gdMuted,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Stack(
+                    alignment: Alignment.bottomCenter,
+                    children: [
+                      Column(
+                        children: [
+                          for (var i = 0; i < previewTasks.length; i++)
+                            _PlanCommitTaskRow(
+                              task: previewTasks[i],
+                              index: i,
+                              progress: value,
+                              sinkProgress: sinkT,
+                            ),
+                        ],
+                      ),
+                      IgnorePointer(
+                        child: Opacity(
+                          opacity: sinkT,
+                          child: Transform.scale(
+                            scale: 0.86 + sinkT * 0.14,
+                            child: Container(
+                              margin: const EdgeInsets.only(top: 16),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: gdPrimary,
+                                borderRadius: BorderRadius.circular(18),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: gdPrimary.withValues(alpha: 0.24),
+                                    blurRadius: 18,
+                                    offset: const Offset(0, 10),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: const [
+                                  Icon(Icons.calendar_month_rounded,
+                                      color: Colors.white, size: 20),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Scheduled',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _PlanCommitTaskRow extends StatelessWidget {
+  const _PlanCommitTaskRow({
+    required this.task,
+    required this.index,
+    required this.progress,
+    required this.sinkProgress,
+  });
+
+  final _DraftTaskSpec task;
+  final int index;
+  final double progress;
+  final double sinkProgress;
+
+  @override
+  Widget build(BuildContext context) {
+    final start = 0.18 + index * 0.10;
+    final appear = ((progress - start) / 0.22).clamp(0.0, 1.0).toDouble();
+    final opacity =
+        (appear * (1 - sinkProgress * 0.55)).clamp(0.0, 1.0).toDouble();
+
+    return Opacity(
+      opacity: opacity,
+      child: Transform.translate(
+        offset: Offset(0, (1 - appear) * 16 + sinkProgress * 24),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: gdCardLight,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: gdBorder),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: gdPrimarySoft,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${index + 1}',
+                  style: TextStyle(
+                    color: gdPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  task.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: gdInk,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.keyboard_arrow_down_rounded, color: gdMuted, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _SystemNotificationRequest {
@@ -114,7 +1076,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
   List<RoutineItem> _routines = [];
   List<AppNotification> _notifications = [];
   final Set<String> _locallyReadNotificationIds = {};
-  final Set<String> _suppressedChestNotificationIds = {};
   final AndroidNotificationService _androidNotifications =
       AndroidNotificationService();
   NotificationSettings _notificationSettings =
@@ -150,6 +1111,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
 
   String _selectedMood = 'Okay';
   int _petHappiness = 62;
+  String? _lastHappinessDecayDateKey;
   int _coins = 140;
   int _streak = 0;
   String? _lastStreakDateKey;
@@ -161,8 +1123,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     'Jay Lim',
     'Sofia Hart'
   ];
-  PetSkin _activePetSkin = defaultPet;
-  String _activeAccessory = 'Cap';
+  CompanionKind _activeCompanion = CompanionKind.lumi;
+  Set<CompanionKind> _unlockedCompanions = {CompanionKind.lumi};
 
   FocusSessionConfig? _activeFocusConfig;
   int _focusRemainingSeconds = 0;
@@ -171,18 +1133,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
   bool _focusCompletionHandled = false;
   bool _focusDialogOpen = false;
   Timer? _focusTimer;
-  final FocusAppBlockingService _focusAppBlocking =
-      FocusAppBlockingService();
+  final FocusAppBlockingService _focusAppBlocking = FocusAppBlockingService();
   final Set<String> _sentDeadlineSystemNoticeIds = {};
-  int? _highlightedGoalId;
 
   bool get _hasActiveFocus =>
       _activeFocusConfig != null && _focusRemainingSeconds > 0;
   bool get _focusComplete =>
       _activeFocusConfig != null && _focusRemainingSeconds <= 0;
-  List<AppNotification> get _visibleNotifications => _notifications
-      .where((notification) => !notification.isChestReward)
-      .toList(growable: false);
 
   Future<void> _syncTaskToGoogleCalendar(
     MicroTask task,
@@ -192,9 +1149,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
 
     if (user == null || user.isAnonymous) {
       _showHelpfulError(
-        title: 'Google sign-in required',
-        message:
-            'Please sign in with Google before syncing to Google Calendar.',
+        title: 'Account required',
+        message: 'Sign in before syncing tasks to Google Calendar.',
         actionLabel: 'OK',
         onAction: () {},
       );
@@ -204,6 +1160,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     try {
       await context.read<GoogleCalendarService>().createTaskEvent(task, goal);
       _showMessage('Task synced to Google Calendar.');
+    } on AuthException catch (e) {
+      _showHelpfulError(
+        title: 'Connect Google Calendar',
+        message: e.message,
+        actionLabel: 'OK',
+        onAction: () {},
+      );
     } catch (e) {
       _showHelpfulError(
         title: 'Calendar sync failed',
@@ -219,9 +1182,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
 
     if (user == null || user.isAnonymous) {
       _showHelpfulError(
-        title: 'Google sign-in required',
-        message:
-            'Please sign in with Google before syncing to Google Calendar.',
+        title: 'Account required',
+        message: 'Sign in before syncing tasks to Google Calendar.',
         actionLabel: 'OK',
         onAction: () {},
       );
@@ -240,6 +1202,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
 
       _showMessage(
         'Calendar sync complete: ${result.created} created, ${result.skipped} already synced, ${result.failed} failed.',
+      );
+    } on AuthException catch (e) {
+      _showHelpfulError(
+        title: 'Connect Google Calendar',
+        message: e.message,
+        actionLabel: 'OK',
+        onAction: () {},
       );
     } catch (e) {
       _showHelpfulError(
@@ -357,6 +1326,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     _disposeSync();
     _goalController.dispose();
     _communityController.dispose();
+    unawaited(_focusAppBlocking.stopFocusSession());
     super.dispose();
   }
 
@@ -381,6 +1351,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
 
   void _resetForSignedOutState() {
     _activeUid = null;
+    _focusTimer?.cancel();
     _moodAdviceTimer?.cancel();
     _moodAdviceRequestSerial++;
     _moodAdvisorAvailable = true;
@@ -397,10 +1368,14 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       _routines = _defaultRoutines();
       _notifications = [];
       _locallyReadNotificationIds.clear();
-      _suppressedChestNotificationIds.clear();
       _sentDeadlineSystemNoticeIds.clear();
+      _coins = 140;
+      _petHappiness = 62;
+      _lastHappinessDecayDateKey = null;
       _streak = 0;
       _lastStreakDateKey = null;
+      _activeCompanion = CompanionKind.lumi;
+      _unlockedCompanions = {CompanionKind.lumi};
       _notificationSettings = const NotificationSettings.defaults();
       _goalReminders = _notificationSettings.systemNotificationsEnabled;
       _friends = ['Maya Chen', 'Leo Tan', 'Ari Putra'];
@@ -409,7 +1384,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       _focusEndsAt = null;
       _focusPaused = false;
       _focusCompletionHandled = false;
-      _highlightedGoalId = null;
     });
     unawaited(_androidNotifications.cancelAll());
     unawaited(_focusAppBlocking.stopFocusSession());
@@ -438,6 +1412,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     _disposeSync();
     final sync = AppSyncService(uid: uid);
     _sync = sync;
+    _syncedGoalsLoaded = false;
 
     _goalsSub = sync.goalsStream.listen(
       (goals) {
@@ -447,6 +1422,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
           _syncedGoalsLoaded = true;
         });
         _restoreTodayStreakFromCompletedTask();
+        _applyDailyHappinessDecay();
         _queueNotificationScheduleSync();
         _ensureImportantDeadlineNotifications();
       },
@@ -470,14 +1446,19 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
           _streak = currentStreak;
           _lastStreakDateKey = profile.lastStreakDateKey;
           _petHappiness = profile.petHappiness;
-          _activePetSkin = profile.activePetSkin;
-          _activeAccessory = profile.activeAccessory;
+          _lastHappinessDecayDateKey = profile.lastHappinessDecayDateKey;
+          _activeCompanion = profile.activeCompanion;
+          _unlockedCompanions = {
+            CompanionKind.lumi,
+            ...profile.unlockedCompanions,
+          };
           _selectedMood = profile.selectedMood;
           _profileDisplayName = syncedDisplayName.isNotEmpty
               ? syncedDisplayName
               : _profileDisplayName;
           _goalReminders = profile.goalReminders;
-          _notificationSettings = profile.notificationSettings;
+          _notificationSettings =
+              _normalizedNotificationSettings(profile.notificationSettings);
           _friendProgressSharing = profile.friendProgressSharing;
           _friends = profile.friends.isEmpty
               ? ['Maya Chen', 'Leo Tan', 'Ari Putra']
@@ -504,7 +1485,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
           );
         }
         _restoreTodayStreakFromCompletedTask();
+        _applyDailyHappinessDecay();
         _queueNotificationScheduleSync();
+        _syncStreakFromCompletedTasks();
       },
       onError: (Object error) => debugPrint('Profile sync error: $error'),
     );
@@ -542,7 +1525,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
         if (!mounted) return;
         final now = DateTime.now();
         final mergedNotifications = notifications
-            .where((notification) => !notification.isChestReward)
             .map(
               (notification) =>
                   _locallyReadNotificationIds.contains(notification.id) &&
@@ -552,15 +1534,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
             )
             .toList();
         setState(() => _notifications = mergedNotifications);
-        for (final notification
-            in notifications.where((item) => item.isChestReward)) {
-          if (!_suppressedChestNotificationIds.add(notification.id)) continue;
-          unawaited(
-            sync.deleteNotification(notification.id).catchError((Object e) {
-              debugPrint('Chest notification cleanup failed: $e');
-            }),
-          );
-        }
         _ensureImportantDeadlineNotifications();
       },
       onError: (Object error) => debugPrint('Notification sync error: $error'),
@@ -583,19 +1556,20 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     final lastStreakDateKey = _lastStreakDateKey;
     final selectedMood = _selectedMood;
     final petHappiness = _petHappiness;
-    final activePetSkin = _activePetSkin;
-    final activeAccessory = _activeAccessory;
+    final lastHappinessDecayDateKey = _lastHappinessDecayDateKey;
+    final activeCompanion = _activeCompanion;
+    final unlockedCompanions = Set<CompanionKind>.from(_unlockedCompanions)
+      ..add(CompanionKind.lumi);
     try {
-      // One user-doc write keeps profile listeners from seeing a partial
-      // coins-only update and resetting streak before the streak write lands.
       await sync.updateProfileStats(
         coins: coins,
         streak: streak,
         lastStreakDateKey: lastStreakDateKey,
         selectedMood: selectedMood,
         petHappiness: petHappiness,
-        activePetSkin: activePetSkin,
-        activeAccessory: activeAccessory,
+        lastHappinessDecayDateKey: lastHappinessDecayDateKey,
+        activeCompanion: activeCompanion,
+        unlockedCompanions: unlockedCompanions,
       );
     } catch (e) {
       debugPrint('Profile write failed: $e');
@@ -642,25 +1616,34 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     unawaited(_persistPreferences());
   }
 
+  NotificationSettings _normalizedNotificationSettings(
+    NotificationSettings settings,
+  ) {
+    return settings.inAppNotificationsEnabled
+        ? settings
+        : settings.copyWith(importantInAppEnabled: false);
+  }
+
   void _setNotificationSettings(NotificationSettings settings) {
+    final normalizedSettings = _normalizedNotificationSettings(settings);
+
     setState(() {
-      _notificationSettings = settings;
-      _goalReminders = settings.systemNotificationsEnabled;
+      _notificationSettings = normalizedSettings;
+      _goalReminders = normalizedSettings.systemNotificationsEnabled;
     });
+
+    if (!normalizedSettings.inAppNotificationsEnabled) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+    }
+
     unawaited(_persistPreferences());
     _queueNotificationScheduleSync();
   }
 
   Future<void> _handleSignOut() async {
     unawaited(Navigator.of(context).maybePop());
-    final authState = context.read<AuthState>();
     try {
-      await PushNotificationService.instance.removeCurrentToken();
-    } catch (e) {
-      debugPrint('Push token cleanup failed: $e');
-    }
-    try {
-      await authState.signOut();
+      await context.read<AuthState>().signOut();
     } catch (e) {
       debugPrint('Sign out failed: $e');
     }
@@ -767,6 +1750,44 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
   double get _todayProgress =>
       _todayTasks.isEmpty ? 0 : _todayCompleted / _todayTasks.length;
 
+  int get _calculatedCurrentStreak {
+    final completedDays = _allTasks
+        .where((task) => task.done)
+        .map((task) => dateOnly(task.scheduledDate))
+        .where((day) => !day.isAfter(today))
+        .map(dateKey)
+        .toSet();
+
+    if (completedDays.isEmpty) return 0;
+
+    var day =
+        completedDays.contains(dateKey(today)) ? today : addDays(today, -1);
+    if (!completedDays.contains(dateKey(day))) return 0;
+
+    var streak = 0;
+    while (completedDays.contains(dateKey(day))) {
+      streak++;
+      day = addDays(day, -1);
+    }
+
+    return streak;
+  }
+
+  void _syncStreakFromCompletedTasks() {
+    if (_sync != null && !_syncedGoalsLoaded) return;
+
+    final nextStreak = _calculatedCurrentStreak;
+    if (nextStreak == _streak) return;
+
+    setState(() => _streak = nextStreak);
+
+    final sync = _sync;
+    if (sync == null) return;
+    unawaited(sync.updateStreak(nextStreak).catchError((Object e) {
+      debugPrint('Streak sync failed: $e');
+    }));
+  }
+
   int get _remainingMinutes => _todayTasks
       .where((task) => !task.done)
       .fold(0, (sum, task) => sum + task.durationMinutes);
@@ -827,6 +1848,116 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     }
   }
 
+  void _applyDailyHappinessDecay() {
+    if (!_syncedGoalsLoaded || !_profileLoaded) return;
+
+    final currentDay = dateOnly(DateTime.now());
+    final currentDayKey = dateKey(currentDay);
+    final lastDecayDay = _dateFromKey(_lastHappinessDecayDateKey);
+
+    if (lastDecayDay == null) {
+      setState(() => _lastHappinessDecayDateKey = currentDayKey);
+      unawaited(_persistProfileStats());
+      return;
+    }
+
+    if (!lastDecayDay.isBefore(currentDay)) {
+      if (lastDecayDay.isAfter(currentDay)) {
+        setState(() => _lastHappinessDecayDateKey = currentDayKey);
+        unawaited(_persistProfileStats());
+      }
+      return;
+    }
+
+    var day = addDays(lastDecayDay, 1);
+    var decay = 0;
+    while (!day.isAfter(currentDay)) {
+      final previousDay = addDays(day, -1);
+      final completedYesterday = _completedTaskCountOn(previousDay);
+      decay += completedYesterday == 0 ? 20 : 10;
+      day = addDays(day, 1);
+    }
+
+    setState(() {
+      _petHappiness = max(0, _petHappiness - decay);
+      _lastHappinessDecayDateKey = currentDayKey;
+    });
+    unawaited(_persistProfileStats());
+  }
+
+  int _completedTaskCountOn(DateTime day) {
+    final target = dateOnly(day);
+    return _allTasks
+        .where((task) => dateOnly(task.scheduledDate) == target && task.done)
+        .length;
+  }
+
+  bool _routineOccursOn(RoutineItem routine, DateTime date) {
+    final day = dateOnly(date);
+    final startDay = dateOnly(routine.startsAt);
+    if (day.isBefore(startDay)) return false;
+
+    switch (routine.repeat) {
+      case RoutineRepeat.daily:
+        return true;
+      case RoutineRepeat.weekly:
+        return routine.startsAt.weekday == date.weekday;
+      case RoutineRepeat.monthly:
+        return routine.startsAt.day == date.day;
+      case RoutineRepeat.yearly:
+        return routine.startsAt.month == date.month &&
+            routine.startsAt.day == date.day;
+      case RoutineRepeat.custom:
+        return startDay == day;
+    }
+  }
+
+  int _routineCountForDate(DateTime date) =>
+      _routines.where((routine) => _routineOccursOn(routine, date)).length;
+
+  List<String> _goalGenerationStatusLines(int deadlineDays) {
+    final routinesToday = _routineCountForDate(today);
+    return [
+      'Reading deadline: ${shortDate(_newGoalDeadline)}',
+      'Checking workload: $_remainingMinutes min today',
+      'Factoring mood: $_selectedMood',
+      routinesToday == 0
+          ? 'Checking saved routines'
+          : 'Reviewing $routinesToday routine${routinesToday == 1 ? '' : 's'} today',
+      'Building milestones across $deadlineDays day${deadlineDays == 1 ? '' : 's'}',
+    ];
+  }
+
+  List<String> _goalAiContextChips(int deadlineDays) {
+    final routinesToday = _routineCountForDate(today);
+    return [
+      'Mood: $_selectedMood',
+      'Deadline: ${shortDate(_newGoalDeadline)}',
+      '$deadlineDays day${deadlineDays == 1 ? '' : 's'} left',
+      'Workload: $_remainingMinutes min today',
+      'Routines: $routinesToday today',
+      'Priority: $_newGoalPriority/5',
+    ];
+  }
+
+  List<String> _reassignmentStatusLines(String trigger) {
+    final unfinished = _allTasks.where((task) => !task.done).length;
+    final routinesToday = _routineCountForDate(today);
+    final triggerLine = switch (trigger) {
+      'moodChanged' => 'Mood changed to $_selectedMood',
+      'routineAdded' => 'New routine added',
+      _ => 'Context changed',
+    };
+
+    return [
+      triggerLine,
+      'Checking $unfinished unfinished task${unfinished == 1 ? '' : 's'}',
+      'Reading $routinesToday routine${routinesToday == 1 ? '' : 's'} today',
+      'Looking for lighter days',
+      'Moving flexible tasks only',
+    ];
+  }
+
   String _formatFocusTime(int seconds) {
     final minutes = seconds ~/ 60;
     final remaining = seconds % 60;
@@ -835,20 +1966,16 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
 
   void _showMessage(String message) {
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
+    if (!_notificationSettings.inAppNotificationsEnabled) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
 
   void _showCoinRewardPrompt(int coins, String reason) {
     if (coins <= 0) return;
-    _showMessage('${_activePetSkin.name} says: +$coins coins $reason.');
+    _showMessage('${_activeCompanion.label} says: +$coins coins $reason.');
   }
 
   void _showHelpfulError({
@@ -963,7 +2090,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     bool important = false,
     String? sourceId,
   }) async {
-    if (type == AppNotificationType.reward) return;
     if (!_androidNotifications.isSupported) return;
     if (!_notificationBridgeReady) {
       _notificationBridgeReady = await _androidNotifications.initialize();
@@ -997,7 +2123,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       bool important = false,
       String? sourceId,
     }) {
-      if (type == AppNotificationType.reward) return;
       if (!scheduledAt.isAfter(now)) return;
       if (!scheduledAt.isBefore(horizon)) return;
       requests.add(
@@ -1206,7 +2331,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     String? sourceId,
     Map<String, dynamic>? payload,
   }) {
-    if (!important && !_notificationSettings.inAppNotificationsEnabled) {
+    if (!_notificationSettings.inAppNotificationsEnabled) {
       return false;
     }
     if (important && !_notificationSettings.importantInAppEnabled) {
@@ -1279,7 +2404,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
         type: AppNotificationType.important,
         important: true,
         sourceId: goal.id.toString(),
-        payload: const {'suppressPush': true},
       );
       if (_notificationSettings.systemNotificationsEnabled &&
           _notificationSettings.deadlineWarningsEnabled &&
@@ -1303,7 +2427,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       MaterialPageRoute<void>(
         fullscreenDialog: true,
         builder: (context) => NotificationInboxPage(
-          notifications: _visibleNotifications,
+          notifications: _notifications,
           onMarkRead: _markNotificationRead,
           onMarkAllRead: _markAllNotificationsRead,
           onDelete: _deleteNotification,
@@ -1474,41 +2598,76 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
   }
 
   // Centered, non-dismissible loading card shown while the AI generates a plan.
-  Widget _buildGeneratingLoader(String label) {
+  Widget _buildGeneratingLoader(
+    String label, {
+    List<String> statusLines = const [],
+  }) {
+    final adjusting = label.toLowerCase().contains('adjust');
+    final title = adjusting ? 'Rebalancing your schedule' : 'Growing your plan';
+    final message = adjusting
+        ? 'Moving unfinished tasks into a calmer timeline.'
+        : 'Planting your goal into small, realistic steps.';
+    final effectiveStatusLines = statusLines.isNotEmpty
+        ? statusLines
+        : [
+            adjusting ? 'Checking unfinished tasks' : 'Reading your deadline',
+            adjusting
+                ? 'Looking for lighter days'
+                : 'Checking current workload',
+            adjusting
+                ? 'Moving flexible tasks only'
+                : 'Building realistic milestones',
+          ];
+
     return PopScope(
       canPop: false,
       child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 26),
-          decoration: BoxDecoration(
-            color: gdSurface,
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 38,
-                height: 38,
-                child:
-                    CircularProgressIndicator(strokeWidth: 3, color: gdPrimary),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                label,
-                style: TextStyle(
-                  color: gdInk,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 320),
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 22),
+            decoration: BoxDecoration(
+              color: gdSurface,
+              borderRadius: BorderRadius.circular(26),
+              border: Border.all(color: gdBorder),
+              boxShadow: [
+                BoxShadow(
+                  color: gdShadow.withValues(alpha: 0.16),
+                  blurRadius: 30,
+                  offset: const Offset(0, 16),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'This may take a few seconds…',
-                style: TextStyle(
-                    color: gdMuted, fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-            ],
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const _SproutLoadingMark(),
+                const SizedBox(height: 16),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: gdInk,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: gdMuted,
+                    fontSize: 13.5,
+                    height: 1.35,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _LoadingStatusFeed(lines: effectiveStatusLines),
+              ],
+            ),
           ),
         ),
       ),
@@ -1571,6 +2730,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
         if (force) 'force': true,
       };
     }
+
+    List<String> goalContextChips() => _goalAiContextChips(deadlineDays);
 
     Future<AgentPlannerResponse> requestAgentPlan(
       String goal, {
@@ -1660,7 +2821,10 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
         context: context,
         barrierDismissible: false,
         useRootNavigator: true,
-        builder: (_) => _buildGeneratingLoader('Generating your plan…'),
+        builder: (_) => _buildGeneratingLoader(
+          'Generating your plan...',
+          statusLines: _goalGenerationStatusLines(deadlineDays),
+        ),
       );
     }
 
@@ -1680,13 +2844,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       } else {
         captureAgentMetadata(agentPlan);
         deadlineQuestion = captureDeadlineSuggestion(agentPlan);
-        // Prefer the agent's fully structured tasks (AI-decided duration,
-        // load, and day). Fall back to title-only milestones if an older
-        // backend returned just strings.
-        if (agentPlan.milestoneTasks.isNotEmpty) {
-          agentSpecs =
-              _draftSpecsFromGeneratedTasks(agentPlan.milestoneTasks).toList();
-        } else if (agentPlan.milestones.isNotEmpty) {
+        if (agentPlan.milestones.isNotEmpty) {
           agentSpecs = _draftSpecsFromTitles(agentPlan.milestones).toList();
         }
       }
@@ -1755,7 +2913,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       'text': intro.toString(),
     };
     if (!awaitingGoalRefinement) {
-      firstMessage['tasks'] = _draftPreviewLabels(draftSpecs);
+      firstMessage['tasks'] = _draftPreviewTasks(draftSpecs);
+      firstMessage['contextChips'] = goalContextChips();
     }
     final messages = <Map<String, dynamic>>[firstMessage];
 
@@ -1794,7 +2953,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                       'role': 'assistant',
                       'text':
                           "No problem — I'll keep your deadline at ${shortDate(_newGoalDeadline)} and the plan will stay within it.",
-                      'tasks': _draftPreviewLabels(draftSpecs),
+                      'tasks': _draftPreviewTasks(draftSpecs),
                     });
                     chatController.clear();
                     pendingDeadlineDays = null;
@@ -1819,17 +2978,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                       'Done — I moved the deadline to ${shortDate(newDeadline)} and re-planned the milestones across the new timeline.';
                   try {
                     final replan = await requestAgentPlan(currentTitle);
-                    if (replan.goalGuardEvaluated && !replan.goalRejected) {
-                      if (replan.milestoneTasks.isNotEmpty) {
-                        captureAgentMetadata(replan);
-                        draftSpecs =
-                            _draftSpecsFromGeneratedTasks(replan.milestoneTasks)
-                                .toList();
-                      } else if (replan.milestones.isNotEmpty) {
-                        captureAgentMetadata(replan);
-                        draftSpecs =
-                            _draftSpecsFromTitles(replan.milestones).toList();
-                      }
+                    if (replan.goalGuardEvaluated &&
+                        !replan.goalRejected &&
+                        replan.milestones.isNotEmpty) {
+                      captureAgentMetadata(replan);
+                      draftSpecs =
+                          _draftSpecsFromTitles(replan.milestones).toList();
                     }
                   } catch (e) {
                     debugPrint('Replan after deadline change failed: $e');
@@ -1841,7 +2995,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                     messages.add({
                       'role': 'assistant',
                       'text': replanNote,
-                      'tasks': _draftPreviewLabels(draftSpecs),
+                      'tasks': _draftPreviewTasks(draftSpecs),
                     });
                     isAiThinking = false;
                   });
@@ -1863,7 +3017,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                   messages.add({
                     'role': 'assistant',
                     'text': "Got it — I'll keep the plan as it is.",
-                    'tasks': _draftPreviewLabels(draftSpecs),
+                    'tasks': _draftPreviewTasks(draftSpecs),
                   });
                   chatController.clear();
                   pendingForceRequest = null;
@@ -1928,7 +3082,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                       // Show the plan unless the agent is mid-question.
                       if (modification.applied ||
                           modification.status == 'rejected')
-                        'tasks': _draftPreviewLabels(draftSpecs),
+                        'tasks': _draftPreviewTasks(draftSpecs),
                     });
                     isAiThinking = false;
                   });
@@ -1975,23 +3129,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                     .map((task) => task.trim())
                     .where((task) => task.isNotEmpty)
                     .toList();
-                // Prefer the agent's fully structured tasks; fall back to
-                // title-only milestones, then to the local generator.
-                final hasStructured = refinedPlan.milestoneTasks.isNotEmpty;
-                if (hasStructured) {
-                  draftSpecs =
-                      _draftSpecsFromGeneratedTasks(refinedPlan.milestoneTasks)
-                          .toList();
-                } else if (refinedTitles.isNotEmpty) {
+                if (refinedTitles.isNotEmpty) {
                   draftSpecs = _draftSpecsFromTitles(refinedTitles).toList();
                 } else if (wasAwaitingGoalRefinement) {
                   draftSpecs = await generatedOrLocalSpecs(goalToPlan);
                 }
-                final producedPlan = hasStructured || refinedTitles.isNotEmpty;
                 if (wasAwaitingGoalRefinement) {
                   currentTitle = goalToPlan;
                   aiAvailable = true;
-                  fromAgent = producedPlan;
+                  fromAgent = refinedTitles.isNotEmpty;
                 }
 
                 // Prefer the agent's feasibility note (e.g. "…Are you sure you
@@ -2001,8 +3147,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                     ? note
                     : (wasAwaitingGoalRefinement
                         ? 'That goal is clear enough to plan. I broke "$currentTitle" into ${draftSpecs.length} milestones.'
-                        : producedPlan
-                            ? 'Updated the plan to ${draftSpecs.length} milestones.'
+                        : refinedTitles.isNotEmpty
+                            ? 'Updated the plan to ${refinedTitles.length} milestones.'
                             : 'I refined the plan based on your request.');
                 final refinedDeadlineQuestion =
                     captureDeadlineSuggestion(refinedPlan);
@@ -2020,7 +3166,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                   messages.add({
                     'role': 'assistant',
                     'text': replyText,
-                    'tasks': _draftPreviewLabels(draftSpecs),
+                    'tasks': _draftPreviewTasks(draftSpecs),
                   });
                   isAiThinking = false;
                 });
@@ -2038,7 +3184,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                         ? "I can't verify this revised goal right now, so I won't generate todos for it. Please try again, or rewrite it as a clear, constructive, achievable goal."
                         : 'The AI planner is unavailable right now, so I cannot safely apply that change. The existing draft is unchanged.',
                     if (!wasAwaitingGoalRefinement)
-                      'tasks': _draftPreviewLabels(draftSpecs),
+                      'tasks': _draftPreviewTasks(draftSpecs),
                   });
                   isAiThinking = false;
                 });
@@ -2049,123 +3195,120 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
               final isUser = message['role'] == 'user';
               final bubbleColor = isUser ? gdPrimary : gdCardLight;
               final textColor = isUser ? Colors.white : gdInk;
-              final tasks = (message['tasks'] as List?)?.cast<String>();
+              final tasks = (message['tasks'] as List?)
+                      ?.whereType<_DraftTaskSpec>()
+                      .toList() ??
+                  const <_DraftTaskSpec>[];
+              final contextChips = (message['contextChips'] as List?)
+                      ?.whereType<String>()
+                      .toList() ??
+                  const <String>[];
+              final effectiveContextChips = tasks.isNotEmpty && !isUser
+                  ? (contextChips.isEmpty ? goalContextChips() : contextChips)
+                  : const <String>[];
+              final width = MediaQuery.of(context).size.width;
+              final compact = width < 620;
+              final bubbleMaxWidth =
+                  compact ? min(width * 0.74, 360.0) : (isUser ? 520.0 : 560.0);
+              final planMaxWidth = compact ? min(width * 0.88, 430.0) : 620.0;
 
               return Align(
                 alignment:
                     isUser ? Alignment.centerRight : Alignment.centerLeft,
-                child: Container(
-                  constraints: const BoxConstraints(maxWidth: 680),
-                  margin: EdgeInsets.only(
-                      left: isUser ? 44 : 0, right: isUser ? 0 : 44),
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: bubbleColor,
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(26),
-                      topRight: const Radius.circular(26),
-                      bottomLeft: Radius.circular(isUser ? 26 : 8),
-                      bottomRight: Radius.circular(isUser ? 8 : 26),
-                    ),
-                    border: !isUser ? Border.all(color: gdBorder) : null,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (!isUser)
-                        Row(
+                child: Column(
+                  crossAxisAlignment: isUser
+                      ? CrossAxisAlignment.end
+                      : CrossAxisAlignment.start,
+                  children: [
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: bubbleMaxWidth),
+                      child: Container(
+                        margin: EdgeInsets.only(
+                          left: isUser ? (compact ? 54 : 70) : 0,
+                          right: isUser ? 0 : (compact ? 42 : 70),
+                        ),
+                        padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
+                        decoration: BoxDecoration(
+                          color: bubbleColor,
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(18),
+                            topRight: const Radius.circular(18),
+                            bottomLeft: Radius.circular(isUser ? 18 : 7),
+                            bottomRight: Radius.circular(isUser ? 7 : 18),
+                          ),
+                          border: !isUser ? Border.all(color: gdBorder) : null,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            CircleAvatar(
-                              radius: 15,
-                              backgroundColor: gdPrimarySoft,
-                              child: Icon(Icons.auto_awesome_rounded,
-                                  size: 16, color: gdPrimary),
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              'AI Assistant',
-                              style: TextStyle(
-                                  color: gdMuted, fontWeight: FontWeight.w900),
-                            ),
-                          ],
-                        ),
-                      if (!isUser) const SizedBox(height: 10),
-                      Text(
-                        message['text'] as String,
-                        style: TextStyle(
-                          color: textColor,
-                          fontSize: 15,
-                          height: 1.55,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      if (tasks != null && tasks.isNotEmpty) ...[
-                        const SizedBox(height: 14),
-                        for (var i = 0; i < tasks.length; i++)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  width: 26,
-                                  height: 26,
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    color: isUser
-                                        ? Colors.white.withValues(alpha: 0.14)
-                                        : gdSurface,
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                      color: isUser ? Colors.white24 : gdBorder,
-                                    ),
+                            if (!isUser)
+                              Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 14,
+                                    backgroundColor: gdPrimarySoft,
+                                    child: Icon(Icons.auto_awesome_rounded,
+                                        size: 15, color: gdPrimary),
                                   ),
-                                  child: Text(
-                                    '${i + 1}',
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'AI Assistant',
                                     style: TextStyle(
-                                      color: isUser ? Colors.white : gdPrimary,
+                                      color: gdMuted,
+                                      fontSize: 12.5,
                                       fontWeight: FontWeight.w900,
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(top: 3),
-                                    child: Text(
-                                      tasks[i],
-                                      style: TextStyle(
-                                        color: textColor,
-                                        fontSize: 15,
-                                        height: 1.45,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                                ],
+                              ),
+                            if (!isUser) const SizedBox(height: 12),
+                            Text(
+                              message['text'] as String,
+                              style: TextStyle(
+                                color: textColor,
+                                fontSize: isUser ? 14.5 : 14,
+                                height: isUser ? 1.48 : 1.68,
+                                fontWeight:
+                                    isUser ? FontWeight.w700 : FontWeight.w600,
+                              ),
                             ),
-                          ),
-                      ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (tasks.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: planMaxWidth),
+                        child: _PlanPreviewSection(
+                          tasks: tasks,
+                          contextChips: effectiveContextChips,
+                        ),
+                      ),
                     ],
-                  ),
+                  ],
                 ),
               );
             }
 
+            final dialogSize = MediaQuery.of(dialogContext).size;
+            final isCompactDialog = dialogSize.width < 620;
+
             return Dialog(
               backgroundColor: Colors.transparent,
-              insetPadding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
+              insetPadding: EdgeInsets.symmetric(
+                horizontal: isCompactDialog ? 10 : 18,
+                vertical: isCompactDialog ? 14 : 22,
+              ),
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxWidth: 880,
-                  maxHeight: MediaQuery.of(dialogContext).size.height * 0.86,
+                  maxWidth: 840,
+                  maxHeight: dialogSize.height * 0.88,
                 ),
                 child: Container(
                   decoration: BoxDecoration(
                     color: gdSurface,
-                    borderRadius: BorderRadius.circular(34),
+                    borderRadius: BorderRadius.circular(26),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: 0.12),
@@ -2175,7 +3318,12 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                     ],
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+                    padding: EdgeInsets.fromLTRB(
+                      isCompactDialog ? 18 : 24,
+                      20,
+                      isCompactDialog ? 18 : 24,
+                      22,
+                    ),
                     child: Column(
                       children: [
                         Row(
@@ -2198,7 +3346,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                                     title,
                                     style: TextStyle(
                                       color: gdInk,
-                                      fontSize: 22,
+                                      fontSize: isCompactDialog ? 20 : 22,
+                                      height: 1.22,
                                       fontWeight: FontWeight.w900,
                                     ),
                                   ),
@@ -2208,7 +3357,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                             Container(
                               decoration: BoxDecoration(
                                 color: gdCardLight,
-                                borderRadius: BorderRadius.circular(999),
+                                borderRadius: BorderRadius.circular(16),
                               ),
                               child: IconButton(
                                 tooltip: 'Close',
@@ -2223,31 +3372,20 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                           child: Container(
                             decoration: BoxDecoration(
                               color: gdSurface,
-                              borderRadius: BorderRadius.circular(28),
+                              borderRadius: BorderRadius.circular(20),
                               border: Border.all(color: gdBorder),
                             ),
-                            padding: const EdgeInsets.all(16),
+                            padding: EdgeInsets.all(isCompactDialog ? 12 : 16),
                             child: ListView.separated(
                               itemCount:
                                   messages.length + (isAiThinking ? 1 : 0),
                               separatorBuilder: (_, __) =>
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: 18),
                               itemBuilder: (context, index) {
                                 if (index < messages.length) {
                                   return buildMessageBubble(messages[index]);
                                 }
-                                return const Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Chip(
-                                    avatar: SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2),
-                                    ),
-                                    label: Text('AI is thinking...'),
-                                  ),
-                                );
+                                return const _AiThinkingIndicator();
                               },
                             ),
                           ),
@@ -2273,13 +3411,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                                   filled: true,
                                   fillColor: gdCardLight,
                                   contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 18, vertical: 18),
+                                      horizontal: 16, vertical: 16),
                                   enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(24),
+                                    borderRadius: BorderRadius.circular(18),
                                     borderSide: BorderSide(color: gdBorder),
                                   ),
                                   focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(24),
+                                    borderRadius: BorderRadius.circular(18),
                                     borderSide: BorderSide(
                                         color: gdPrimary, width: 1.6),
                                   ),
@@ -2288,15 +3426,15 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                             ),
                             const SizedBox(width: 12),
                             SizedBox(
-                              height: 56,
+                              height: 54,
                               child: FilledButton(
                                 style: FilledButton.styleFrom(
                                   backgroundColor: gdPrimary,
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 24),
+                                      horizontal: 22),
                                   shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(24)),
+                                      borderRadius: BorderRadius.circular(18)),
                                 ),
                                 onPressed: isAiThinking ? null : sendMessage,
                                 child: const Text('Send'),
@@ -2312,9 +3450,9 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
                               style: FilledButton.styleFrom(
                                 backgroundColor: const Color(0xFF10B981),
                                 foregroundColor: Colors.white,
-                                minimumSize: const Size.fromHeight(64),
+                                minimumSize: const Size.fromHeight(58),
                                 shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(24)),
+                                    borderRadius: BorderRadius.circular(18)),
                               ),
                               onPressed: isAiThinking || draftSpecs.isEmpty
                                   ? null
@@ -2342,10 +3480,46 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     );
 
     if (result != null && mounted) {
+      await _showPlanCommitAnimation(result.title, result.tasks);
       await Future<void>.delayed(const Duration(milliseconds: 120));
       if (!mounted) return;
       await _finishCreateGoal(result.title, approvedTaskSpecs: result.tasks);
     }
+  }
+
+  Future<void> _showPlanCommitAnimation(
+    String title,
+    List<_DraftTaskSpec> tasks,
+  ) async {
+    if (!mounted) return;
+    final animation = showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withValues(alpha: 0.18),
+      transitionDuration: const Duration(milliseconds: 180),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return _PlanCommitAnimation(title: title, tasks: tasks);
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.97, end: 1).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    if (mounted) {
+      Navigator.of(context, rootNavigator: true).maybePop();
+    }
+    await animation;
   }
 
   Future<void> _finishCreateGoal(String title,
@@ -2387,6 +3561,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
         return;
       }
     }
+    _syncStreakFromCompletedTasks();
     _queueNotificationScheduleSync();
     _ensureImportantDeadlineNotifications();
     _showMessage('Goal created. AI subtasks are scheduled and synced.');
@@ -2422,8 +3597,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     ];
   }
 
-  List<String> _draftPreviewLabels(List<_DraftTaskSpec> specs) {
-    return specs.map((task) => task.previewLabel).toList();
+  List<_DraftTaskSpec> _draftPreviewTasks(List<_DraftTaskSpec> specs) {
+    return List<_DraftTaskSpec>.from(specs);
   }
 
   List<_DraftTaskSpec> _draftSpecsFromGeneratedTasks(
@@ -2511,7 +3686,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     setState(() {
       task.done = true;
       _coins += task.points;
-      _petHappiness = min(100, _petHappiness + 8);
+      _petHappiness = min(100, _petHappiness + 5);
       streakAwarded = _awardTaskCompletionStreak();
     });
     _showCoinRewardPrompt(
@@ -2521,6 +3696,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
           : 'for completing "${task.title}"',
     );
     unawaited(_persistTaskToggle(goal, task));
+    _syncStreakFromCompletedTasks();
     unawaited(_persistProfileStats());
     _queueNotificationScheduleSync();
   }
@@ -2550,28 +3726,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
   }
 
   Future<void> _deleteGoalEverywhere(GoalProject goal) async {
-    final user = context.read<AuthService>().currentUser;
-
-    if (user != null && !user.isAnonymous) {
-      try {
-        final deletedEvents = await context
-            .read<GoogleCalendarService>()
-            .deleteTaskEventsForGoal(goal);
-
-        debugPrint(
-          'Deleted $deletedEvents Google Calendar events for goal ${goal.title}.',
-        );
-      } catch (e) {
-        debugPrint('Google Calendar goal cleanup failed: $e');
-
-        if (mounted) {
-          _showMessage(
-            'Goal removed, but Google Calendar cleanup failed.',
-          );
-        }
-      }
-    }
-
     final sync = _sync;
 
     if (sync != null) {
@@ -2694,41 +3848,90 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     _showMessage('Removed $name from friends.');
   }
 
-  void _openPetChest() {
-    if (_coins < 50) {
+  void _selectCompanion(CompanionKind companion) {
+    if (!_unlockedCompanions.contains(companion)) {
+      _showMessage('Unlock ${companion.label} before switching.');
+      return;
+    }
+    if (_activeCompanion == companion) return;
+    setState(() => _activeCompanion = companion);
+    unawaited(_persistProfileStats());
+    _showMessage('${companion.label} is now your companion.');
+  }
+
+  Future<CompanionGachaResult?> _pullCompanionGacha() async {
+    final allGachaCompanionsUnlocked = gachaCompanions.every(
+      _unlockedCompanions.contains,
+    );
+    if (allGachaCompanionsUnlocked) {
+      _showMessage('All companions are already unlocked.');
+      return null;
+    }
+
+    if (_coins < companionGachaCost) {
       _showHelpfulError(
         title: 'Not enough coins',
         message:
-            'A mystery chest costs 50 coins. Complete a few tasks first, then try again.',
+            'A companion capsule costs $companionGachaCost coins. Complete a few tasks first, then try again.',
         actionLabel: 'Got it',
         onAction: () {},
       );
-      return;
+      return null;
     }
-    final skins = [
-      defaultPet,
-      const PetSkin(
-          name: 'Peach',
-          from: Color(0xFFFFB4A2),
-          to: Color(0xFFFFD6A5),
-          accent: Color(0xFFFFF1E6)),
-      const PetSkin(
-          name: 'Lunar',
-          from: Color(0xFF64748B),
-          to: Color(0xFF1E293B),
-          accent: Color(0xFFE2E8F0)),
-    ];
-    final accessories = ['Cap', 'Star badge', 'Tiny scarf', 'Focus glasses'];
-    final skin = skins[Random().nextInt(skins.length)];
-    final accessory = accessories[Random().nextInt(accessories.length)];
+
+    final companion = _rollCompanionGacha();
+    final rarity = companion.rarity!;
+    final duplicate = _unlockedCompanions.contains(companion);
+    final refund = duplicate ? companionDuplicateRefund : 0;
+
     setState(() {
-      _coins -= 50;
-      _activePetSkin = skin;
-      _activeAccessory = accessory;
-      _petHappiness = min(100, _petHappiness + 6);
+      _coins -= companionGachaCost - refund;
+      if (!duplicate) {
+        _unlockedCompanions = {
+          CompanionKind.lumi,
+          ..._unlockedCompanions,
+          companion,
+        };
+        _activeCompanion = companion;
+        _petHappiness = min(100, _petHappiness + 6);
+      }
     });
     unawaited(_persistProfileStats());
-    _showMessage('Chest opened: ${skin.name} skin + $accessory unlocked!');
+    _addInAppNotification(
+      title: duplicate ? 'Duplicate companion pull' : 'Companion unlocked',
+      body: duplicate
+          ? '${companion.label} was already in your roster. $refund coins were refunded.'
+          : '${companion.label} joined your companion roster as a ${rarity.label} pull.',
+      type: AppNotificationType.reward,
+      sourceId: 'companion_${companion.id}',
+    );
+
+    final result = CompanionGachaResult(
+      companion: companion,
+      rarity: rarity,
+      duplicate: duplicate,
+      cost: companionGachaCost,
+      refund: refund,
+    );
+    _showMessage(
+      duplicate
+          ? 'Duplicate ${companion.label}: $refund coins refunded.'
+          : '${rarity.label} pull: ${companion.label} unlocked!',
+    );
+    return result;
+  }
+
+  CompanionKind _rollCompanionGacha() {
+    final totalWeight = gachaCompanions.fold<double>(
+      0,
+      (total, companion) => total + companion.rarity!.gachaWeight,
+    );
+    var roll = Random().nextDouble() * totalWeight;
+    for (final companion in gachaCompanions) {
+      roll -= companion.rarity!.gachaWeight;
+      if (roll <= 0) return companion;
+    }
+    return gachaCompanions.last;
   }
 
   void _feedPet() {
@@ -2744,17 +3947,17 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     }
     setState(() {
       _coins -= 10;
-      _petHappiness = min(100, _petHappiness + 12);
+      _petHappiness = min(100, _petHappiness + 10);
     });
     unawaited(_persistProfileStats());
   }
 
   void _interactWithPet() {
     final reactions = [
-      '${_activePetSkin.name} is cheering for you!',
-      '${_activePetSkin.name} did a happy little bounce.',
-      '${_activePetSkin.name} says: one tiny step counts!',
-      '${_activePetSkin.name} feels closer to you.',
+      '${_activeCompanion.label} is cheering for you!',
+      '${_activeCompanion.label} did a happy little bounce.',
+      '${_activeCompanion.label} says: one tiny step counts!',
+      '${_activeCompanion.label} feels closer to you.',
     ];
     setState(() => _petHappiness = min(100, _petHappiness + 2));
     unawaited(_persistProfileStats());
@@ -2828,14 +4031,17 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
 
   // Show/hide the "agent is working" loader. Ref-counted: the dialog opens on
   // the first in-flight request and closes when the last one finishes.
-  void _showReassignmentLoader() {
+  void _showReassignmentLoader(String trigger) {
     if (!mounted) return;
     _reassignLoaderDepth++;
     if (_reassignLoaderRoute != null) return;
     final route = DialogRoute<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _buildGeneratingLoader('AI is adjusting your schedule…'),
+      builder: (_) => _buildGeneratingLoader(
+        'AI is adjusting your schedule...',
+        statusLines: _reassignmentStatusLines(trigger),
+      ),
     );
     _reassignLoaderRoute = route;
     unawaited(Navigator.of(context, rootNavigator: true).push(route));
@@ -2894,7 +4100,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
             ))
         .toList();
 
-    _showReassignmentLoader();
+    _showReassignmentLoader(trigger);
     try {
       final result = await context.read<GenkitService>().agentReassign.reassign(
             TaskReassignmentRequest(
@@ -2967,14 +4173,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
     _showMessage('AI adjusted your schedule: ${result.explanation}');
   }
 
-  Future<void> _dismissFocusRoutes({
-    required bool closeFocusDialog,
-  }) async {
-    if (!mounted) return;
-    final navigator = Navigator.of(context, rootNavigator: true);
-    if (closeFocusDialog) await navigator.maybePop();
-  }
-
   Future<void> _startFocusSession(FocusSessionConfig config) async {
     _focusTimer?.cancel();
     final endsAt =
@@ -2984,8 +4182,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       if (!_notificationBridgeReady) {
         _notificationBridgeReady = await _androidNotifications.initialize();
       }
-      final notificationsAllowed =
-          await _ensureAndroidNotificationPermission();
+      final notificationsAllowed = await _ensureAndroidNotificationPermission();
       if (!mounted) return;
       if (!notificationsAllowed) {
         _showMessage(
@@ -3023,7 +4220,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       _focusEndsAt = endsAt;
       _focusPaused = false;
       _focusCompletionHandled = false;
-      _highlightedGoalId = null;
     });
     _focusTimer = Timer.periodic(
       const Duration(seconds: 1),
@@ -3040,8 +4236,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
 
     final remainingMilliseconds =
         endsAt.difference(DateTime.now()).inMilliseconds;
-    final remainingSeconds =
-        max(0, (remainingMilliseconds + 999) ~/ 1000);
+    final remainingSeconds = max(0, (remainingMilliseconds + 999) ~/ 1000);
     if (remainingSeconds != _focusRemainingSeconds) {
       setState(() => _focusRemainingSeconds = remainingSeconds);
     }
@@ -3054,36 +4249,16 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
   void _handleFocusSessionCompleted() {
     final config = _activeFocusConfig;
     if (_focusCompletionHandled || config == null) return;
-    final targetGoalId = config.task?.goalId;
-    final shouldCloseFocusDialog = _focusDialogOpen;
     _focusCompletionHandled = true;
     _focusTimer?.cancel();
     unawaited(_focusAppBlocking.stopFocusSession());
     unawaited(SystemSound.play(SystemSoundType.alert));
+    _showMessage('Focus session complete. Nice work.');
     if (_notificationSettings.systemNotificationsEnabled &&
         _notificationSettings.focusNotificationsEnabled) {
       unawaited(_showFocusCompleteSystemNotification(config));
     }
-    setState(() {
-      _activeFocusConfig = null;
-      _focusRemainingSeconds = 0;
-      _focusEndsAt = null;
-      _focusPaused = false;
-      _focusCompletionHandled = false;
-      _selectedIndex = 0;
-      _highlightedGoalId = targetGoalId;
-    });
     _queueNotificationScheduleSync();
-    unawaited(
-      _dismissFocusRoutes(
-        closeFocusDialog: shouldCloseFocusDialog,
-      ),
-    );
-    _showMessage(
-      targetGoalId == null
-          ? 'Focus complete. Review your goals when ready.'
-          : 'Focus complete. Check the matching goal when it is truly done.',
-    );
   }
 
   Future<void> _showFocusCompleteSystemNotification(
@@ -3182,12 +4357,13 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
   void _stopFocusSession() {
     final config = _activeFocusConfig;
     final completed = _focusRemainingSeconds <= 0;
-    if (completed) {
-      _handleFocusSessionCompleted();
-      return;
-    }
+    if (completed) _handleFocusSessionCompleted();
     _focusTimer?.cancel();
     unawaited(_focusAppBlocking.stopFocusSession());
+
+    if (completed && config?.task != null && config!.task!.done == false) {
+      _completeTask(config.task!);
+    }
 
     setState(() {
       _activeFocusConfig = null;
@@ -3220,7 +4396,17 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
             ),
           );
       if (!mounted) return;
-      _showMessage('AI focus insight: ${insight.insight}');
+      if (completed && insight.coinsEarned > 0) {
+        setState(() {
+          _coins += insight.coinsEarned;
+        });
+        unawaited(_persistProfileStats());
+        _showMessage(
+          '${_activeCompanion.label} says: +${insight.coinsEarned} coins for finishing ${config.durationMinutes} focused minutes. AI focus insight: ${insight.insight}',
+        );
+      } else {
+        _showMessage('AI focus insight: ${insight.insight}');
+      }
     } catch (e) {
       debugPrint('Focus insight unavailable: $e');
     }
@@ -3244,8 +4430,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
           coins: _coins,
           streak: _streak,
           petHappiness: _petHappiness,
-          pet: _activePetSkin,
-          accessory: _activeAccessory,
+          companion: _activeCompanion,
+          streakTier: companionStreakTierFor(_streak),
           selectedMood: _selectedMood,
           goals: _goals,
           tasks: _allTasks,
@@ -3390,15 +4576,11 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
   Future<bool> _deleteCurrentAccount() async {
     final authState = context.read<AuthState>();
 
-    // First attempt. Succeeds when the sign-in is recent; for Google accounts
-    // AuthService re-authenticates automatically when the session has aged out.
     var deleted = await authState.deleteCurrentUser();
 
-    // Email/password accounts can't be re-authenticated silently — ask for the
-    // password and retry once.
     if (!deleted && authState.needsPasswordReauth && mounted) {
       final password = await _promptDeletePassword();
-      if (password == null) return false; // user cancelled
+      if (password == null) return false;
       deleted = await authState.deleteCurrentUser(password: password);
     }
 
@@ -3407,8 +4589,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       return true;
     }
 
-    // Surface the specific reason (e.g. wrong password, recent-login required)
-    // instead of a generic failure.
     if (mounted) {
       _showHelpfulError(
         title: 'Delete account failed',
@@ -3435,8 +4615,7 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                  'For security, re-enter your password to permanently delete '
-                  'this account.',
+                  'For security, re-enter your password to permanently delete this account.',
                 ),
                 const SizedBox(height: 14),
                 TextField(
@@ -3501,6 +4680,8 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
   void _openSettings() {
     final authState = context.read<AuthState>();
     final user = context.read<AuthService>().currentUser ?? authState.user;
+    final email = user?.email ?? '';
+
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
@@ -3514,15 +4695,14 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
           onTestNotification: () => unawaited(_sendTestNotification()),
           onOpenNotificationSettings: _openAndroidNotificationSettings,
           onSignOut: () => unawaited(_handleSignOut()),
-          email: user?.email ?? '',
+          email: email,
           signedInWith: _signedInWith,
           isGuest: user?.isAnonymous ?? authState.isGuest,
           emailVerified: authState.emailVerified,
           providerIds: authState.providerIds,
           onSendEmailVerification: authState.sendEmailVerification,
           onRefreshEmailVerification: authState.reloadUser,
-          onSendPasswordReset: () =>
-              authState.sendPasswordResetEmail(user?.email ?? ''),
+          onSendPasswordReset: () => authState.sendPasswordResetEmail(email),
           onDeleteAccount: _deleteCurrentAccount,
         ),
       ),
@@ -3656,8 +4836,6 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
         onEditGoalDeadline: _editGoalDeadline,
         onEditGoalPriority: _editGoalPriority,
         onCreateFirstGoal: () => setState(() => _selectedIndex = 0),
-        onToggleTask: _completeTask,
-        highlightedGoalId: _highlightedGoalId,
       ),
       CalendarPage(
         tasks: _allTasks,
@@ -3698,31 +4876,28 @@ class _GoalDiggerRootState extends State<GoalDiggerRoot>
       CompanionPage(
         coins: _coins,
         happiness: _petHappiness,
-        streak: _streak,
-        pet: _activePetSkin,
-        accessory: _activeAccessory,
+        streakTier: companionStreakTierFor(_streak),
+        activeCompanion: _activeCompanion,
+        unlockedCompanions: _unlockedCompanions,
+        onCompanionSelected: _selectCompanion,
+        onGachaPull: _pullCompanionGacha,
         onFeed: _feedPet,
-        onOpenChest: _openPetChest,
         onPetInteract: _interactWithPet,
-),
+      ),
     ];
 
     return ResponsiveGoalShell(
       selectedIndex: _selectedIndex,
       signedInWith: _signedInWith,
       pages: pages,
-      onSelect: (index) => setState(() {
-        _selectedIndex = index;
-        if (index != 0) _highlightedGoalId = null;
-      }),
+      onSelect: (index) => setState(() => _selectedIndex = index),
       onFocusMode: _openFocusMode,
       onProfile: _openProfile,
       onSettings: _openSettings,
       onNotifications: _openNotifications,
-      unreadNotifications: _visibleNotifications
-          .where((notification) => notification.isUnread)
-          .length,
-      importantUnreadNotifications: _visibleNotifications
+      unreadNotifications:
+          _notifications.where((notification) => notification.isUnread).length,
+      importantUnreadNotifications: _notifications
           .where(
               (notification) => notification.important && notification.isUnread)
           .length,

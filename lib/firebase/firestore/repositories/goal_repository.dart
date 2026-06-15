@@ -167,8 +167,8 @@ class GoalRepository {
       'importance': goal.importance,
       'category':   goal.category,
       'deadline':   Timestamp.fromDate(goal.deadline),
-      'colorFrom':  goal.from.value,
-      'colorTo':    goal.to.value,
+      'colorFrom':  goal.from.toARGB32(),
+      'colorTo':    goal.to.toARGB32(),
       // FIX: persist progress so it survives a reload
       'progress':   goal.progress.clamp(0.0, 1.0),
       'tasksMap':   tasksMap,

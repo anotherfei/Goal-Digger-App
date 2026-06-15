@@ -279,27 +279,3 @@ class AppNotification {
     );
   }
 }
-
-extension AppNotificationX on AppNotification {
-  bool get isChestReward {
-    if (type != AppNotificationType.reward) return false;
-    final source = sourceId?.toLowerCase() ?? '';
-    return source.startsWith('pet_chest') ||
-        title.toLowerCase().contains('chest reward');
-  }
-
-  bool get isPetRelated {
-    if (type != AppNotificationType.reward) return false;
-
-    final source = sourceId?.toLowerCase() ?? '';
-    if (source.startsWith('pet_')) return true;
-
-    final content = '${title.toLowerCase()} ${body.toLowerCase()}';
-    return content.contains('pet') ||
-        content.contains('companion') ||
-        content.contains('chest') ||
-        content.contains('gift') ||
-        content.contains('skin') ||
-        content.contains('accessory');
-  }
-}

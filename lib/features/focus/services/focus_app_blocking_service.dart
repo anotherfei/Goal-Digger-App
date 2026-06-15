@@ -44,8 +44,7 @@ class FocusSessionStartResult {
 
 class FocusAppBlockingService {
   FocusAppBlockingService({
-    MethodChannel channel =
-        const MethodChannel('goal_digger/focus_blocking'),
+    MethodChannel channel = const MethodChannel('goal_digger/focus_blocking'),
   }) : _channel = channel;
 
   final MethodChannel _channel;

@@ -75,7 +75,8 @@ class GoalCoachRequest {
         'goalTitle': goalTitle,
         'progressPercent': progressPercent,
         // Key must match the backend Zod schema field name exactly.
-        'conversationHistory': conversationHistory.map((m) => m.toJson()).toList(),
+        'conversationHistory':
+            conversationHistory.map((m) => m.toJson()).toList(),
       };
 }
 
@@ -199,10 +200,10 @@ class MoodAdvisorResponse {
 
   factory MoodAdvisorResponse.fromJson(Map<String, dynamic> json) =>
       MoodAdvisorResponse(
-        message:   json['message']    as String? ?? '',
-        emoji:     json['emoji']      as String? ?? '✨',
+        message: json['message'] as String? ?? '',
+        emoji: json['emoji'] as String? ?? '✨',
         suggestion: json['suggestion'] as String? ?? '',
-        intensity:  json['intensity']  as String? ?? 'medium',
+        intensity: json['intensity'] as String? ?? 'medium',
       );
 }
 
@@ -244,10 +245,10 @@ class FocusInsightResponse {
 
   factory FocusInsightResponse.fromJson(Map<String, dynamic> json) =>
       FocusInsightResponse(
-        insight:      json['insight']      as String? ?? '',
+        insight: json['insight'] as String? ?? '',
         nextStepHint: json['nextStepHint'] as String? ?? '',
-        coinsEarned:  (json['coinsEarned'] as num?)?.toInt() ?? 15,
-        badge:        json['badge']        as String? ?? '',
+        coinsEarned: (json['coinsEarned'] as num?)?.toInt() ?? 15,
+        badge: json['badge'] as String? ?? '',
       );
 }
 

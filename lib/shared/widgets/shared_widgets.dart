@@ -503,31 +503,42 @@ class CircularProgressBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final safeProgress = progress.clamp(0.0, 1.0).toDouble();
+    final isPercentLabel = label.trim().endsWith('%');
 
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          SizedBox.expand(
-            child: CircularProgressIndicator(
-              value: safeProgress,
-              strokeWidth: strokeWidth,
-              backgroundColor: gdBorder,
-              color: gdPrimary,
-            ),
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: safeProgress),
+      duration: const Duration(milliseconds: 520),
+      curve: Curves.easeOutCubic,
+      builder: (context, animatedProgress, _) {
+        final animatedLabel =
+            isPercentLabel ? '${(animatedProgress * 100).round()}%' : label;
+
+        return SizedBox(
+          width: size,
+          height: size,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox.expand(
+                child: CircularProgressIndicator(
+                  value: animatedProgress,
+                  strokeWidth: strokeWidth,
+                  backgroundColor: gdBorder,
+                  color: gdPrimary,
+                ),
+              ),
+              Text(
+                animatedLabel,
+                style: TextStyle(
+                  color: gdPrimaryDark,
+                  fontSize: size >= 100 ? 22 : 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
           ),
-          Text(
-            label,
-            style: TextStyle(
-              color: gdPrimaryDark,
-              fontSize: size >= 100 ? 22 : 16,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -774,8 +785,6 @@ class GoalCard extends StatelessWidget {
     required this.onDelete,
     required this.onEditDeadline,
     required this.onEditPriority,
-    this.highlighted = false,
-    this.onToggleTask,
   });
 
   final GoalProject goal;
@@ -783,8 +792,6 @@ class GoalCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onEditDeadline;
   final VoidCallback onEditPriority;
-  final bool highlighted;
-  final ValueChanged<MicroTask>? onToggleTask;
 
   void _showTaskDetail(BuildContext context, MicroTask task) {
     showModalBottomSheet<void>(
@@ -915,7 +922,6 @@ class GoalCard extends StatelessWidget {
               data:
                   Theme.of(context).copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
-                initiallyExpanded: highlighted,
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: EdgeInsets.zero,
                 title: Text('Subtasks',
@@ -952,20 +958,6 @@ class GoalCard extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(8)),
                             leading: Icon(task.load.icon,
                                 color: task.done ? gdMuted : gdPrimary),
-                            trailing: IconButton(
-                              tooltip: task.done
-                                  ? 'Mark task incomplete'
-                                  : 'Mark task complete',
-                              onPressed: onToggleTask == null
-                                  ? null
-                                  : () => onToggleTask!(task),
-                              icon: Icon(
-                                task.done
-                                    ? Icons.check_circle_rounded
-                                    : Icons.radio_button_unchecked_rounded,
-                                color: task.done ? gdPrimary : gdMuted,
-                              ),
-                            ),
                             title: Text(
                               task.title,
                               maxLines: 1,
@@ -1063,7 +1055,7 @@ class MoodAdjustmentNotice extends StatelessWidget {
   }
 }
 
-class TaskCard extends StatelessWidget {
+class TaskCard extends StatefulWidget {
   const TaskCard({
     super.key,
     required this.task,
@@ -1077,136 +1069,232 @@ class TaskCard extends StatelessWidget {
   final String mood;
   final VoidCallback onComplete;
 
+  @override
+  State<TaskCard> createState() => _TaskCardState();
+}
+
+class _TaskCardState extends State<TaskCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _completePulse;
+  late bool _lastDone;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastDone = widget.task.done;
+    _completePulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 360),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant TaskCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.task.done != _lastDone) {
+      if (widget.task.done) {
+        _completePulse.forward(from: 0);
+      }
+      _lastDone = widget.task.done;
+    }
+  }
+
+  @override
+  void dispose() {
+    _completePulse.dispose();
+    super.dispose();
+  }
+
   String get _adjustedTitle {
-    if (mood == 'Tired') {
-      if (task.load == TaskLoad.stretch) return 'Tiny version: ${task.title}';
-      if (task.durationMinutes > 15) return 'Start only: ${task.title}';
-      return task.title;
+    if (widget.mood == 'Tired') {
+      if (widget.task.load == TaskLoad.stretch) {
+        return 'Tiny version: ${widget.task.title}';
+      }
+      if (widget.task.durationMinutes > 15) {
+        return 'Start only: ${widget.task.title}';
+      }
+      return widget.task.title;
     }
-    if (mood == 'Great' && task.load != TaskLoad.light) {
-      return 'Deep work: ${task.title}';
+    if (widget.mood == 'Great' && widget.task.load != TaskLoad.light) {
+      return 'Deep work: ${widget.task.title}';
     }
-    return task.title;
+    return widget.task.title;
   }
 
   int get _adjustedMinutes {
-    if (mood == 'Tired') {
-      return min(task.durationMinutes, task.load == TaskLoad.stretch ? 12 : 15);
+    if (widget.mood == 'Tired') {
+      return min(
+        widget.task.durationMinutes,
+        widget.task.load == TaskLoad.stretch ? 12 : 15,
+      );
     }
-    if (mood == 'Great' && task.load == TaskLoad.stretch) {
-      return task.durationMinutes + 10;
+    if (widget.mood == 'Great' && widget.task.load == TaskLoad.stretch) {
+      return widget.task.durationMinutes + 10;
     }
-    return task.durationMinutes;
+    return widget.task.durationMinutes;
   }
 
   String get _moodTip {
-    if (mood == 'Tired') {
-      return task.load == TaskLoad.stretch
+    if (widget.mood == 'Tired') {
+      return widget.task.load == TaskLoad.stretch
           ? 'Mood adjusted: do only the smallest useful part. You can finish the rest later.'
           : 'Mood adjusted: keep this light and stop after the first clear win.';
     }
-    if (mood == 'Great') {
-      return task.load == TaskLoad.light
+    if (widget.mood == 'Great') {
+      return widget.task.load == TaskLoad.light
           ? 'Warm-up task. Finish this quickly, then move to a deeper step.'
           : 'Mood adjusted: good energy today, so this can become a focused stretch block.';
     }
-    return task.load == TaskLoad.light
+    return widget.task.load == TaskLoad.light
         ? 'Start here when energy is low. This task is intentionally small.'
-        : task.load == TaskLoad.focus
-            ? 'Stay focused and work on this single step first.'
+        : widget.task.load == TaskLoad.focus
+            ? 'Block distractions and work on this single step first.'
             : 'This is a higher-effort step. Do it when you have enough time.';
   }
 
   Color get _moodChipColor {
-    if (mood == 'Tired') return GdColors.positiveSoft;
-    if (mood == 'Great') return GdColors.warmSoft;
+    if (widget.mood == 'Tired') return GdColors.positiveSoft;
+    if (widget.mood == 'Great') return GdColors.warmSoft;
     return gdPrimarySoft;
   }
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
-        onTap: task.done ? null : onComplete,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Checkbox(
-                value: task.done,
-                onChanged: task.done ? null : (_) => onComplete(),
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          _adjustedTitle,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                            decoration:
-                                task.done ? TextDecoration.lineThrough : null,
-                          ),
-                        ),
-                        if (mood != 'Okay')
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 9, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: _moodChipColor,
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(color: gdBorder),
+    final isDone = widget.task.done;
+    final titleColor = isDone ? gdMuted.withValues(alpha: 0.58) : gdInk;
+    final detailColor = isDone ? gdMuted.withValues(alpha: 0.54) : gdMuted;
+
+    return AnimatedBuilder(
+      animation: _completePulse,
+      child: AppCard(
+        color: isDone ? gdCardLight.withValues(alpha: 0.72) : null,
+        child: InkWell(
+          onTap: isDone ? null : widget.onComplete,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Checkbox(
+                  value: isDone,
+                  onChanged: isDone ? null : (_) => widget.onComplete(),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            _adjustedTitle,
+                            style: TextStyle(
+                              color: titleColor,
+                              fontSize: 16,
+                              fontWeight:
+                                  isDone ? FontWeight.w800 : FontWeight.w900,
+                              decoration:
+                                  isDone ? TextDecoration.lineThrough : null,
+                              decorationColor: gdMuted.withValues(alpha: 0.50),
+                              decorationThickness: 1.8,
                             ),
-                            child: Text(
-                              mood == 'Tired'
-                                  ? 'Adjusted lighter'
-                                  : 'Stretch option',
-                              style: TextStyle(
-                                color: gdInk,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w900,
+                          ),
+                          if (widget.mood != 'Okay')
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 9, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: _moodChipColor,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(color: gdBorder),
+                              ),
+                              child: Text(
+                                widget.mood == 'Tired'
+                                    ? 'Adjusted lighter'
+                                    : 'Stretch option',
+                                style: TextStyle(
+                                  color: gdInk,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                ),
                               ),
                             ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${widget.goal.title} · ${shortDate(widget.task.scheduledDate)} · $_adjustedMinutes min · ${widget.task.load.label}',
+                        style: TextStyle(
+                            color: detailColor, fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(widget.task.load.icon,
+                              size: 18, color: detailColor),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              _moodTip,
+                              style: TextStyle(
+                                  color: detailColor,
+                                  fontWeight: FontWeight.w600),
+                            ),
                           ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${goal.title} · ${shortDate(task.scheduledDate)} · $_adjustedMinutes min · ${task.load.label}',
-                      style: TextStyle(
-                          color: gdMuted, fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(task.load.icon, size: 18),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            _moodTip,
-                            style: TextStyle(
-                                color: gdMuted, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Chip(label: Text('+${task.points}')),
-            ],
+                Chip(
+                  backgroundColor: isDone
+                      ? gdSuccessSoft
+                      : gdPrimarySoft.withValues(alpha: 0.72),
+                  avatar: isDone
+                      ? Icon(Icons.check_circle_rounded,
+                          size: 16, color: gdSuccess)
+                      : null,
+                  label: Text(
+                    isDone ? 'Done' : '+${widget.task.points}',
+                    style: TextStyle(
+                      color: isDone ? gdSuccess : gdPrimary,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
+      builder: (context, child) {
+        final pulse = sin(_completePulse.value * pi);
+        final glowOpacity = widget.task.done ? 0.24 * pulse : 0.0;
+
+        return Transform.scale(
+          scale: 1 + pulse * 0.025,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              borderRadius: GdRadius.card,
+              boxShadow: glowOpacity > 0
+                  ? [
+                      BoxShadow(
+                        color: gdSuccess.withValues(alpha: glowOpacity),
+                        blurRadius: 28,
+                        spreadRadius: 1,
+                        offset: const Offset(0, 12),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: child,
+          ),
+        );
+      },
     );
   }
 }

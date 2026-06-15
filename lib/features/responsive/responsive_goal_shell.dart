@@ -16,7 +16,7 @@ ButtonStyle get _chromeIconButtonStyle => IconButton.styleFrom(
       shape: const CircleBorder(),
     );
 
-class ResponsiveGoalShell extends StatelessWidget {
+class ResponsiveGoalShell extends StatefulWidget {
   const ResponsiveGoalShell({
     super.key,
     required this.selectedIndex,
@@ -56,16 +56,56 @@ class ResponsiveGoalShell extends StatelessWidget {
   ];
 
   @override
+  State<ResponsiveGoalShell> createState() => _ResponsiveGoalShellState();
+}
+
+class _ResponsiveGoalShellState extends State<ResponsiveGoalShell> {
+  late final PageController _pageController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: widget.selectedIndex);
+  }
+
+  @override
+  void didUpdateWidget(covariant ResponsiveGoalShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedIndex == widget.selectedIndex) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_pageController.hasClients) return;
+      final currentPage = _pageController.page?.round();
+      if (currentPage == widget.selectedIndex) return;
+      _pageController.animateToPage(
+        widget.selectedIndex,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).padding.bottom;
-    final isHome = selectedIndex == 2;
-    final contentBottomPadding = bottomInset + (hasActiveFocus ? 232.0 : 208.0);
+    final isHome = widget.selectedIndex == 2;
+    final contentBottomPadding =
+        bottomInset + (widget.hasActiveFocus ? 232.0 : 208.0);
 
     return Scaffold(
       extendBody: true,
-      backgroundColor: Colors.transparent,
+      backgroundColor: gdBackground,
       appBar: AppBar(
         automaticallyImplyLeading: false,
+        backgroundColor: gdBackground,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
         titleSpacing: 0,
         leadingWidth: 72,
         leading: Padding(
@@ -73,7 +113,7 @@ class ResponsiveGoalShell extends StatelessWidget {
           child: IconButton(
             style: _chromeIconButtonStyle,
             tooltip: 'Profile and friends',
-            onPressed: onProfile,
+            onPressed: widget.onProfile,
             icon: const Icon(Icons.account_circle_rounded),
           ),
         ),
@@ -83,9 +123,9 @@ class ResponsiveGoalShell extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: _NotificationIconButton(
-              unreadCount: unreadNotifications,
-              importantUnreadCount: importantUnreadNotifications,
-              onPressed: onNotifications,
+              unreadCount: widget.unreadNotifications,
+              importantUnreadCount: widget.importantUnreadNotifications,
+              onPressed: widget.onNotifications,
             ),
           ),
           Padding(
@@ -93,11 +133,18 @@ class ResponsiveGoalShell extends StatelessWidget {
             child: IconButton(
               style: _chromeIconButtonStyle,
               tooltip: 'Settings',
-              onPressed: onSettings,
+              onPressed: widget.onSettings,
               icon: const Icon(Icons.settings_rounded),
             ),
           ),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(
+            height: 1,
+            color: gdBorder.withValues(alpha: 0.62),
+          ),
+        ),
       ),
       body: Stack(
         children: [
@@ -107,18 +154,37 @@ class ResponsiveGoalShell extends StatelessWidget {
               child: SafeArea(
                 top: false,
                 bottom: false,
-                child: pages[selectedIndex],
+                child: ColoredBox(
+                  color: gdBackground,
+                  child: PageView.builder(
+                    controller: _pageController,
+                    itemCount: widget.pages.length,
+                    onPageChanged: (index) {
+                      if (index != widget.selectedIndex) {
+                        widget.onSelect(index);
+                      }
+                    },
+                    itemBuilder: (context, index) {
+                      return _AnimatedShellPage(
+                        controller: _pageController,
+                        selectedIndex: widget.selectedIndex,
+                        index: index,
+                        child: widget.pages[index],
+                      );
+                    },
+                  ),
+                ),
               ),
             ),
           ),
-          if (hasActiveFocus)
+          if (widget.hasActiveFocus)
             Positioned(
               left: 18,
               right: 18,
               bottom: bottomInset + 126,
               child: _ActiveFocusBanner(
-                focusLabel: focusLabel,
-                onTap: onFocusMode,
+                focusLabel: widget.focusLabel,
+                onTap: widget.onFocusMode,
               ),
             )
           else
@@ -127,7 +193,7 @@ class ResponsiveGoalShell extends StatelessWidget {
               bottom: bottomInset + 124,
               child: _FocusActionButton(
                 extended: isHome,
-                onPressed: onFocusMode,
+                onPressed: widget.onFocusMode,
               ),
             ),
           Positioned(
@@ -135,14 +201,52 @@ class ResponsiveGoalShell extends StatelessWidget {
             right: 14,
             bottom: bottomInset + 4,
             child: _GoalBottomNavigation(
-              labels: labels,
-              icons: icons,
-              selectedIndex: selectedIndex,
-              onSelect: onSelect,
+              labels: ResponsiveGoalShell.labels,
+              icons: ResponsiveGoalShell.icons,
+              selectedIndex: widget.selectedIndex,
+              onSelect: widget.onSelect,
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _AnimatedShellPage extends StatelessWidget {
+  const _AnimatedShellPage({
+    required this.controller,
+    required this.selectedIndex,
+    required this.index,
+    required this.child,
+  });
+
+  final PageController controller;
+  final int selectedIndex;
+  final int index;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      child: child,
+      builder: (context, child) {
+        var page = selectedIndex.toDouble();
+        if (controller.hasClients && controller.position.haveDimensions) {
+          page = controller.page ?? page;
+        }
+        final delta = (page - index).clamp(-1.0, 1.0);
+        final distance = delta.abs();
+
+        return ColoredBox(
+          color: gdBackground,
+          child: Opacity(
+            opacity: 1 - distance * 0.06,
+            child: child,
+          ),
+        );
+      },
     );
   }
 }
@@ -161,10 +265,11 @@ class _ActiveFocusBanner extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: gdFocus.withValues(alpha: 0.18)),
         boxShadow: [
           BoxShadow(
-            color: gdPrimary.withValues(alpha: 0.14),
-            blurRadius: 22,
+            color: gdFocus.withValues(alpha: 0.16),
+            blurRadius: 24,
             offset: const Offset(0, 12),
           ),
         ],
@@ -222,13 +327,26 @@ class _FocusActionButton extends StatelessWidget {
           height: 56,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: gdPrimary,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [gdFocus, gdPrimaryDark],
+            ),
             borderRadius: borderRadius,
+            border: Border.all(
+              color: gdOnDark.withValues(alpha: 0.30),
+              width: 1.2,
+            ),
             boxShadow: [
               BoxShadow(
-                color: gdPrimary.withValues(alpha: extended ? 0.28 : 0.20),
-                blurRadius: extended ? 20 : 14,
-                offset: const Offset(0, 8),
+                color: gdFocus.withValues(alpha: extended ? 0.32 : 0.24),
+                blurRadius: extended ? 24 : 18,
+                offset: const Offset(0, 10),
+              ),
+              BoxShadow(
+                color: gdPrimaryDark.withValues(alpha: 0.16),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
               ),
             ],
           ),
@@ -386,19 +504,48 @@ class _GoalBottomNavigation extends StatelessWidget {
               ),
             ],
           ),
-          child: Row(
-            children: [
-              for (var i = 0; i < labels.length; i++)
-                Expanded(
-                  child: _BottomNavItem(
-                    label: labels[i],
-                    icon: icons[i],
-                    selected: selectedIndex == i,
-                    highlighted: selectedIndex == i && i == 2,
-                    onTap: () => onSelect(i),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final itemWidth = constraints.maxWidth / labels.length;
+
+              return Stack(
+                children: [
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 260),
+                    curve: Curves.easeOutCubic,
+                    left: itemWidth * selectedIndex,
+                    top: 6,
+                    bottom: 6,
+                    width: itemWidth,
+                    child: Center(
+                      child: Container(
+                        width: selectedIndex == 2 ? 58 : 52,
+                        decoration: BoxDecoration(
+                          color: selectedIndex == 2
+                              ? gdPrimary.withValues(alpha: 0.10)
+                              : gdPrimarySoft.withValues(alpha: 0.72),
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-            ],
+                  Row(
+                    children: [
+                      for (var i = 0; i < labels.length; i++)
+                        Expanded(
+                          child: _BottomNavItem(
+                            label: labels[i],
+                            icon: icons[i],
+                            selected: selectedIndex == i,
+                            highlighted: selectedIndex == i && i == 2,
+                            onTap: () => onSelect(i),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
