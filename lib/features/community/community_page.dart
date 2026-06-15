@@ -858,12 +858,11 @@ class _CommunityPageState extends State<CommunityPage> {
                 ),
               )
             else if (friends.isEmpty)
-              const HelpfulErrorBox(
+              const _GentleEmptyNotice(
+                icon: Icons.people_outline_rounded,
                 title: 'No friends or chats yet',
                 message:
                     'Find real users or start a chat. Any direct chat room will appear here too.',
-                actionLabel: 'Got it',
-                showAction: false,
               )
             else ...[
               for (final friend in friendPreview)
@@ -893,7 +892,7 @@ class _CommunityPageState extends State<CommunityPage> {
               const SizedBox(height: 8),
             ],
             if (friends.isEmpty) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -1435,14 +1434,13 @@ class _CommunityPageState extends State<CommunityPage> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const HelpfulErrorBox(
+                  const _GentleEmptyNotice(
+                    icon: Icons.groups_2_outlined,
                     title: 'No joined communities yet',
                     message:
                         'Find a real Firestore community or create your own group.',
-                    actionLabel: 'Got it',
-                    showAction: false,
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
@@ -5357,6 +5355,72 @@ class _StreakFireBadge extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _GentleEmptyNotice extends StatelessWidget {
+  const _GentleEmptyNotice({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: GdColors.tintOf(gdPrimary, 0.06),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: gdBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: gdCardLight,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: gdPrimary.withValues(alpha: 0.12)),
+            ),
+            child: Icon(icon, color: gdPrimary, size: 23),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: gdInk,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  message,
+                  style: TextStyle(
+                    color: gdMuted,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
