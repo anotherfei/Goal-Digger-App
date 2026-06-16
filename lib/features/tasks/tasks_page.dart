@@ -415,6 +415,7 @@ class _CompactTodayTaskRow extends StatelessWidget {
     final done = task.done;
     final textColor = done ? gdMuted.withValues(alpha: 0.58) : gdInk;
     final metaColor = done ? gdMuted.withValues(alpha: 0.52) : gdMuted;
+    final rewardColor = done ? gdCoin.withValues(alpha: 0.52) : gdCoin;
 
     return Material(
       color: Colors.transparent,
@@ -467,13 +468,40 @@ class _CompactTodayTaskRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      '${task.durationMinutes} min · ${task.load.label}',
-                      style: TextStyle(
-                        color: metaColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 3,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          '${task.durationMinutes} min · ${task.load.label}',
+                          style: TextStyle(
+                            color: metaColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        if (task.points > 0)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.paid_rounded,
+                                size: 13,
+                                color: rewardColor,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                '+${task.points} coin${task.points == 1 ? '' : 's'}',
+                                style: TextStyle(
+                                  color: rewardColor,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
                     ),
                   ],
                 ),
